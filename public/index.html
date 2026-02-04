@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <link rel="canonical" href="https://pacakkhemah.com/" />
+    
+    <title>Pacak Khemah | Camping Gear Rental & Campsite Directory Kuantan</title>
+    <meta name="description" content="Premium camping gear rental in Balok, Kuantan. Explore our curated Pahang campsite directory and book your next outdoor adventure.">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="icon" type="image/png" href="https://i.postimg.cc/7LsVrsgF/Gemini-Generated-Image-1dnbrk1dnbrk1dnb-removebg-preview.png">
+    
+    <style>
+        :root { --primary-font: 'Bricolage Grotesque', sans-serif; --secondary-font: 'Inter', sans-serif; }
+        body { font-family: var(--secondary-font); scroll-behavior: smooth; }
+        h1, h2, h3, h4, .brand-font { font-family: var(--primary-font); letter-spacing: -0.02em; }
+        .glass-header { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+        .item-card { transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1); border: 1px solid #f1f5f9; cursor: pointer; position: relative; overflow: hidden; }
+        .item-card:hover { transform: translateY(-8px); border-color: #10b981; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.05); }
+        .item-card img { transition: transform 0.6s ease; }
+        .item-card:hover img { transform: scale(1.05); }
+        .selected-card { border: 2px solid #10b981 !important; background-color: #f0fdf4 !important; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #10b981; border-radius: 10px; }
+        .btn-fancy { background: linear-gradient(135deg, #064e3b 0%, #065f46 100%); transition: all 0.3s ease; }
+        #lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 9999; justify-content: center; align-items: center; padding: 20px; cursor: zoom-out; }
+        #lightbox img { max-width: 90%; max-height: 80vh; border-radius: 1rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+    </style>
+</head>
+<body class="bg-white text-slate-900">
+
+    <div id="lightbox" onclick="this.style.display='none'">
+        <div class="absolute top-10 right-10 text-white text-3xl"><i class="fas fa-times"></i></div>
+        <img id="lightbox-img" src="" alt="Full Size View">
+    </div>
+
+    <nav class="glass-header sticky top-0 z-50 border-b border-slate-100">
+        <div class="container mx-auto px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div class="order-2 md:order-1 flex bg-slate-100 p-1 rounded-2xl border border-slate-200">
+                <button onclick="switchTab('gear')" id="btn-gear" class="px-8 py-2 rounded-xl text-xs font-bold transition-all bg-white shadow-sm text-emerald-800 brand-font uppercase">Catalogue</button>
+                <button onclick="switchTab('spots')" id="btn-spots" class="px-8 py-2 rounded-xl text-xs font-bold transition-all text-slate-400 brand-font uppercase">Campsites</button>
+            </div>
+            <div class="order-1 md:order-2 flex flex-col items-center md:items-end">
+                <span class="text-2xl font-black text-emerald-950 brand-font uppercase leading-none">PACAK KHEMAH</span>
+                <div class="flex items-center gap-2">
+                    <span class="text-[9px] font-bold text-slate-400 tracking-[0.4em] uppercase">CAMPING DENGAN KITA</span>
+                    <span class="h-[1.5px] w-6 bg-emerald-500 rounded-full"></span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div id="tab-gear-content">
+        <section class="bg-[#062c24] text-white py-16 px-6 text-center relative overflow-hidden">
+            <div class="relative z-10">
+                <h1 class="text-5xl md:text-7xl font-black mb-2 brand-font">Gear Rental Lab</h1>
+                <p class="text-emerald-400 text-lg font-bold mb-4 brand-font italic">Your Bridge from 'Curious' to 'Camper'</p>
+                <p class="text-emerald-100/60 max-w-lg mx-auto text-sm">Whether you're a first-timer or just testing the waters, we provide the gear you need without the long-term commitment.</p>
+            </div>
+            <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(circle at 2px 2px, #10b981 1px, transparent 0); background-size: 40px 40px;"></div>
+        </section>
+
+        <main class="container mx-auto px-6 py-12">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-12">
+                <div class="lg:col-span-2 space-y-16">
+                    <section>
+                        <h2 class="text-2xl font-bold text-slate-900 mb-8 border-b border-slate-100 pb-2 uppercase tracking-tight">Full Packages</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="package-list"></div>
+                    </section>
+                    <section>
+                        <h2 class="text-2xl font-bold text-slate-900 mb-8 border-b border-slate-100 pb-2 uppercase tracking-tight">Add-ons & Essentials</h2>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="addon-list"></div>
+                    </section>
+                </div>
+
+                <div class="lg:col-span-1">
+                    <div class="sticky top-32 space-y-6">
+                        <div class="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-2xl shadow-slate-200/40">
+                            <h3 class="text-xl font-bold mb-6 brand-font">Booking Summary</h3>
+                            <div id="cart-items" class="space-y-4 mb-8 text-sm text-slate-500 min-h-[100px] max-h-[400px] overflow-y-auto custom-scrollbar">Empty.</div>
+                            <div class="pt-6 border-t border-slate-100">
+                                <div class="flex justify-between items-end mb-8">
+                                    <div>
+                                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Self-Pickup</p>
+                                        <p class="text-[10px] text-emerald-600 font-bold uppercase">Balok, Kuantan</p>
+                                    </div>
+                                    <span class="text-4xl font-black text-slate-900 brand-font">RM <span id="total-price">0</span></span>
+                                </div>
+                                <button onclick="sendWhatsApp()" class="w-full btn-fancy text-white py-5 rounded-2xl font-bold text-lg shadow-xl flex items-center justify-center gap-3">
+                                    <i class="fab fa-whatsapp text-2xl"></i> Check Availability
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-950 text-white rounded-[2rem] p-7 border border-emerald-900/30">
+                            <h4 class="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-500 mb-5">Concierge & Logistics</h4>
+                            <div class="space-y-5 text-[11px] text-slate-400 leading-relaxed">
+                                <div class="flex gap-4">
+                                    <i class="fas fa-hand-holding-heart text-emerald-500 mt-1"></i>
+                                    <p><strong class="text-white block">Self Pickup</strong> To maintain equipment quality, we offer Hub-to-Hand collection only. No postage.</p>
+                                </div>
+                                <div class="flex gap-4">
+                                    <i class="fas fa-shield-alt text-emerald-500 mt-1"></i>
+                                    <p><strong class="text-white block">Private Coordinates</strong> Located in Balok, Kuantan. Detailed pick-up location shared upon confirmation.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="tab-spots-content" class="hidden">
+        <section class="bg-slate-50 border-b border-slate-100 py-16 text-center">
+            <h1 class="text-4xl font-black brand-font uppercase">Pahang Directory</h1>
+            <div class="max-w-md mx-auto px-6 mt-6">
+                <input type="text" id="campsiteSearch" placeholder="Search name or location (e.g. Cherating)..." class="w-full bg-white rounded-2xl border border-slate-200 px-6 py-3 text-sm focus:border-emerald-500 outline-none transition-all">
+            </div>
+        </section>
+        <main class="container mx-auto px-6 py-12"><div id="campsite-grid" class="max-w-3xl mx-auto space-y-3"></div></main>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        const firebaseConfig = { apiKey: "AIzaSyAijpbwzFTDctk38Ktkcbt1Hd4y-1Cd1Xw", authDomain: "kuantan-unplugged.firebaseapp.com", projectId: "kuantan-unplugged", storageBucket: "kuantan-unplugged.firebasestorage.app", messagingSenderId: "125749320406", appId: "1:125749320406:web:e8d7526d2ad18947608777" };
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        let allSpots = [];
+        onSnapshot(query(collection(db, "spots"), orderBy("name")), (snap) => {
+            allSpots = snap.docs.map(doc => doc.data());
+            renderSpots(allSpots);
+        });
+
+        function renderSpots(data) {
+            const grid = document.getElementById('campsite-grid');
+            grid.innerHTML = data.map(d => `
+                <div class="bg-white rounded-2xl border border-slate-100 px-6 py-4 flex items-center justify-between shadow-sm">
+                    <div>
+                        <h3 class="font-bold text-slate-800 text-sm">${d.name}</h3>
+                        <p class="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">
+                            <i class="fas fa-map-marker-alt mr-1"></i> ${d.location || 'Pahang Region'}
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-[9px] font-black uppercase px-2 py-1 rounded ${d.status === 'Available' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500'}">${d.status}</span>
+                        <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d.name + ' ' + (d.location || 'Pahang'))}" target="_blank" class="p-2 text-slate-400 hover:text-emerald-500"><i class="fas fa-location-arrow"></i></a>
+                        <a href="${d.escabeeUrl}" target="_blank" class="px-4 py-2 bg-slate-900 text-white text-[10px] font-bold uppercase rounded-lg">Details</a>
+                    </div>
+                </div>`).join('');
+        }
+        
+        document.getElementById('campsiteSearch').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            renderSpots(allSpots.filter(s => 
+                s.name.toLowerCase().includes(term) || 
+                (s.location && s.location.toLowerCase().includes(term))
+            ));
+        });
+    </script>
+
+    <script>
+        const gearPackages = [
+            { id: 'p1', name: 'Cabin XL Package', price: 150, img: 'https://i.postimg.cc/J4ykhnR7/VIdalido-Cabin-XL.png', desc: 'Best for Families (5-6 Pax)', inc: ['Vidalido Cabin XL', 'Ground Sheet', 'Fan', '2x Lamps', 'Table', '2x Chairs', 'Stove'] },
+            { id: 'p2', name: 'Poon San Package', price: 180, img: 'https://i.postimg.cc/vTt5L2S4/Vidalido-Poon-San-M.png', desc: 'Group Manual Setup (4-5 Pax)', inc: ['Vidalido Poon San M', 'Ground Sheet', 'Fan', '2x Lamps', 'Table', '2x Chairs', 'Stove'] },
+            { id: 'p3', name: 'An Saan Package', price: 170, img: 'https://i.postimg.cc/kXVb547G/Vidalido-An-Saan-M.png', desc: 'Comfy Trio (3-4 Pax)', inc: ['Vidalido An Saan M', 'Ground Sheet', 'Fan', '2x Lamps', 'Table', '2x Chairs', 'Stove'] },
+            { id: 'p4', name: 'Blackdog Package', price: 130, img: 'https://i.postimg.cc/vHDW6ht9/Blackdog-Auto.png', desc: 'Budget Friendly (3-4 Pax)', inc: ['Blackdog Auto Tent', 'Ground Sheet', 'Fan', '2x Lamps', 'Table', '2x Chairs', 'Stove'] },
+            { id: 'p5', name: 'Teepee Package', price: 140, img: 'https://i.postimg.cc/Sspr69N7/Vidalido-Teepee-MX-Pro.png', desc: 'One Pole Setup (4-5 Pax)', inc: ['Vidalido Teepee MX Pro Tent', 'Ground Sheet', 'Fan', '2x Lamps', 'Table', '2x Chairs', 'Stove'] },
+            { id: 'p6', name: 'NatureHike P2', price: 30, img: 'https://i.postimg.cc/XN153F6G/Nature-Hike-P2.png', desc: 'Solo/Duo Light Travel', inc: ['NatureHike P2 Tent', 'Ground Sheet'] }
+        ];
+
+        const individualAddons = [
+            { id: 'a1', name: 'Kermit Chairs (2x)', price: 20, img: 'https://i.postimg.cc/18k1jTLb/Kermit-Chair.png' },
+            { id: 'a2', name: 'Eggroll Table', price: 10, img: 'https://i.postimg.cc/FYdQGmB5/Eggroll-Table.png' },
+            { id: 'a3', name: 'Portable Stove', price: 15, img: 'https://i.postimg.cc/94yH5b2Z/Portable-Stove.png' },
+            { id: 'a4', name: 'Hanging Rack', price: 5, img: 'https://i.postimg.cc/4YDRSMDR/Hanging-Rack.png' },
+            { id: 'a5', name: 'Rechargeable Fan', price: 15, img: 'https://i.postimg.cc/9RV5W9Xv/Rechargeable-Fan.png' },
+            { id: 'a6', name: 'Retro Lamp', price: 5, img: 'https://i.postimg.cc/bD8cznY7/Retro-Lamp.png' },
+            { id: 'a7', name: 'Kettle', price: 10, img: 'https://i.postimg.cc/w1CYGPC7/Kettle.png' },
+            { id: 'a8', name: 'Picnic Basket', price: 10, img: 'https://i.postimg.cc/mc7Wfj4Y/Picnic-Basket.png' },
+            { id: 'a9', name: 'Queen Mattress', price: 30, img: 'https://i.postimg.cc/Q9sGX7NJ/Queen-Pump-Mattress.png' },
+            { id: 'a10', name: 'Pull Switch Lamp', price: 5, img: 'https://i.postimg.cc/2qnNRGYd/Pull-Switch-Lamp.png' },
+            { id: 'a11', name: 'Stove Windshield', price: 5, img: 'https://i.postimg.cc/wyVK3B3C/Stove-Windshield.png' },
+            { id: 'a12', name: 'Foldable Box', price: 10, img: 'https://i.postimg.cc/CR3pQt3y/Foldable-Box.png' }
+        ];
+
+        let cart = [];
+        const openLightbox = (s) => { document.getElementById('lightbox-img').src = s; document.getElementById('lightbox').style.display = 'flex'; };
+
+        function switchTab(t) {
+            document.getElementById('tab-spots-content').classList.toggle('hidden', t !== 'spots');
+            document.getElementById('tab-gear-content').classList.toggle('hidden', t !== 'gear');
+            document.getElementById('btn-gear').className = t==='gear' ? 'px-8 py-2 rounded-xl text-xs font-bold bg-white shadow-sm text-emerald-800 brand-font' : 'px-8 py-2 rounded-xl text-xs font-bold text-slate-400 brand-font';
+            document.getElementById('btn-spots').className = t==='spots' ? 'px-8 py-2 rounded-xl text-xs font-bold bg-white shadow-sm text-emerald-800 brand-font' : 'px-8 py-2 rounded-xl text-xs font-bold text-slate-400 brand-font';
+            if(t==='gear') renderGear();
+        }
+
+        function renderGear() {
+            document.getElementById('package-list').innerHTML = gearPackages.map(p => `
+                <div class="item-card bg-white rounded-3xl overflow-hidden ${cart.some(i=>i.id===p.id)?'selected-card':''}">
+                    <img src="${p.img}" class="w-full h-56 object-cover" onclick="openLightbox('${p.img}')">
+                    <div class="p-8" onclick="toggleItem('${p.id}',${p.price},'${p.name}',true)">
+                        <div class="flex justify-between items-start mb-2"><h4 class="font-bold text-xl">${p.name}</h4><span class="font-bold text-emerald-600">RM ${p.price}</span></div>
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">${p.desc}</p>
+                        <div class="flex flex-wrap gap-1.5 mb-6">${p.inc.map(i => `<span class="bg-slate-50 text-[9px] px-2.5 py-1 rounded-md text-slate-500 border border-slate-100">${i}</span>`).join('')}</div>
+                        <div class="flex justify-end"><i class="fas ${cart.some(i=>i.id===p.id)?'fa-check-circle text-emerald-600 scale-125':'fa-plus-circle text-slate-100'} text-2xl transition-all"></i></div>
+                    </div>
+                </div>`).join('');
+
+            document.getElementById('addon-list').innerHTML = individualAddons.map(a => `
+                <div class="item-card bg-white rounded-2xl overflow-hidden ${cart.some(i=>i.id===a.id)?'selected-card':''}">
+                    <img src="${a.img}" class="w-full h-28 object-cover" onclick="openLightbox('${a.img}')">
+                    <div class="p-4 text-center" onclick="toggleItem('${a.id}',${a.price},'${a.name}',false)">
+                        <p class="text-[10px] font-bold text-slate-700 truncate">${a.name}</p>
+                        <p class="text-xs font-black text-emerald-600">RM ${a.price}</p>
+                    </div>
+                </div>`).join('');
+            updateSummary();
+        }
+
+        function toggleItem(id, price, name, isPkg) {
+            if(isPkg) cart = cart.filter(i => !gearPackages.some(p => p.id === i.id));
+            const idx = cart.findIndex(i => i.id === id);
+            if(idx > -1) cart.splice(idx, 1); else cart.push({id, price, name});
+            renderGear();
+        }
+
+        function updateSummary() {
+            const itemsDiv = document.getElementById('cart-items');
+            itemsDiv.innerHTML = cart.length === 0 ? `<p class="text-[10px] font-bold text-slate-300 uppercase py-10 text-center">Awaiting Selection</p>` : cart.map(i => `
+                <div class="flex justify-between items-center"><span class="text-xs font-medium text-slate-700">${i.name}</span><span class="text-xs font-bold text-slate-900">RM ${i.price}</span></div>`).join('');
+            document.getElementById('total-price').innerText = cart.reduce((s, i) => s + i.price, 0);
+        }
+
+        function sendWhatsApp() {
+            if(cart.length === 0) return alert("Select gear first!");
+            const message = `Greetings CDK! Inquiring about these item for rental and pickup:%0A%0A${cart.map(i=>`- ${i.name}`).join('%0A')}%0A%0ATotal: RM ${document.getElementById('total-price').innerText}/night`;
+            window.open(`https://wa.me/60147004163?text=${message}`);
+        }
+        renderGear();
+    </script>
+</body>
+</html>
