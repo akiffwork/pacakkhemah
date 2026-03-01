@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+:root {
+  --brand: #062c24;
+  --emerald: #10b981;
+  --font-inter: 'Inter', sans-serif;
+  --font-bricolage: 'Bricolage Grotesque', sans-serif;
+}
+
+body {
+  font-family: var(--font-inter);
+  background-color: #f8fafc;
+  color: #0f172a;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6, .brand-font {
+  font-family: var(--font-bricolage);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+/* Hide scrollbars globally where needed */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Flatpickr z-index fix — sits above modals */
+.flatpickr-calendar { z-index: 9999 !important; }
+
+/* Smooth scrolling */
+html { scroll-behavior: smooth; }
+
+/* Remove iOS input zoom — inputs stay at font-size 16px minimum */
+input, select, textarea {
+  font-size: max(16px, 1em);
+}
