@@ -435,14 +435,15 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                   <span className="text-xs font-black text-[#062c24] uppercase tracking-widest">{cat}</span>
                 </div>
                 <div className="bg-slate-50 p-4 grid grid-cols-2 gap-3">
-                  {items.map(item => {
+                  {items.map((item, idx) => {
                     const avail = getAvailableStock(item.id);
                     const blocked = avail <= 0;
                     const inCart = cart.find(i => i.id === item.id);
                     return (
                       <div key={item.id}
                         onClick={() => { if (!blocked) { setSelectedItem(item); setShowItemModal(true); } }}
-                        className={`relative bg-white p-3 rounded-2xl border transition-all ${blocked ? "opacity-50 grayscale cursor-not-allowed border-slate-100" : "cursor-pointer border-slate-100 hover:border-emerald-300 hover:shadow-md"}`}>
+                        className={`relative bg-white p-3 rounded-2xl border transition-all stagger-in ${blocked ? "opacity-50 grayscale cursor-not-allowed border-slate-100" : "cursor-pointer border-slate-100 hover:border-emerald-300 hover:shadow-md"}`}
+                        style={{ animationDelay: `${idx * 50}ms` }}>
                         <div className="aspect-square rounded-xl overflow-hidden bg-slate-100 mb-3 relative">
                           <img src={item.img || "/pacak-khemah.png"} className="w-full h-full object-cover" alt={item.name} />
                           {inCart && (
@@ -682,6 +683,14 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
           to { opacity: 1; transform: translate(-50%, 0); }
         }
         .animate-toastIn { animation: toastIn 0.3s ease-out; }
+        @keyframes staggerIn {
+          from { opacity: 0; transform: translateY(16px) scale(0.97); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .stagger-in {
+          opacity: 0;
+          animation: staggerIn 0.4s ease-out forwards;
+        }
       `}</style>
     </div>
   );

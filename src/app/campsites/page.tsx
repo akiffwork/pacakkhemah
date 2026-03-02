@@ -269,6 +269,7 @@ export default function CampsitesPage() {
           </div>
           <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tight mb-3">Find Your Spot</h1>
           <p className="text-sm font-medium text-emerald-200/80">Curated campsites & hidden gems across Malaysia</p>
+          <p className="text-[9px] font-medium text-white/40 mt-2">Community suggestions only — we do not operate or manage these sites</p>
 
           {/* Search */}
           <div className="mt-8 relative max-w-sm mx-auto">
@@ -337,8 +338,10 @@ export default function CampsitesPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filtered.map(site => (
-              <CampsiteCard key={site.id} site={site} onClick={() => setSelected(site)} />
+            {filtered.map((site, i) => (
+              <div key={site.id} className="stagger-in" style={{ animationDelay: `${i * 60}ms` }}>
+                <CampsiteCard site={site} onClick={() => setSelected(site)} />
+              </div>
             ))}
           </div>
         )}
@@ -348,7 +351,36 @@ export default function CampsitesPage() {
 
       {/* Detail Sheet */}
       {selected && <DetailSheet site={selected} onClose={() => setSelected(null)} />}
+
+      {/* Disclaimer */}
+      <footer className="max-w-2xl mx-auto px-6 pt-10 pb-6">
+        <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5 text-center">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <i className="fas fa-info-circle text-amber-500 text-sm"></i>
+            <span className="text-[10px] font-black text-amber-800 uppercase tracking-widest">Disclaimer</span>
+          </div>
+          <p className="text-[10px] text-amber-700/80 font-medium leading-relaxed">
+            All campsites listed here are community suggestions for informational purposes only.
+            Pacak Khemah does not own, operate, manage, or handle bookings for any of these locations.
+            Please verify details, conditions, and availability directly with the campsite operators before visiting.
+            Visit at your own risk.
+          </p>
+        </div>
+        <p className="text-[8px] text-slate-300 uppercase text-center mt-6">© 2026 Pacak Khemah. All rights reserved.</p>
+      </footer>
+
     <BottomNav />
+
+      <style jsx>{`
+        @keyframes staggerIn {
+          from { opacity: 0; transform: translateY(16px) scale(0.97); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .stagger-in {
+          opacity: 0;
+          animation: staggerIn 0.4s ease-out forwards;
+        }
+      `}</style>
     </div>
   );
 }

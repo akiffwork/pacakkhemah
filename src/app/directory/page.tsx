@@ -48,7 +48,7 @@ const announcementThemes = {
 };
 
 // --- VENDOR CARD ---
-function VendorCard({ vendor }: { vendor: Vendor }) {
+function VendorCard({ vendor, index }: { vendor: Vendor; index: number }) {
   const logo = vendor.logo || vendor.image || "https://via.placeholder.com/150";
   const city = vendor.city || "Malaysia";
   const pickups = vendor.pickup && vendor.pickup.length > 0
@@ -60,7 +60,8 @@ function VendorCard({ vendor }: { vendor: Vendor }) {
 
   return (
     <Link href={shopPath}
-      className="group bg-white p-5 rounded-[2rem] border border-slate-100 hover:border-emerald-300 shadow-sm hover:shadow-xl transition-all relative overflow-hidden flex flex-col h-full cursor-pointer">
+      className="group bg-white p-5 rounded-[2rem] border border-slate-100 hover:border-emerald-300 shadow-sm hover:shadow-xl transition-all relative overflow-hidden flex flex-col h-full cursor-pointer stagger-in"
+      style={{ animationDelay: `${index * 60}ms` }}>
       <div className="flex justify-between items-start mb-4">
         <div className="flex gap-1">
           {isNew && <span className="bg-blue-100 text-blue-600 text-[8px] font-black px-2 py-1 rounded-lg uppercase tracking-wider">New</span>}
@@ -175,20 +176,30 @@ export default function DirectoryPage() {
 
   const handleSearch = useCallback((term: string) => {
     setSearchTerm(term);
-    const t = term.toLowerCase();
-    setFilteredVendors(
-      t
-        ? allVendors.filter((v) =>
-            v.name.toLowerCase().includes(t) ||
-            (v.city && v.city.toLowerCase().includes(t)) ||
-            (v.areas && v.areas.some((a) => a.toLowerCase().includes(t))) ||
-            (v.tagline && v.tagline.toLowerCase().includes(t))
-          )
-        : allVendors
-    );
-    setVisibleCount(LOAD_STEP);
-    setActiveFilter("all");
-  }, [allVendors]);
+  }, []);
+
+  // Debounced filter — runs 150ms after user stops typing
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const t = searchTerm.toLowerCase();
+      setFilteredVendors(
+        t
+          ? allVendors.filter((v) =>
+              v.name.toLowerCase().includes(t) ||
+              (v.city && v.city.toLowerCase().includes(t)) ||
+              (v.areas && v.areas.some((a) => a.toLowerCase().includes(t))) ||
+              (v.tagline && v.tagline.toLowerCase().includes(t))
+            )
+          : allVendors
+      );
+      setVisibleCount(LOAD_STEP);
+      if (!searchTerm) return;
+      setActiveFilter("all");
+    }, 150);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [searchTerm, allVendors]);
 
   function filterBy(loc: string) {
     setActiveFilter(loc);
@@ -352,8 +363,8 @@ export default function DirectoryPage() {
               )}
             </div>
           ) : (
-            displayList.map((vendor) => (
-              <VendorCard key={vendor.id} vendor={vendor} />
+            displayList.map((vendor, i) => (
+              <VendorCard key={vendor.id} vendor={vendor} index={i} />
             ))
           )}
         </div>
@@ -441,6 +452,14 @@ export default function DirectoryPage() {
         @keyframes shimmer {
           0% { background-position: 200% 0; }
           100% { background-position: -200% 0; }
+        }
+        @keyframes staggerIn {
+          from { opacity: 0; transform: translateY(16px) scale(0.97); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .stagger-in {
+          opacity: 0;
+          animation: staggerIn 0.4s ease-out forwards;
         }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
