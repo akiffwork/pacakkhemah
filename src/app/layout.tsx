@@ -20,7 +20,8 @@ export const metadata: Metadata = {
   title: "Pacak Khemah",
   description: "Outdoor Gear Rental Platform",
   icons: {
-    icon: "/pacak-khemah.png", // your logo file in public/
+    icon: "/pacak-khemah.png",
+    apple: "/pacak-khemah.png",
   },
 };
 
