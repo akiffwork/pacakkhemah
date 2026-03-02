@@ -50,6 +50,7 @@ export default function CalendarPage() {
   const [blockReason, setBlockReason] = useState("");
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState<string | null>(null);
   const dateRangeRef = useRef<any>(null);
   const fpRef = useRef<any>(null);
 
@@ -135,7 +136,8 @@ export default function CalendarPage() {
     setQuantities({});
     setCustName(""); setCustPhone(""); setBlockReason("");
     await loadData(vendorId!);
-    alert("Saved!");
+    setToast("Schedule saved!");
+    setTimeout(() => setToast(null), 2500);
   }
 
   async function deleteEntry(id: string) {
@@ -397,12 +399,12 @@ export default function CalendarPage() {
                                 <p className="text-[8px] text-slate-400 uppercase">Total: {g.stock}</p>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
+                            <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1">
                               <button onClick={() => adjQty(g.id, -1)}
-                                className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-red-500 bg-white rounded shadow-sm">-</button>
+                                className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-red-500 bg-white rounded-lg shadow-sm font-black">−</button>
                               <span className="w-8 text-center text-xs font-bold text-slate-700">{quantities[g.id] || 0}</span>
                               <button onClick={() => adjQty(g.id, 1, g.stock)}
-                                className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-emerald-500 bg-white rounded shadow-sm">+</button>
+                                className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-emerald-500 bg-white rounded-lg shadow-sm font-black">+</button>
                             </div>
                           </div>
                         ))}
@@ -500,6 +502,22 @@ export default function CalendarPage() {
           </div>
         </div>
       )}
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[500] bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3"
+          style={{ animation: "toastIn 0.3s ease-out" }}>
+          <i className="fas fa-check-circle"></i>
+          <span className="text-[10px] font-black uppercase tracking-widest">{toast}</span>
+        </div>
+      )}
+
+      <style jsx>{`
+        @keyframes toastIn {
+          from { opacity: 0; transform: translate(-50%, -20px); }
+          to { opacity: 1; transform: translate(-50%, 0); }
+        }
+      `}</style>
     </div>
   );
 }

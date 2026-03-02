@@ -57,7 +57,13 @@ function LoginScreen() {
 
   return (
     <div className="fixed inset-0 bg-[#062c24] z-[200] flex items-center justify-center p-6">
-      <div className="bg-white p-10 rounded-[2.5rem] max-w-sm w-full text-center shadow-2xl">
+      <div className="bg-white p-10 rounded-[2.5rem] max-w-sm w-full text-center shadow-2xl relative">
+        {/* Back to directory */}
+        <Link href="/directory"
+          className="absolute top-5 left-6 w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:text-[#062c24] transition-colors">
+          <i className="fas fa-arrow-left text-sm"></i>
+        </Link>
+
         <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
           <i className="fas fa-store text-2xl"></i>
         </div>
@@ -101,10 +107,6 @@ function LoginScreen() {
 }
 
 // --- MAIN DASHBOARD SHELL ---
-// --- MAIN DASHBOARD SHELL ---
-// Replace your existing Dashboard function with this entire block.
-// Everything else in store/page.tsx stays the same.
-
 function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: VendorData; vendorId: string }) {
   const [activeTab, setActiveTab] = useState<Tab>("analytics");
 
@@ -121,6 +123,8 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
   ];
 
   const shopUrl = vendorData.slug ? `/shop/${vendorData.slug}` : `/shop?v=${vendorId}`;
+  const credits = vendorData.credits || 0;
+  const creditColor = credits > 10 ? "text-emerald-600 bg-emerald-50 border-emerald-100" : credits > 0 ? "text-amber-600 bg-amber-50 border-amber-100" : "text-red-600 bg-red-50 border-red-100";
 
   return (
     <div className="min-h-screen pb-32" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f8fafc", color: "#062c24" }}>
@@ -129,12 +133,25 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
       <header className="bg-white/90 backdrop-blur-xl border border-slate-100 shadow-sm sticky top-4 z-40 mx-4 mt-4 rounded-[2rem] p-4 space-y-3">
 
         {/* Top row — branding + actions */}
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-11 h-11 bg-[#062c24] text-white rounded-2xl flex items-center justify-center font-black text-lg shrink-0">V</div>
+            {vendorData.image ? (
+              <img src={vendorData.image} alt={vendorData.name} className="w-11 h-11 rounded-2xl object-cover shrink-0 border border-slate-100" />
+            ) : (
+              <div className="w-11 h-11 bg-[#062c24] text-white rounded-2xl flex items-center justify-center font-black text-lg shrink-0">
+                {vendorData.name?.charAt(0) || "V"}
+              </div>
+            )}
             <div className="min-w-0">
-              <h1 className="text-base font-black text-[#062c24] uppercase leading-none truncate">Command Center</h1>
-              <p className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest truncate mt-0.5">{vendorData.name}</p>
+              <h1 className="text-sm font-black text-[#062c24] uppercase leading-none truncate">{vendorData.name}</h1>
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`text-[9px] font-black px-2 py-0.5 rounded-md border ${creditColor}`}>
+                  <i className="fas fa-coins mr-1"></i>{credits} Credits
+                </span>
+                {vendorData.status === "pending" && (
+                  <span className="text-[9px] font-black px-2 py-0.5 rounded-md bg-amber-50 text-amber-600 border border-amber-100">Pending</span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -219,8 +236,11 @@ export default function StorePage() {
   }, []);
 
   if (loading) return (
-    <div className="fixed inset-0 bg-[#062c24] flex items-center justify-center">
-      <div className="text-white font-black uppercase text-sm animate-pulse">Loading...</div>
+    <div className="fixed inset-0 bg-[#062c24] flex flex-col items-center justify-center gap-4">
+      <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center">
+        <i className="fas fa-store text-emerald-400 text-2xl animate-pulse"></i>
+      </div>
+      <p className="text-white/60 font-black uppercase text-[10px] tracking-widest animate-pulse">Loading Vendor Studio...</p>
     </div>
   );
 
@@ -234,9 +254,14 @@ export default function StorePage() {
         </div>
         <h2 className="text-white text-2xl font-black uppercase mb-2">No Vendor Found</h2>
         <p className="text-white/60 text-sm mb-8">This account is not linked to any vendor profile.</p>
-        <Link href="/register-vendor" className="inline-block bg-white text-[#062c24] px-8 py-4 rounded-2xl font-black uppercase text-xs">
-          Register as Vendor
-        </Link>
+        <div className="flex flex-col gap-3 items-center">
+          <Link href="/register-vendor" className="inline-block bg-white text-[#062c24] px-8 py-4 rounded-2xl font-black uppercase text-xs">
+            Register as Vendor
+          </Link>
+          <Link href="/directory" className="text-[10px] font-bold text-white/40 hover:text-white/80 uppercase tracking-widest transition-colors">
+            ← Back to Directory
+          </Link>
+        </div>
       </div>
     </div>
   );
