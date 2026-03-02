@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { db } from "@/lib/firebase";
 import {
@@ -100,6 +100,22 @@ export default function DirectoryPage() {
   const [loadError, setLoadError] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [locating, setLocating] = useState(false);
+
+  // Hidden admin access — tap logo 5 times
+  const [logoTaps, setLogoTaps] = useState(0);
+  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleLogoTap() {
+    const next = logoTaps + 1;
+    setLogoTaps(next);
+    // Reset after 3s of inactivity
+    if (tapTimer.current) clearTimeout(tapTimer.current);
+    tapTimer.current = setTimeout(() => setLogoTaps(0), 3000);
+    if (next >= 5) {
+      setLogoTaps(0);
+      window.location.href = "/admin";
+    }
+  }
 
   // Load all data on mount
   useEffect(() => {
@@ -234,15 +250,12 @@ export default function DirectoryPage() {
       <header className="bg-[#062c24] text-white pt-8 pb-16 rounded-b-[2.5rem] relative overflow-hidden shadow-xl">
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
         <div className="relative z-20 px-6 flex justify-between items-center mb-10">
-          <div className="w-12 h-12 rounded-full overflow-hidden shadow-sm">
-            <img src="/pacak-khemah.png" className="w-full h-full object-contain" alt="Logo" />
+          <div className="w-12 h-12 rounded-full overflow-hidden shadow-sm cursor-pointer select-none" onClick={handleLogoTap}>
+            <img src="/pacak-khemah.png" className="w-full h-full object-contain" alt="Logo" draggable={false} />
           </div>
-          <div className="flex items-center gap-3">
-            <Link href="/store" className="text-[10px] font-bold uppercase tracking-widest text-emerald-100 hover:text-white transition-colors">Vendor Login</Link>
-            <button onClick={() => setShowModal(true)} className="px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white hover:text-[#062c24] transition-all flex items-center gap-2">
-              <i className="fas fa-plus-circle text-emerald-400"></i> List Gear
-            </button>
-          </div>
+          <button onClick={() => setShowModal(true)} className="px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white hover:text-[#062c24] transition-all flex items-center gap-2">
+            <i className="fas fa-plus-circle text-emerald-400"></i> List Your Gear
+          </button>
         </div>
         <div className="relative z-10 max-w-xl mx-auto px-6 text-center">
           <h1 className="text-4xl md:text-6xl tracking-tighter mb-4 leading-none text-white font-black uppercase">
@@ -388,8 +401,10 @@ export default function DirectoryPage() {
         <p className="text-[9px] font-bold text-slate-400 uppercase mb-6">Rent the Gear, Camp the Wild, Heal the Soul</p>
         <div className="flex justify-center gap-4 mb-8">
           <button onClick={() => setShowModal(true)} className="px-5 py-2 bg-[#062c24] text-white rounded-full text-[9px] font-black uppercase hover:bg-emerald-900 shadow-lg transition-all">Become a Vendor</button>
-          <Link href="/admin" className="px-5 py-2 bg-slate-50 text-slate-500 rounded-full text-[9px] font-black uppercase hover:bg-slate-100 transition-all border border-slate-200">Admin</Link>
         </div>
+        <p className="text-[9px] text-slate-400 font-medium mb-4">
+          Already a vendor? <Link href="/store" className="text-emerald-600 font-bold hover:underline">Log in here</Link>
+        </p>
         <p className="text-[8px] text-slate-300 uppercase">© 2026 Pacak Khemah. All rights reserved.</p>
       </footer>
 
@@ -397,25 +412,21 @@ export default function DirectoryPage() {
       {showModal && (
         <div className="fixed inset-0 bg-[#062c24]/90 backdrop-blur-md z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl relative text-center">
-            <button onClick={() => setShowModal(false)} className="absolute top-6 right-6 text-slate-300 hover:text-red-500">
-              <i className="fas fa-times text-xl"></i>
+            <button onClick={() => setShowModal(false)} className="absolute top-6 right-6 w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors">
+              <i className="fas fa-times text-lg"></i>
             </button>
             <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-6 text-emerald-600 text-2xl">
               <i className="fas fa-store"></i>
             </div>
-            <h3 className="text-2xl font-black text-[#062c24] uppercase mb-2">Start Earning</h3>
-            <p className="text-xs text-slate-500 mb-8 font-medium">Join Malaysia's fastest growing camping gear rental network.</p>
-            <div className="space-y-3">
-              <Link href="/tutorial" className="block w-full bg-slate-50 border border-slate-200 text-slate-600 py-4 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-50 hover:text-emerald-700 transition-all">
-                <i className="fas fa-book-open mr-2"></i> Read Tutorial
-              </Link>
-              <div className="relative flex items-center justify-center">
-                <span className="bg-white px-2 text-[9px] text-slate-300 uppercase font-bold">OR</span>
-              </div>
-              <Link href="/register-vendor" className="block w-full bg-[#062c24] text-white py-4 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-900 shadow-lg transition-all">
-                <i className="fas fa-rocket mr-2"></i> Register Now
-              </Link>
-            </div>
+            <h3 className="text-2xl font-black text-[#062c24] uppercase mb-2">Want to Rent Out Gear?</h3>
+            <p className="text-xs text-slate-500 mb-8 font-medium">Join Malaysia&apos;s fastest growing camping gear rental network. We&apos;ll walk you through how it works.</p>
+            <Link href="/register-vendor" className="block w-full bg-[#062c24] text-white py-4 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-900 shadow-lg transition-all">
+              <i className="fas fa-rocket mr-2"></i> Get Started as Vendor
+            </Link>
+            <p className="text-[9px] text-slate-400 font-medium mt-4">
+              Already a vendor?{" "}
+              <Link href="/store" className="text-emerald-600 font-bold hover:underline">Log In</Link>
+            </p>
           </div>
         </div>
       )}

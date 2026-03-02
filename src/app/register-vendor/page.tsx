@@ -9,6 +9,7 @@ import {
   createUserWithEmailAndPassword, sendEmailVerification, User,
 } from "firebase/auth";
 
+/* ── Password strength helper ── */
 function getPasswordStrength(pwd: string): { score: number; label: string; color: string } {
   if (!pwd) return { score: 0, label: "", color: "" };
   let score = 0;
@@ -23,7 +24,61 @@ function getPasswordStrength(pwd: string): { score: number; label: string; color
   return { score, label: "Strong", color: "bg-emerald-500" };
 }
 
+/* ── Onboarding / Tutorial steps (shown before registration) ── */
+const ONBOARDING_STEPS = [
+  {
+    icon: "fa-store",
+    iconBg: "bg-emerald-100 text-emerald-600",
+    title: "Welcome, Future Vendor!",
+    subtitle: "Here's how Pacak Khemah works for you",
+    bullets: [
+      "List your camping gear — tents, stoves, chairs, full packages",
+      "Customers find you via our directory and book through WhatsApp",
+      "You only pay per lead — no monthly fees, no hidden costs",
+    ],
+  },
+  {
+    icon: "fa-coins",
+    iconBg: "bg-amber-100 text-amber-600",
+    title: "Pay-Per-Lead Credits",
+    subtitle: "Only pay when customers contact you",
+    bullets: [
+      "You get free starter credits when you sign up",
+      "1 credit is used only when a customer clicks \"WhatsApp\" or \"Book Now\"",
+      "Same customer clicking multiple times in 24hrs = only 1 charge",
+      "Your shop stays active as long as your credit balance is above zero",
+    ],
+  },
+  {
+    icon: "fa-box-open",
+    iconBg: "bg-blue-100 text-blue-600",
+    title: "List & Manage Gear",
+    subtitle: "Full packages, single items, and themed setups",
+    bullets: [
+      "Create gear packages (e.g. \"Family Camp Set\") or list individual add-ons",
+      "Upload photos, set prices per night, and manage availability",
+      "Block dates on the calendar when gear is booked or under maintenance",
+      "Customers only see items that are available for their selected dates",
+    ],
+  },
+  {
+    icon: "fa-chart-line",
+    iconBg: "bg-purple-100 text-purple-600",
+    title: "Track & Grow",
+    subtitle: "Analytics to help you earn more",
+    bullets: [
+      "See how many views and clicks your shop gets",
+      "Monitor your click-through rate and optimize your listings",
+      "Fast replies win — respond under 5 minutes for 80% more bookings",
+    ],
+  },
+];
+
 export default function RegisterVendorPage() {
+  /* ── State ── */
+  const [step, setStep] = useState(0); // 0..3 = onboarding, 4 = registration form
+  const totalOnboarding = ONBOARDING_STEPS.length; // 4
+
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [email, setEmail] = useState("");
@@ -41,6 +96,7 @@ export default function RegisterVendorPage() {
     });
   }, []);
 
+  /* ── Firebase helpers ── */
   async function createVendorShell(user: User) {
     await setDoc(doc(db, "vendors", user.uid), {
       owner_uid: user.uid,
@@ -96,23 +152,100 @@ export default function RegisterVendorPage() {
   }
 
   const strength = getPasswordStrength(password);
+  const isOnboarding = step < totalOnboarding;
+  const currentOnboarding = isOnboarding ? ONBOARDING_STEPS[step] : null;
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-[#062c24]"
+    <div className="min-h-screen flex items-center justify-center p-4 bg-[#062c24]"
       style={{ fontFamily: "'Inter', sans-serif" }}>
 
-      <div className="max-w-md w-full bg-white rounded-[3rem] p-10 shadow-2xl relative overflow-hidden">
+      {/* ────────────────────────────────────────────── */}
+      {/* MAIN CARD                                      */}
+      {/* ────────────────────────────────────────────── */}
+      <div className="max-w-md w-full bg-white rounded-[3rem] p-8 sm:p-10 shadow-2xl relative overflow-hidden">
 
         {/* Top accent bar */}
         <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-emerald-400 to-teal-500" />
 
-        {/* Close button */}
-        <Link href="/directory" className="absolute top-6 right-8 text-slate-300 hover:text-red-500 transition-colors z-50">
-          <i className="fas fa-times text-xl"></i>
+        {/* ✕ Close — always visible, goes back to directory */}
+        <Link href="/directory"
+          className="absolute top-5 right-6 w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors z-50">
+          <i className="fas fa-times text-lg"></i>
         </Link>
 
-        {!success ? (
-          <>
+        {/* ── Progress dots ── */}
+        <div className="flex items-center gap-1.5 mb-6 mt-1">
+          {[...Array(totalOnboarding + 1)].map((_, i) => (
+            <div key={i}
+              className={`h-1.5 rounded-full transition-all duration-300 ${
+                i < step ? "bg-emerald-500 flex-[2]"
+                : i === step ? "bg-emerald-500 flex-[3]"
+                : "bg-slate-200 flex-[2]"
+              }`} />
+          ))}
+        </div>
+
+        {/* ════════════════════════════════════════════ */}
+        {/* ONBOARDING TUTORIAL STEPS (0-3)             */}
+        {/* ════════════════════════════════════════════ */}
+        {isOnboarding && currentOnboarding && (
+          <div key={step} className="animate-fadeIn">
+            {/* Icon */}
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl mb-5 ${currentOnboarding.iconBg}`}>
+              <i className={`fas ${currentOnboarding.icon}`}></i>
+            </div>
+
+            {/* Title */}
+            <h1 className="text-2xl font-black text-[#062c24] uppercase leading-tight mb-1">
+              {currentOnboarding.title}
+            </h1>
+            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-5">
+              {currentOnboarding.subtitle}
+            </p>
+
+            {/* Bullets */}
+            <ul className="space-y-3 mb-8">
+              {currentOnboarding.bullets.map((b, i) => (
+                <li key={i} className="flex gap-3 items-start">
+                  <span className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <i className="fas fa-check text-[10px]"></i>
+                  </span>
+                  <span className="text-sm text-slate-600 leading-relaxed">{b}</span>
+                </li>
+              ))}
+            </ul>
+
+            {/* Navigation */}
+            <div className="flex gap-3">
+              {step > 0 && (
+                <button onClick={() => setStep(step - 1)}
+                  className="px-6 py-4 rounded-2xl border border-slate-200 text-slate-500 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 transition-all">
+                  Back
+                </button>
+              )}
+              <button onClick={() => setStep(step + 1)}
+                className="flex-1 py-4 rounded-2xl bg-[#062c24] text-white font-black uppercase text-[10px] tracking-widest hover:bg-emerald-900 transition-all shadow-lg">
+                {step === totalOnboarding - 1 ? (
+                  <>Create Your Account <i className="fas fa-arrow-right ml-2"></i></>
+                ) : (
+                  <>Next <i className="fas fa-arrow-right ml-2"></i></>
+                )}
+              </button>
+            </div>
+
+            {/* Skip link */}
+            <button onClick={() => setStep(totalOnboarding)}
+              className="block mx-auto mt-4 text-[10px] font-bold text-slate-400 hover:text-emerald-600 transition-colors uppercase tracking-widest">
+              Skip to Registration →
+            </button>
+          </div>
+        )}
+
+        {/* ════════════════════════════════════════════ */}
+        {/* REGISTRATION FORM (step 4)                  */}
+        {/* ════════════════════════════════════════════ */}
+        {!isOnboarding && !success && (
+          <div className="animate-fadeIn">
             <div className="text-center mb-6">
               <h1 className="text-3xl font-black text-[#062c24] uppercase mb-2">Create Account</h1>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Start your rental business</p>
@@ -180,14 +313,25 @@ export default function RegisterVendorPage() {
                 {loading ? <i className="fas fa-spinner fa-spin"></i> : "Create Account"}
               </button>
 
-              <p className="text-center text-[10px] text-slate-400 font-medium mt-4">
+              {/* Back to tutorial */}
+              <button onClick={() => setStep(0)}
+                className="block mx-auto text-[10px] font-bold text-slate-400 hover:text-emerald-600 transition-colors uppercase tracking-widest mt-2">
+                <i className="fas fa-arrow-left mr-1"></i> Review Tutorial Again
+              </button>
+
+              <p className="text-center text-[10px] text-slate-400 font-medium mt-2">
                 Already have an account?{" "}
                 <Link href="/store" className="text-emerald-600 font-bold hover:underline">Log In</Link>
               </p>
             </div>
-          </>
-        ) : (
-          <div className="text-center space-y-6 py-6">
+          </div>
+        )}
+
+        {/* ════════════════════════════════════════════ */}
+        {/* SUCCESS — Email Verification                */}
+        {/* ════════════════════════════════════════════ */}
+        {success && (
+          <div className="text-center space-y-6 py-6 animate-fadeIn">
             <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto animate-bounce">
               <i className="fas fa-envelope text-3xl"></i>
             </div>
@@ -213,7 +357,9 @@ export default function RegisterVendorPage() {
         )}
       </div>
 
-      {/* Terms Modal */}
+      {/* ────────────────────────────────────────────── */}
+      {/* Terms Modal                                    */}
+      {/* ────────────────────────────────────────────── */}
       {showTerms && (
         <div className="fixed inset-0 bg-[#062c24]/95 backdrop-blur-md z-[100] flex items-center justify-center p-6">
           <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl relative flex flex-col max-h-[85vh]">
@@ -256,6 +402,17 @@ export default function RegisterVendorPage() {
           </div>
         </div>
       )}
+
+      {/* Fade-in animation */}
+      <style jsx>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.35s ease-out;
+        }
+      `}</style>
     </div>
   );
 }

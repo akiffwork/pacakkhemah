@@ -6,8 +6,6 @@ import { usePathname } from "next/navigation";
 const NAV_ITEMS = [
   { href: "/directory", label: "Explore", icon: "fa-compass" },
   { href: "/campsites", label: "Campsites", icon: "fa-campground" },
-  { href: "/tutorial", label: "Guide", icon: "fa-book-open" },
-  { href: "/store", label: "Vendor", icon: "fa-store" },
 ];
 
 export default function BottomNav() {

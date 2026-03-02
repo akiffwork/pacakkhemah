@@ -11,7 +11,6 @@ import {
 import { onAuthStateChanged } from "firebase/auth";
 import flatpickr from "flatpickr";
 import "flatpickr/dist/flatpickr.min.css";
-import BottomNav from "@/components/BottomNav";
 
 // --- TYPES ---
 type VendorData = {
@@ -72,6 +71,17 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
   const [blockState, setBlockState] = useState<null | "unapproved" | "vacation" | "nocredits">(null);
   const [ownerPreview, setOwnerPreview] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showShareToast, setShowShareToast] = useState(false);
+  const [addToast, setAddToast] = useState<string | null>(null);
+
+  // Auto-dismiss share toast
+  useEffect(() => {
+    if (showShareToast) {
+      const t = setTimeout(() => setShowShareToast(false), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [showShareToast]);
+
   const cpRef = useRef<any>(null);
   const opRef = useRef<any>(null);
 
@@ -183,6 +193,9 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       return [...prev, { ...item, qty: 1 }];
     });
     setShowItemModal(false);
+    // Show toast
+    setAddToast(item.name);
+    setTimeout(() => setAddToast(null), 2000);
   }
 
   function removeFromCart(id: string) {
@@ -305,7 +318,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
     : {};
 
   return (
-    <div className="pb-32" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f8fafc", color: "#0f172a" }}>
+    <div className="pb-8" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f8fafc", color: "#0f172a" }}>
 
       {/* Owner Preview Banner */}
       {ownerPreview && (
@@ -319,9 +332,10 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         <Link href="/directory" className="pointer-events-auto w-11 h-11 bg-white/20 backdrop-blur-md border border-white/10 rounded-xl flex items-center justify-center text-white hover:bg-white hover:text-[#062c24] transition-all shadow-xl">
           <i className="fas fa-arrow-left"></i>
         </Link>
-        <Link href="/store" className="pointer-events-auto px-4 py-2.5 bg-white/20 backdrop-blur-md border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-white hover:bg-white hover:text-[#062c24] transition-all shadow-xl flex items-center gap-2">
-          <i className="fas fa-store text-emerald-400"></i> Vendor Login
-        </Link>
+        <button onClick={() => { if (navigator.share) navigator.share({ title: vendorData?.name || "Shop", url: window.location.href }).catch(() => {}); else navigator.clipboard.writeText(window.location.href).then(() => setShowShareToast(true)); }}
+          className="pointer-events-auto w-11 h-11 bg-white/20 backdrop-blur-md border border-white/10 rounded-xl flex items-center justify-center text-white hover:bg-white hover:text-[#062c24] transition-all shadow-xl">
+          <i className="fas fa-share-alt"></i>
+        </button>
       </nav>
 
       {/* Hero */}
@@ -454,12 +468,12 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         </div>
       </main>
 
-      {/* ✅ PRIORITY #2 — iOS safe area floating cart bar */}
+      {/* Floating Cart Bar */}
       {cartCount > 0 && (
         <div
           className="fixed left-4 right-4 z-[200]"
           style={{
-            bottom: `calc(env(safe-area-inset-bottom, 0px) + 5.5rem)`,
+            bottom: `calc(env(safe-area-inset-bottom, 0px) + 1rem)`,
           }}
         >
           <button onClick={() => setShowCart(true)}
@@ -623,19 +637,52 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         </div>
       )}
 
-      {/* Footer */}
-      <footer className="max-w-4xl mx-auto px-6 py-12 border-t border-slate-100 text-left">
-        <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] mb-6">Terms of Service</h4>
-        <div className="flex flex-col gap-3 mb-10 text-[9px] font-bold text-slate-400 uppercase">{terms}</div>
-        <p className="text-[8px] font-bold text-slate-300 uppercase text-center mt-12">© 2026 Pacak Khemah. All Rights Reserved</p>
+      {/* Footer — Customer-friendly */}
+      <footer className="max-w-4xl mx-auto px-6 py-12 border-t border-slate-100">
+        <div className="flex flex-col items-center gap-6">
+          {/* Browse More */}
+          <Link href="/directory"
+            className="inline-flex items-center gap-3 bg-white border border-slate-200 px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-[#062c24] hover:border-emerald-300 hover:shadow-md transition-all group">
+            <i className="fas fa-compass text-emerald-500 group-hover:rotate-45 transition-transform"></i>
+            Browse More Vendors
+            <i className="fas fa-arrow-right text-slate-300 group-hover:text-emerald-500 transition-colors"></i>
+          </Link>
+
+          {/* Terms */}
+          <div className="w-full">
+            <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em] mb-6 text-center">Terms of Service</h4>
+            <div className="flex flex-col gap-3 mb-10 text-[9px] font-bold text-slate-400 uppercase">{terms}</div>
+          </div>
+
+          <p className="text-[8px] font-bold text-slate-300 uppercase text-center">© 2026 Pacak Khemah. All Rights Reserved</p>
+        </div>
       </footer>
+
+      {/* ── Toast: Share ── */}
+      {showShareToast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[500] bg-[#062c24] text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-toastIn">
+          <i className="fas fa-check-circle text-emerald-400"></i>
+          <span className="text-[10px] font-black uppercase tracking-widest">Link Copied!</span>
+        </div>
+      )}
+
+      {/* ── Toast: Added to Cart ── */}
+      {addToast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[500] bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-toastIn">
+          <i className="fas fa-cart-plus"></i>
+          <span className="text-[10px] font-black uppercase tracking-widest">{addToast} Added!</span>
+        </div>
+      )}
 
       <style>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        @keyframes toastIn {
+          from { opacity: 0; transform: translate(-50%, -20px); }
+          to { opacity: 1; transform: translate(-50%, 0); }
+        }
+        .animate-toastIn { animation: toastIn 0.3s ease-out; }
       `}</style>
-
-      <BottomNav />
     </div>
   );
 }
