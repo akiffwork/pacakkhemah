@@ -270,8 +270,11 @@ export default function DirectoryPage() {
       {/* ═══ HEADER WITH REAL ASSETS ═══ */}
       <header className="bg-[#062c24] text-white relative overflow-hidden">
         {/* Pattern */}
-        <div className="absolute inset-0 opacity-[0.08]"
-          style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/dark-wood.png')" }} />
+        {/* Chevron pattern */}
+        <div className="absolute inset-0 opacity-40"
+          style={{ backgroundImage: "url('/pattern-chevron.png')", backgroundSize: "300px" }} />
+        {/* Dark gradient tint — top to bottom */}
+        <div className="absolute inset-0 bg-gradient-to-b from-[#062c24] via-[#062c24]/50 to-[#062c24]/90" />
 
         {/* Main header row */}
         <div className="relative z-10 flex justify-between items-center px-4 py-4">

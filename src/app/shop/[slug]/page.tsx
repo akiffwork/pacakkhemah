@@ -153,7 +153,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
   }
 
   useEffect(() => {
-    if (!allGear.length) return;
+    if (!vendorData) return;
     const blocked = availRules.filter(r => r.type === "block").map(r => ({ from: r.start, to: r.end || r.start }));
     cpRef.current = flatpickr("#checkin-date", {
       minDate: "today", dateFormat: "Y-m-d", disable: blocked,
@@ -164,7 +164,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       onChange: ([d]) => setSelectedDates(prev => [prev[0], d]),
     });
     return () => { cpRef.current?.destroy(); opRef.current?.destroy(); };
-  }, [allGear, availRules]);
+  }, [vendorData, availRules]);
 
   const specialOffer = discounts.find(d => d.type === "nightly_discount" && d.is_public !== false);
 
@@ -278,8 +278,11 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       {/* Hero Header — centered profile layout */}
       <header className="bg-[#062c24] text-white relative overflow-hidden">
         {/* Pattern background */}
-        <div className="absolute inset-0 opacity-[0.08]"
-          style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/dark-wood.png')" }} />
+        {/* Chevron pattern */}
+        <div className="absolute inset-0 opacity-40"
+          style={{ backgroundImage: "url('/pattern-chevron.png')", backgroundSize: "300px" }} />
+        {/* Dark gradient tint */}
+        <div className="absolute inset-0 bg-gradient-to-b from-[#062c24] via-[#062c24]/50 to-[#062c24]/90" />
 
         {/* Nav row */}
         <div className="relative z-10 flex justify-between items-center px-4 pt-4">
