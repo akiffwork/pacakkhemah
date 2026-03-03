@@ -530,10 +530,10 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         {/* Tab Navigation */}
         <div className="flex bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm">
           {([
-            { id: "gear", label: "Gear", icon: "fa-campground" },
-            { id: "updates", label: "Updates", icon: "fa-bullhorn", badge: posts.length },
-            { id: "reviews", label: "Reviews", icon: "fa-fire", badge: reviewCount },
-          ] as const).map(tab => (
+            { id: "gear" as const, label: "Gear", icon: "fa-campground", badge: 0 },
+            { id: "updates" as const, label: "Updates", icon: "fa-bullhorn", badge: posts.length },
+            { id: "reviews" as const, label: "Reviews", icon: "fa-fire", badge: reviewCount },
+          ]).map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
