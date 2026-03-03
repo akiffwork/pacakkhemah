@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { db } from "@/lib/firebase";
 import {
@@ -29,55 +29,71 @@ const announcementThemes = {
   promo: { bg: "bg-emerald-600", icon: "fa-tag" },
 };
 
-// --- VENDOR CARD ---
-function VendorCard({ vendor, index }: { vendor: Vendor; index: number }) {
+// --- VENDOR CARD WITH GEAR THUMBNAILS ---
+function VendorCard({ vendor, gear, index }: { vendor: Vendor; gear: GearItem[]; index: number }) {
   const logo = vendor.logo || vendor.image || "/pacak-khemah.png";
   const city = vendor.city || "Malaysia";
-  const pickups = vendor.pickup?.length ? vendor.pickup.slice(0, 2).join(", ") + (vendor.pickup.length > 2 ? "..." : "") : city;
   const shopPath = vendor.slug ? `/shop/${vendor.slug}` : `/shop?v=${vendor.id}`;
   const isNew = vendor.createdAt && Date.now() - vendor.createdAt.toDate().getTime() < 30 * 24 * 60 * 60 * 1000;
+  const topGear = gear.slice(0, 3);
 
   return (
     <Link href={shopPath}
-      className="group bg-white p-5 rounded-2xl border border-slate-100 hover:border-emerald-300 shadow-sm hover:shadow-xl transition-all flex flex-col h-full cursor-pointer stagger-in"
+      className="group bg-white rounded-2xl border border-slate-100 hover:border-emerald-300 shadow-sm hover:shadow-xl transition-all flex flex-col h-full cursor-pointer stagger-in overflow-hidden"
       style={{ animationDelay: `${index * 60}ms` }}>
-      <div className="flex justify-between items-start mb-3">
-        <div className="flex gap-1">
-          {isNew && <span className="bg-blue-100 text-blue-600 text-[8px] font-black px-2 py-1 rounded-lg uppercase">New</span>}
-        </div>
-        <span className="bg-slate-50 text-slate-500 border border-slate-100 text-[8px] font-black px-2 py-1 rounded-lg uppercase flex items-center gap-1">
-          <i className="fas fa-map-marker-alt text-emerald-500"></i> {city}
-        </span>
-      </div>
-      <div className="w-full h-28 flex items-center justify-center mb-3 bg-slate-50/50 rounded-xl p-3 group-hover:bg-slate-50 transition-colors">
-        <img src={logo} className="w-full h-full object-contain drop-shadow-sm group-hover:scale-105 transition-transform duration-500" alt={vendor.name} />
-      </div>
-      <div className="text-center mt-auto">
-        <h3 className="text-base font-black uppercase text-[#062c24] leading-tight mb-1 group-hover:text-emerald-700 transition-colors">{vendor.name}</h3>
-        <p className="text-[10px] font-medium text-slate-400 italic line-clamp-1 mb-3">&ldquo;{vendor.tagline || "Ready for adventure"}&rdquo;</p>
-        <div className="flex items-center justify-center gap-2 text-[9px] font-bold text-slate-500 bg-slate-50 py-2 rounded-lg border border-slate-100 group-hover:border-emerald-100 transition-colors">
-          <i className="fas fa-box text-emerald-500"></i>
-          <span className="truncate max-w-[150px]">{pickups}</span>
-        </div>
-      </div>
-    </Link>
-  );
-}
 
-// --- FEATURED GEAR CARD ---
-function FeaturedGearCard({ item, vendorName, vendorSlug }: { item: GearItem; vendorName: string; vendorSlug: string }) {
-  const shopPath = vendorSlug ? `/shop/${vendorSlug}` : `/shop?v=${item.vendorId}`;
-  return (
-    <Link href={shopPath}
-      className="shrink-0 w-[280px] bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all group">
-      <div className="h-48 bg-slate-100 overflow-hidden">
-        <img src={item.img || "/pacak-khemah.png"} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={item.name} />
+      {/* Vendor info */}
+      <div className="p-4 pb-3">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-12 h-12 bg-slate-50 rounded-xl p-1 shrink-0 group-hover:bg-emerald-50 transition-colors">
+            <img src={logo} className="w-full h-full object-contain" alt={vendor.name} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-black uppercase text-[#062c24] leading-tight truncate group-hover:text-emerald-700 transition-colors">{vendor.name}</h3>
+              {isNew && <span className="bg-blue-100 text-blue-600 text-[7px] font-black px-1.5 py-0.5 rounded uppercase shrink-0">New</span>}
+            </div>
+            <p className="text-[9px] font-medium text-slate-400 italic truncate">{vendor.tagline || "Ready for adventure"}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400">
+          <i className="fas fa-map-marker-alt text-emerald-500 text-[8px]"></i>
+          <span>{city}</span>
+        </div>
       </div>
-      <div className="p-4">
-        <h4 className="text-xs font-black uppercase text-[#062c24] truncate mb-1">{item.name}</h4>
-        <div className="flex justify-between items-center">
-          <p className="text-sm font-black text-emerald-600">RM {item.price}</p>
-          <span className="text-[8px] font-bold text-slate-400 uppercase">{vendorName}</span>
+
+      {/* Gear thumbnails */}
+      {topGear.length > 0 && (
+        <div className="px-3 pb-3">
+          <div className="flex gap-2">
+            {topGear.map(item => (
+              <div key={item.id} className="flex-1 min-w-0">
+                <div className="aspect-square rounded-lg overflow-hidden bg-slate-100 mb-1.5">
+                  <img src={item.img || "/pacak-khemah.png"} className="w-full h-full object-cover" alt={item.name} />
+                </div>
+                <p className="text-[8px] font-black text-[#062c24] uppercase truncate leading-tight">{item.name}</p>
+                <p className="text-[8px] font-bold text-emerald-600">RM {item.price}</p>
+              </div>
+            ))}
+            {/* Fill empty slots if less than 3 */}
+            {topGear.length < 3 && [...Array(3 - topGear.length)].map((_, i) => (
+              <div key={`empty-${i}`} className="flex-1 min-w-0">
+                <div className="aspect-square rounded-lg bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center">
+                  <i className="fas fa-plus text-slate-200 text-xs"></i>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Bottom bar */}
+      <div className="mt-auto border-t border-slate-50 px-4 py-2.5 bg-slate-50/50 group-hover:bg-emerald-50/50 transition-colors">
+        <div className="flex items-center justify-between">
+          <span className="text-[9px] font-bold text-emerald-600 uppercase">View Shop →</span>
+          {gear.length > 3 && (
+            <span className="text-[8px] font-bold text-slate-400">+{gear.length - 3} more items</span>
+          )}
         </div>
       </div>
     </Link>
@@ -99,7 +115,7 @@ export default function DirectoryPage() {
   const [loadError, setLoadError] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [locating, setLocating] = useState(false);
-  const [featuredGear, setFeaturedGear] = useState<{ item: GearItem; vendorName: string; vendorSlug: string }[]>([]);
+  const [vendorGear, setVendorGear] = useState<Record<string, GearItem[]>>({});
   const [loadingGear, setLoadingGear] = useState(false);
 
   // Hidden admin access
@@ -161,24 +177,29 @@ export default function DirectoryPage() {
     } catch { }
   }
 
-  // Load featured gear for vendors matching a filter
-  async function loadFeaturedGear(vendorIds: string[], vendors: Vendor[]) {
-    if (!vendorIds.length) { setFeaturedGear([]); return; }
+  // Load gear for filtered vendors
+  async function loadGearForVendors(vendors: Vendor[]) {
+    const ids = vendors.map(v => v.id);
+    if (!ids.length) { setVendorGear({}); return; }
     setLoadingGear(true);
     try {
-      // Query gear from these vendors (Firestore 'in' limit: 30)
-      const batchIds = vendorIds.slice(0, 30);
+      const batchIds = ids.slice(0, 30);
       const gSnap = await getDocs(query(collection(db, "gear"), where("vendorId", "in", batchIds)));
-      const gear = gSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted && g.img);
-      // Pick up to 8 random items, prioritizing packages
-      const packages = gear.filter(g => g.type === "package" || g.category?.toLowerCase().includes("package"));
-      const others = gear.filter(g => !packages.includes(g));
-      const selected = [...packages.slice(0, 4), ...others.slice(0, 4)].slice(0, 8);
-      const mapped = selected.map(item => {
-        const v = vendors.find(vv => vv.id === item.vendorId);
-        return { item, vendorName: v?.name || "Vendor", vendorSlug: v?.slug || "" };
+      const gear = gSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted);
+      const grouped: Record<string, GearItem[]> = {};
+      gear.forEach(g => {
+        if (!grouped[g.vendorId]) grouped[g.vendorId] = [];
+        grouped[g.vendorId].push(g);
       });
-      setFeaturedGear(mapped);
+      // Sort: packages first, then by price
+      Object.keys(grouped).forEach(k => {
+        grouped[k].sort((a, b) => {
+          const aP = a.type === "package" ? 0 : 1;
+          const bP = b.type === "package" ? 0 : 1;
+          return aP - bP || b.price - a.price;
+        });
+      });
+      setVendorGear(grouped);
     } catch (e) { console.error(e); }
     finally { setLoadingGear(false); }
   }
@@ -205,8 +226,8 @@ export default function DirectoryPage() {
       : allVendors.filter(v => (v.city && v.city.includes(loc)) || (v.areas && v.areas.some(a => a.includes(loc))));
     setFilteredVendors(filtered);
     setVisibleCount(LOAD_STEP);
-    // Load featured gear for this location's vendors
-    loadFeaturedGear(filtered.map(v => v.id), filtered);
+    // Load gear for these vendors
+    loadGearForVendors(filtered);
   }
 
   async function locateMe() {
@@ -230,6 +251,7 @@ export default function DirectoryPage() {
 
   const displayList = filteredVendors.slice(0, visibleCount);
   const annTheme = announcement ? announcementThemes[announcement.type] || announcementThemes.info : null;
+  const hasGear = Object.keys(vendorGear).length > 0;
 
   return (
     <div className="pb-24" style={{ fontFamily: "'Inter', sans-serif", color: "#062c24", backgroundColor: "#f8fafc" }}>
@@ -245,39 +267,42 @@ export default function DirectoryPage() {
         </div>
       )}
 
-      {/* ═══ HEADER ═══ */}
+      {/* ═══ HEADER WITH REAL ASSETS ═══ */}
       <header className="bg-[#062c24] text-white relative overflow-hidden">
-        {/* Chevron pattern */}
+        {/* Pattern */}
         <div className="absolute inset-0 opacity-[0.08]"
           style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/dark-wood.png')" }} />
 
-        {/* Top bar — logo + vendor buttons */}
-        <div className="relative z-10 flex justify-between items-center px-5 pt-5 pb-3">
-          <div className="flex items-center gap-3 cursor-pointer select-none" onClick={handleLogoTap}>
-            <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center shadow-lg">
-              <img src="/pacak-khemah.png" className="w-7 h-7 object-contain" alt="Logo" draggable={false} />
-            </div>
+        {/* Main header row */}
+        <div className="relative z-10 flex justify-between items-center px-4 py-4">
+          {/* Logo + wordmark */}
+          <div className="flex items-center gap-2.5 cursor-pointer select-none" onClick={handleLogoTap}>
+            <img src="/pacak-khemah.png" className="h-11 w-11 object-contain rounded-full" alt="Pacak Khemah" draggable={false} />
             <div>
-              <h1 className="text-lg font-black tracking-tight leading-none">pacakkhemah</h1>
-              <p className="text-[8px] font-bold text-emerald-400 uppercase tracking-[0.2em]">Pacak. Rehat. Ulang.</p>
+              <h1 className="text-[22px] font-black tracking-tight leading-none" style={{ fontFamily: "'Inter', sans-serif" }}>pacakkhemah</h1>
+              <p className="text-[7px] font-bold text-emerald-400 uppercase tracking-[0.2em] mt-0.5">Pacak. Rehat. Ulang.</p>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-[10px] font-black text-white/80 leading-tight">rent, tend</p>
-            <p className="text-[10px] font-black text-white/80 leading-tight">wild, <span className="text-emerald-400">&</span></p>
-            <p className="text-[10px] font-black text-white/80 leading-tight">heal soul</p>
+          {/* Right — rent tend wild graphic as CSS text */}
+          <div className="text-right leading-[1.1]" style={{ fontFamily: "'Georgia', serif" }}>
+            <span className="text-[13px] font-bold italic text-white/90">rent,</span><br/>
+            <span className="text-[13px] font-bold italic text-white/90">tend </span>
+            <span className="text-[22px] font-black text-white not-italic" style={{ fontFamily: "'Inter', sans-serif" }}>&amp;</span><br/>
+            <span className="text-[13px] font-bold italic text-white/90">wild,</span><br/>
+            <span className="text-[13px] font-bold italic text-white/90">heal soul</span>
           </div>
         </div>
 
-        {/* Vendor buttons */}
-        <div className="relative z-10 flex justify-end items-center gap-2 px-5 pb-4">
+        {/* Subtle vendor links */}
+        <div className="relative z-10 flex justify-end items-center gap-3 px-5 pb-3">
           <Link href="/register-vendor"
-            className="px-4 py-2 bg-emerald-500 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-emerald-400 transition-all shadow-md">
+            className="text-[9px] font-bold text-emerald-300/70 uppercase tracking-widest hover:text-white transition-colors">
             Join as Vendor
           </Link>
           <Link href="/store"
-            className="px-4 py-2 bg-white/10 border border-white/20 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-white hover:text-[#062c24] transition-all">
-            Vendor Login
+            className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center text-white/60 hover:bg-white hover:text-[#062c24] transition-all"
+            title="Vendor Login">
+            <i className="fas fa-store text-xs"></i>
           </Link>
         </div>
       </header>
@@ -285,61 +310,31 @@ export default function DirectoryPage() {
       {/* ═══ MAIN CONTENT ═══ */}
       <main className="max-w-6xl mx-auto px-4 pt-6 space-y-6">
 
-        {/* Where to Pacak Today? — search */}
+        {/* Where to Pacak Today? */}
         <section>
-          <div className="flex items-end justify-between mb-3">
-            <h2 className="text-lg font-black text-[#062c24]">Where to Pacak Today?</h2>
-          </div>
-          <div className="relative">
-            <i className="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-300"></i>
-            <input type="text" value={searchTerm} onChange={e => handleSearchInput(e.target.value)}
-              placeholder="Search location or gear..."
-              className="w-full bg-white text-[#062c24] py-4 pl-12 pr-24 rounded-xl shadow-sm border border-slate-200 outline-none font-bold text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500 transition-all" />
-            <button onClick={locateMe}
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center bg-slate-100 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all">
-              <i className={`fas ${locating ? "fa-spinner fa-spin text-emerald-500" : "fa-location-crosshairs"}`}></i>
-            </button>
-          </div>
-          {/* Location filter pills */}
-          {!loading && locations.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto mt-3 pb-1 no-scrollbar">
-              <button onClick={() => filterBy("all")}
-                className={`shrink-0 px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all min-h-[36px] ${activeFilter === "all" ? "bg-[#062c24] text-white shadow-md" : "bg-white text-slate-500 border border-slate-200 hover:bg-emerald-50"}`}>
-                All
-              </button>
+          <h2 className="text-lg font-black text-[#062c24] mb-3">Where to Pacak Today?</h2>
+
+          {/* Location dropdown */}
+          <div className="relative mb-2">
+            <i className="fas fa-map-marker-alt absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500 text-sm"></i>
+            <select
+              value={activeFilter}
+              onChange={e => filterBy(e.target.value)}
+              className="w-full bg-white text-[#062c24] py-4 pl-11 pr-10 rounded-xl shadow-sm border border-slate-200 outline-none font-bold text-sm appearance-none cursor-pointer focus:ring-2 focus:ring-emerald-500 transition-all">
+              <option value="all">All Locations</option>
               {locations.map(loc => (
-                <button key={loc} onClick={() => filterBy(loc)}
-                  className={`shrink-0 px-4 py-2 rounded-lg text-[10px] font-black uppercase whitespace-nowrap transition-all min-h-[36px] ${activeFilter === loc ? "bg-[#062c24] text-white shadow-md" : "bg-white text-slate-500 border border-slate-200 hover:bg-emerald-50"}`}>
-                  {loc}
-                </button>
+                <option key={loc} value={loc}>{loc}</option>
               ))}
-            </div>
-          )}
-          <Link href="/campsites" className="inline-flex items-center gap-2 mt-3 text-[10px] font-bold text-emerald-600 hover:text-emerald-800 transition-colors">
+            </select>
+            <i className="fas fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+          </div>
+
+          <Link href="/campsites" className="inline-flex items-center gap-2 text-[10px] font-bold text-emerald-600 hover:text-emerald-800 transition-colors">
             <i className="fas fa-campground"></i> See suggestions?
           </Link>
         </section>
 
-        {/* Featured Gear Carousel — appears after selecting a location */}
-        {featuredGear.length > 0 && (
-          <section>
-            <h2 className="text-lg font-black text-[#062c24] mb-3">Featured Gear</h2>
-            <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
-              {featuredGear.map(({ item, vendorName, vendorSlug }) => (
-                <FeaturedGearCard key={item.id} item={item} vendorName={vendorName} vendorSlug={vendorSlug} />
-              ))}
-            </div>
-          </section>
-        )}
-        {loadingGear && (
-          <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
-            {[1,2,3].map(i => (
-              <div key={i} className="shrink-0 w-[280px] h-64 bg-white rounded-2xl border border-slate-100 skeleton"></div>
-            ))}
-          </div>
-        )}
-
-        {/* What to Pacak today? — vendor grid */}
+        {/* What to Pacak today? — vendors with gear */}
         <section>
           <div className="flex justify-between items-end mb-3">
             <h2 className="text-lg font-black text-[#062c24]">What to Pacak today?</h2>
@@ -348,14 +343,19 @@ export default function DirectoryPage() {
             </span>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {loading ? (
-              [...Array(6)].map((_, i) => (
+              [...Array(4)].map((_, i) => (
                 <div key={i} className="bg-white rounded-2xl border border-slate-100 p-4 skeleton" style={{ animationDelay: `${i * 100}ms` }}>
-                  <div className="h-5 w-12 bg-slate-200 rounded-lg mb-3"></div>
-                  <div className="w-full h-24 bg-slate-100 rounded-xl mb-3"></div>
-                  <div className="h-4 w-3/4 bg-slate-200 rounded-full mx-auto mb-2"></div>
-                  <div className="h-3 w-1/2 bg-slate-100 rounded-full mx-auto"></div>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-12 h-12 bg-slate-200 rounded-xl"></div>
+                    <div className="flex-1"><div className="h-4 bg-slate-200 rounded-full w-2/3 mb-2"></div><div className="h-3 bg-slate-100 rounded-full w-1/2"></div></div>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="flex-1 aspect-square bg-slate-100 rounded-lg"></div>
+                    <div className="flex-1 aspect-square bg-slate-100 rounded-lg"></div>
+                    <div className="flex-1 aspect-square bg-slate-100 rounded-lg"></div>
+                  </div>
                 </div>
               ))
             ) : loadError ? (
@@ -376,12 +376,12 @@ export default function DirectoryPage() {
                 {(searchTerm || activeFilter !== "all") && (
                   <button onClick={() => { setSearchTerm(""); filterBy("all"); }}
                     className="mt-3 px-5 py-2 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase hover:bg-slate-200">
-                    <i className="fas fa-times mr-2"></i> Clear Filters
+                    <i className="fas fa-times mr-2"></i> Clear
                   </button>
                 )}
               </div>
             ) : displayList.map((vendor, i) => (
-              <VendorCard key={vendor.id} vendor={vendor} index={i} />
+              <VendorCard key={vendor.id} vendor={vendor} gear={vendorGear[vendor.id] || []} index={i} />
             ))}
           </div>
 
