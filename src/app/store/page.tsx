@@ -16,6 +16,7 @@ import StorefrontTab from "@/components/StorefrontTab";
 import SettingsTab from "@/components/SettingsTab";
 import OrdersTab from "@/components/OrdersTab";
 import UpdatesTab from "@/components/UpdatesTab";
+import ReferralsTab from "@/components/ReferralsTab";
 
 type VendorData = {
   name: string;
@@ -33,9 +34,10 @@ type VendorData = {
   rules?: string[];
   rating?: number;
   reviewCount?: number;
+  myReferralCode?: string;
 };
 
-type Tab = "analytics" | "orders" | "updates" | "documents" | "inventory" | "storefront" | "settings";
+type Tab = "analytics" | "orders" | "updates" | "documents" | "inventory" | "storefront" | "referrals" | "settings";
 
 // --- LOGIN SCREEN ---
 function LoginScreen() {
@@ -142,6 +144,7 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
     { id: "documents", label: "Documents", icon: "fa-file-contract" },
     { id: "inventory", label: "Inventory", icon: "fa-boxes" },
     { id: "storefront", label: "Storefront", icon: "fa-store" },
+    { id: "referrals", label: "Referrals", icon: "fa-gift" },
     { id: "settings", label: "Settings", icon: "fa-cog" },
   ];
 
@@ -226,6 +229,7 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
         {activeTab === "documents" && <DocumentsTab vendorId={vendorId} vendorData={vendorData} />}
         {activeTab === "inventory" && <InventoryTab vendorId={vendorId} />}
         {activeTab === "storefront" && <StorefrontTab vendorId={vendorId} vendorData={vendorData} />}
+        {activeTab === "referrals" && <ReferralsTab vendorId={vendorId} vendorName={vendorData.name} />}
         {activeTab === "settings" && <SettingsTab vendorId={vendorId} vendorData={vendorData} />}
       </div>
     </div>
