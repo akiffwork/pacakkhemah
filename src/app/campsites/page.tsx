@@ -30,7 +30,7 @@ const CATEGORIES = [
 
 function SkeletonCard() {
   return (
-    <div className="rounded-[2rem] overflow-hidden bg-white border border-slate-100 shadow-sm animate-pulse">
+    <div className="rounded-[2rem] overflow-hidden bg-white border border-slate-100 shadow-sm skeleton">
       <div className="h-64 bg-slate-200" />
       <div className="p-5 space-y-3">
         <div className="h-5 bg-slate-200 rounded-full w-3/4" />
@@ -260,11 +260,25 @@ export default function CampsitesPage() {
     <div className="pb-28 min-h-screen" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f8fafc" }}>
 
       {/* Hero */}
-      <header className="relative bg-[#062c24] text-white overflow-hidden rounded-b-[3rem] shadow-2xl mb-0">
-        <div className="absolute inset-0 opacity-10"
-          style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/cubes.png')" }} />
+      <header className="relative text-white overflow-hidden rounded-b-[3rem] shadow-2xl mb-0"
+        style={{ background: "linear-gradient(135deg, #1a3c34 0%, #0f4c3a 40%, #1b6b4f 100%)" }}>
+        {/* Nature-inspired dot pattern instead of cubes */}
+        <div className="absolute inset-0 opacity-[0.07]"
+          style={{ backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "20px 20px" }} />
+        {/* Decorative glow */}
+        <div className="absolute -top-20 -right-20 w-64 h-64 bg-emerald-400/10 rounded-full blur-3xl" />
+        <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-teal-300/10 rounded-full blur-3xl" />
+
         <div className="relative z-10 max-w-2xl mx-auto px-6 pt-14 pb-20 text-center">
-          <div className="inline-flex items-center gap-2 bg-white/10 border border-white/10 px-4 py-1.5 rounded-full text-emerald-300 text-[10px] font-black uppercase tracking-widest mb-4">
+          {/* Back to directory */}
+          <div className="flex justify-start mb-6">
+            <Link href="/directory"
+              className="w-10 h-10 bg-white/10 backdrop-blur-md border border-white/10 rounded-xl flex items-center justify-center text-white/70 hover:bg-white hover:text-[#062c24] transition-all">
+              <i className="fas fa-arrow-left text-sm"></i>
+            </Link>
+          </div>
+
+          <div className="inline-flex items-center gap-2 bg-amber-500/20 border border-amber-400/20 px-4 py-1.5 rounded-full text-amber-200 text-[10px] font-black uppercase tracking-widest mb-4">
             <i className="fas fa-campground"></i> Campsite Directory
           </div>
           <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tight mb-3">Find Your Spot</h1>
@@ -379,6 +393,15 @@ export default function CampsitesPage() {
         .stagger-in {
           opacity: 0;
           animation: staggerIn 0.4s ease-out forwards;
+        }
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        .skeleton {
+          background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+          background-size: 200% 100%;
+          animation: shimmer 1.5s infinite;
         }
       `}</style>
     </div>

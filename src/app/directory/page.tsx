@@ -329,7 +329,19 @@ export default function DirectoryPage() {
           {loading ? (
             <>
               {[...Array(6)].map((_, i) => (
-                <div key={i} className="bg-white rounded-[2rem] border border-slate-100 h-64 skeleton"></div>
+                <div key={i} className="bg-white rounded-[2rem] border border-slate-100 p-5 skeleton" style={{ animationDelay: `${i * 100}ms` }}>
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="h-5 w-12 bg-slate-200 rounded-lg"></div>
+                    <div className="h-5 w-20 bg-slate-100 rounded-lg"></div>
+                  </div>
+                  <div className="w-full h-32 bg-slate-100 rounded-2xl mb-4"></div>
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="h-5 w-3/4 bg-slate-200 rounded-full"></div>
+                    <div className="h-3 w-1/2 bg-slate-100 rounded-full"></div>
+                    <div className="w-12 h-0.5 bg-slate-100 rounded-full my-1"></div>
+                    <div className="h-8 w-full bg-slate-50 rounded-xl"></div>
+                  </div>
+                </div>
               ))}
             </>
           ) : loadError ? (
