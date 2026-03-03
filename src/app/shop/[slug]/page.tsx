@@ -227,36 +227,47 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
   }
 
   async function sendWhatsAppOrder() {
-    let discText = "";
-    if (showAuto) discText += "(Extended Stay Discount Applied) ";
-    if (showPromo) discText += "(Promo Code Applied)";
-    const pickupDate = (cpRef.current as any)?._input?.value;
-    const returnDate = (opRef.current as any)?._input?.value;
-    const msg = `Hi ${vendorData?.name}, Booking Request:%0A%0A${cart.map(i => `• ${i.name} (x${i.qty})`).join("%0A")}%0A%0ADates: ${pickupDate} to ${returnDate}%0APickup: ${selectedHub}%0A${discText}%0ATotal: RM ${total}`;
-    const storageKey = `click_${vendorId}`;
-    const lastClick = localStorage.getItem(storageKey);
-    if (!lastClick || Date.now() - Number(lastClick) > 86400000) {
-      try {
-        await runTransaction(db, async (t) => {
-          const vRef = doc(db, "vendors", vendorId!);
-          const vDoc = await t.get(vRef);
-          const c = vDoc.data()?.credits || 0;
-          if (c > 0) {
-            t.update(vRef, { credits: c - 1 });
-            t.set(doc(collection(db, "analytics")), {
-              vendorId, vendorName: vendorData?.name, totalAmount: total,
-              timestamp: serverTimestamp(), type: "whatsapp_lead",
-              pickupLocation: selectedHub,
-              bookingDates: { start: pickupDate, end: returnDate },
-              cartItems: cart.map(i => ({ id: i.id, name: i.name, qty: i.qty, price: i.price })),
-            });
-          }
-        });
-        localStorage.setItem(storageKey, String(Date.now()));
-      } catch (e) { console.error(e); }
-    }
-    window.open(`https://wa.me/${vendorData?.phone}?text=${msg}`, "_blank");
+  const pickupDate = (cpRef.current as any)?._input?.value;
+  const returnDate = (opRef.current as any)?._input?.value;
+  
+  // Build cart items with prices
+  const cartLines = cart.map(i => `• ${i.name} (x${i.qty}) - RM${i.price * i.qty}`).join("%0A");
+  
+  // Build discount text
+  let discountLines = "";
+  if (showAuto) discountLines += `%0AExtended Stay Discount: -RM${Math.round(autoDisc)}`;
+  if (showPromo && appliedPromo) discountLines += `%0APromo Code (${appliedPromo.code}): -RM${Math.round(promoDisc)}`;
+  
+  const msg = `Hi ${vendorData?.name}, Booking Request:%0A` +
+    `%0A📦 *ITEMS*%0A${cartLines}` +
+    `%0A%0A📅 *DATES*%0APick-up: ${pickupDate}%0AReturn: ${returnDate}%0ADuration: ${nights} night${nights > 1 ? "s" : ""}` +
+    `%0A%0A📍 *PICKUP POINT*%0A${selectedHub}` +
+    `%0A%0A💰 *PRICING*%0ASubtotal: RM${sub}${discountLines}%0ASecurity Deposit: RM${Math.round(dep)}%0A%0A*TOTAL: RM${total}*`;
+
+  const storageKey = `click_${vendorId}`;
+  const lastClick = localStorage.getItem(storageKey);
+  if (!lastClick || Date.now() - Number(lastClick) > 86400000) {
+    try {
+      await runTransaction(db, async (t) => {
+        const vRef = doc(db, "vendors", vendorId!);
+        const vDoc = await t.get(vRef);
+        const c = vDoc.data()?.credits || 0;
+        if (c > 0) {
+          t.update(vRef, { credits: c - 1 });
+          t.set(doc(collection(db, "analytics")), {
+            vendorId, vendorName: vendorData?.name, totalAmount: total,
+            timestamp: serverTimestamp(), type: "whatsapp_lead",
+            pickupLocation: selectedHub,
+            bookingDates: { start: pickupDate, end: returnDate },
+            cartItems: cart.map(i => ({ id: i.id, name: i.name, qty: i.qty, price: i.price })),
+          });
+        }
+      });
+      localStorage.setItem(storageKey, String(Date.now()));
+    } catch (e) { console.error(e); }
   }
+  window.open(`https://wa.me/${vendorData?.phone}?text=${msg}`, "_blank");
+}
 
   const categories = Array.from(new Set(allGear.map(g => g.category || (g.type === "package" ? "Packages" : "Add-ons")))).sort();
   // Auto-select first category if none selected
