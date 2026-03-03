@@ -117,6 +117,10 @@ export default function DirectoryPage() {
   const [locating, setLocating] = useState(false);
   const [vendorGear, setVendorGear] = useState<Record<string, GearItem[]>>({});
   const [loadingGear, setLoadingGear] = useState(false);
+  const [locationSearch, setLocationSearch] = useState("");
+  const [showLocDropdown, setShowLocDropdown] = useState(false);
+  const [customLocation, setCustomLocation] = useState("");
+  const [socialLinks, setSocialLinks] = useState<{ instagram?: string; threads?: string; whatsapp?: string }>({}); // typed location that has no vendors
 
   // Hidden admin access
   const [logoTaps, setLogoTaps] = useState(0);
@@ -137,7 +141,17 @@ export default function DirectoryPage() {
     debounceRef.current = setTimeout(() => applySearch(val), 150);
   }
 
-  useEffect(() => { loadVendors(); loadEvents(); loadAnnouncement(); }, []);
+  useEffect(() => { loadVendors(); loadEvents(); loadAnnouncement(); loadSocialLinks(); }, []);
+
+  // Close location dropdown when clicking outside
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-loc-dropdown]')) setShowLocDropdown(false);
+    }
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
 
   async function loadVendors() {
     try {
@@ -174,6 +188,13 @@ export default function DirectoryPage() {
         const data = snap.data() as Announcement;
         if (data.isActive && data.message) setAnnouncement(data);
       }
+    } catch { }
+  }
+
+  async function loadSocialLinks() {
+    try {
+      const snap = await getDoc(doc(db, "settings", "social_links"));
+      if (snap.exists()) setSocialLinks(snap.data());
     } catch { }
   }
 
@@ -311,19 +332,62 @@ export default function DirectoryPage() {
         <section>
           <h2 className="text-lg font-black text-[#062c24] mb-3">Where to Pacak Today?</h2>
 
-          {/* Location dropdown */}
-          <div className="relative mb-2">
-            <i className="fas fa-map-marker-alt absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500 text-sm"></i>
-            <select
-              value={activeFilter}
-              onChange={e => filterBy(e.target.value)}
-              className="w-full bg-white text-[#062c24] py-4 pl-11 pr-10 rounded-xl shadow-sm border border-slate-200 outline-none font-bold text-sm appearance-none cursor-pointer focus:ring-2 focus:ring-emerald-500 transition-all">
-              <option value="all">All Locations</option>
-              {locations.map(loc => (
-                <option key={loc} value={loc}>{loc}</option>
-              ))}
-            </select>
-            <i className="fas fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+          {/* Searchable location input */}
+          <div className="relative mb-2" data-loc-dropdown>
+            <i className="fas fa-map-marker-alt absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500 text-sm z-10"></i>
+            <input
+              type="text"
+              value={locationSearch}
+              onChange={e => {
+                setLocationSearch(e.target.value);
+                setShowLocDropdown(true);
+                setCustomLocation("");
+              }}
+              onFocus={() => setShowLocDropdown(true)}
+              placeholder="Search or pick a location..."
+              className="w-full bg-white text-[#062c24] py-4 pl-11 pr-20 rounded-xl shadow-sm border border-slate-200 outline-none font-bold text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500 transition-all"
+            />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              {locationSearch && (
+                <button onClick={() => { setLocationSearch(""); setCustomLocation(""); filterBy("all"); setShowLocDropdown(false); }}
+                  className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-red-500 transition-colors">
+                  <i className="fas fa-times text-xs"></i>
+                </button>
+              )}
+              <button onClick={() => setShowLocDropdown(!showLocDropdown)}
+                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-emerald-600 transition-colors">
+                <i className={`fas fa-chevron-down text-xs transition-transform ${showLocDropdown ? "rotate-180" : ""}`}></i>
+              </button>
+            </div>
+
+            {/* Dropdown */}
+            {showLocDropdown && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-56 overflow-y-auto">
+                <button onClick={() => { filterBy("all"); setLocationSearch(""); setCustomLocation(""); setShowLocDropdown(false); }}
+                  className={`w-full text-left px-4 py-3 text-sm font-bold hover:bg-emerald-50 transition-colors ${activeFilter === "all" ? "text-emerald-600 bg-emerald-50/50" : "text-slate-600"}`}>
+                  <i className="fas fa-globe text-emerald-500 mr-2 text-xs"></i> All Locations
+                </button>
+                {locations
+                  .filter(loc => !locationSearch || loc.toLowerCase().includes(locationSearch.toLowerCase()))
+                  .map(loc => (
+                    <button key={loc} onClick={() => { filterBy(loc); setLocationSearch(loc); setCustomLocation(""); setShowLocDropdown(false); }}
+                      className={`w-full text-left px-4 py-3 text-sm font-bold hover:bg-emerald-50 transition-colors ${activeFilter === loc ? "text-emerald-600 bg-emerald-50/50" : "text-slate-600"}`}>
+                      <i className="fas fa-map-marker-alt text-emerald-500 mr-2 text-xs"></i> {loc}
+                    </button>
+                  ))
+                }
+                {locationSearch && !locations.some(l => l.toLowerCase().includes(locationSearch.toLowerCase())) && (
+                  <button onClick={() => {
+                    setCustomLocation(locationSearch);
+                    setFilteredVendors([]);
+                    setShowLocDropdown(false);
+                  }}
+                    className="w-full text-left px-4 py-3 text-sm font-bold text-slate-400 hover:bg-slate-50">
+                    <i className="fas fa-search text-slate-300 mr-2 text-xs"></i> Search &ldquo;{locationSearch}&rdquo;
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <Link href="/campsites" className="inline-flex items-center gap-2 text-[10px] font-bold text-emerald-600 hover:text-emerald-800 transition-colors">
@@ -366,15 +430,36 @@ export default function DirectoryPage() {
               </div>
             ) : displayList.length === 0 ? (
               <div className="col-span-full text-center py-16">
-                <i className={`fas ${searchTerm ? "fa-search" : "fa-store"} text-4xl text-slate-200 mb-4 block`}></i>
-                <p className="text-xs font-black text-slate-400 uppercase mb-2">
-                  {searchTerm ? `No results for "${searchTerm}"` : activeFilter !== "all" ? `No hubs in ${activeFilter} yet` : "No active hubs yet"}
-                </p>
-                {(searchTerm || activeFilter !== "all") && (
-                  <button onClick={() => { setSearchTerm(""); filterBy("all"); }}
-                    className="mt-3 px-5 py-2 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase hover:bg-slate-200">
-                    <i className="fas fa-times mr-2"></i> Clear
-                  </button>
+                {customLocation ? (
+                  <>
+                    <div className="text-5xl mb-4">🏕️</div>
+                    <p className="text-sm font-black text-[#062c24] mb-2">Hmm, no vendors in {customLocation} yet!</p>
+                    <p className="text-xs text-slate-500 font-medium max-w-xs mx-auto mb-4 leading-relaxed">
+                      We&apos;re on the lookout for awesome gear rental vendors in this area. Hopefully someone answers our smoke signal soon! 🔥
+                    </p>
+                    <div className="flex flex-col items-center gap-2">
+                      <button onClick={() => { setLocationSearch(""); setCustomLocation(""); filterBy("all"); }}
+                        className="px-5 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors">
+                        <i className="fas fa-globe mr-2"></i> Browse All Locations
+                      </button>
+                      <Link href="/register-vendor" className="text-[10px] font-bold text-emerald-600 hover:underline">
+                        Know a vendor here? Tell them to join us!
+                      </Link>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <i className={`fas ${searchTerm ? "fa-search" : "fa-store"} text-4xl text-slate-200 mb-4 block`}></i>
+                    <p className="text-xs font-black text-slate-400 uppercase mb-2">
+                      {searchTerm ? `No results for "${searchTerm}"` : activeFilter !== "all" ? `No hubs in ${activeFilter} yet` : "No active hubs yet"}
+                    </p>
+                    {(searchTerm || activeFilter !== "all") && (
+                      <button onClick={() => { setSearchTerm(""); setLocationSearch(""); setCustomLocation(""); filterBy("all"); }}
+                        className="mt-3 px-5 py-2 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase hover:bg-slate-200">
+                        <i className="fas fa-times mr-2"></i> Clear
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             ) : displayList.map((vendor, i) => (
@@ -425,6 +510,17 @@ export default function DirectoryPage() {
         <p className="text-[9px] text-slate-400 font-medium mb-2">
           Already a vendor? <Link href="/store" className="text-emerald-600 font-bold hover:underline">Log in here</Link>
         </p>
+        <div className="flex justify-center gap-4 mb-4">
+          {socialLinks.instagram && (
+            <a href={socialLinks.instagram} target="_blank" rel="noreferrer" className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 hover:text-pink-500 hover:bg-pink-50 transition-colors"><i className="fab fa-instagram text-sm"></i></a>
+          )}
+          {socialLinks.threads && (
+            <a href={socialLinks.threads} target="_blank" rel="noreferrer" className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 hover:text-black hover:bg-slate-200 transition-colors"><i className="fab fa-threads text-sm"></i></a>
+          )}
+          {socialLinks.whatsapp && (
+            <a href={socialLinks.whatsapp} target="_blank" rel="noreferrer" className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 transition-colors"><i className="fab fa-whatsapp text-sm"></i></a>
+          )}
+        </div>
         <p className="text-[8px] text-slate-300 uppercase">© 2026 Pacak Khemah. All rights reserved.</p>
       </footer>
 
