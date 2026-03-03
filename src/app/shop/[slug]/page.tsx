@@ -275,9 +275,11 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-amber-400 text-[#062c24] px-4 py-2 rounded-full text-[10px] font-black uppercase shadow-xl z-[200] animate-bounce">PREVIEW MODE</div>
       )}
 
-      {/* Compact Profile Header */}
+      {/* Hero Header — centered profile layout */}
       <header className="bg-[#062c24] text-white relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.06]" style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/dark-wood.png')" }} />
+        {/* Pattern background */}
+        <div className="absolute inset-0 opacity-[0.08]"
+          style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/dark-wood.png')" }} />
 
         {/* Nav row */}
         <div className="relative z-10 flex justify-between items-center px-4 pt-4">
@@ -296,32 +298,35 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
           </div>
         </div>
 
-        {/* Profile — logo + info stacked on mobile for long names */}
-        <div className="relative z-10 px-5 pt-4 pb-2">
-          <div className="flex items-start gap-4">
-            <div className="w-16 h-16 bg-white rounded-2xl p-0.5 shadow-lg shrink-0">
-              <img src={vendorData?.image || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-[0.9rem]" alt="logo" />
-            </div>
-            <div className="min-w-0 flex-1 pt-1">
-              <h1 className="text-lg font-black uppercase tracking-tight leading-tight">{vendorData?.name || "Loading..."}</h1>
-              {vendorData?.tagline && (
-                <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wide mt-1 leading-relaxed">{vendorData.tagline}</p>
-              )}
-              {vendorData?.tagline_my && (
-                <p className="text-[9px] font-medium text-white/50 italic mt-0.5 leading-relaxed">{vendorData.tagline_my}</p>
-              )}
-            </div>
+        {/* Centered profile */}
+        <div className="relative z-10 flex flex-col items-center text-center px-6 pt-6 pb-2">
+          {/* Logo */}
+          <div className="w-20 h-20 bg-white rounded-2xl p-1 shadow-2xl mb-4">
+            <img src={vendorData?.image || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-[0.9rem]" alt="logo" />
+          </div>
+
+          {/* Tagline block */}
+          <div className="bg-white/10 backdrop-blur-sm border border-white/10 rounded-2xl px-5 py-4 max-w-md w-full mb-4">
+            {vendorData?.tagline && (
+              <p className="text-sm font-bold text-white leading-relaxed">{vendorData.tagline}</p>
+            )}
+            {vendorData?.tagline_my && (
+              <p className="text-xs font-medium text-emerald-300/80 italic mt-1.5 leading-relaxed">{vendorData.tagline_my}</p>
+            )}
+          </div>
+
+          {/* Social icons */}
+          <div className="flex gap-3 mb-4">
+            {vendorData?.ig && <a href={vendorData.ig} target="_blank" rel="noreferrer" className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center hover:bg-white/20 transition-colors"><i className="fab fa-instagram text-lg"></i></a>}
+            {vendorData?.tiktok && <a href={vendorData.tiktok} target="_blank" rel="noreferrer" className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center hover:bg-white/20 transition-colors"><i className="fab fa-tiktok text-lg"></i></a>}
+            {vendorData?.fb && <a href={vendorData.fb} target="_blank" rel="noreferrer" className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center hover:bg-white/20 transition-colors"><i className="fab fa-facebook text-lg"></i></a>}
           </div>
         </div>
 
-        {/* Social + badge row */}
-        <div className="relative z-10 px-5 pb-4 pt-2 flex items-center justify-between">
-          <div className="flex gap-3">
-            {vendorData?.ig && <a href={vendorData.ig} target="_blank" rel="noreferrer" className="w-9 h-9 bg-white/10 rounded-xl flex items-center justify-center hover:bg-white/20 transition-colors"><i className="fab fa-instagram"></i></a>}
-            {vendorData?.tiktok && <a href={vendorData.tiktok} target="_blank" rel="noreferrer" className="w-9 h-9 bg-white/10 rounded-xl flex items-center justify-center hover:bg-white/20 transition-colors"><i className="fab fa-tiktok"></i></a>}
-            {vendorData?.fb && <a href={vendorData.fb} target="_blank" rel="noreferrer" className="w-9 h-9 bg-white/10 rounded-xl flex items-center justify-center hover:bg-white/20 transition-colors"><i className="fab fa-facebook"></i></a>}
-          </div>
-          <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest">
+        {/* Name bar + verified badge at bottom of header */}
+        <div className="relative z-10 bg-white/5 border-t border-white/10 px-5 py-3 flex items-center justify-between">
+          <h1 className="text-base font-black uppercase tracking-tight leading-tight">{vendorData?.name || "Loading..."}</h1>
+          <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest shrink-0 ml-3">
             <i className="fas fa-check-circle mr-1"></i>Verified
           </span>
         </div>
@@ -412,16 +417,18 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                     const inCart = cart.find(i => i.id === item.id);
                     return (
                       <div key={item.id} onClick={() => { if (!blocked) { setSelectedItem(item); setShowItemModal(true); } }}
-                        className={`relative bg-white p-3 rounded-2xl border transition-all stagger-in ${blocked ? "opacity-50 grayscale cursor-not-allowed border-slate-100" : "cursor-pointer border-slate-100 hover:border-emerald-300 hover:shadow-md"}`}
+                        className={`relative bg-white p-3 pb-4 rounded-2xl border transition-all stagger-in ${blocked ? "opacity-50 grayscale cursor-not-allowed border-slate-100" : "cursor-pointer border-slate-100 hover:border-emerald-300 hover:shadow-md"}`}
                         style={{ animationDelay: `${idx * 50}ms` }}>
                         <div className="aspect-square rounded-xl overflow-hidden bg-slate-100 mb-2.5 relative">
                           <img src={item.img || "/pacak-khemah.png"} className="w-full h-full object-cover" alt={item.name} />
                           {inCart && <div className="absolute top-2 right-2 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[9px] font-black shadow">{inCart.qty}</div>}
                         </div>
-                        <h4 className="text-[10px] font-black uppercase text-[#062c24] truncate mb-1">{item.name}</h4>
+                        <h4 className="text-[10px] font-black uppercase text-[#062c24] truncate mb-2">{item.name}</h4>
                         <div className="flex justify-between items-center">
-                          <p className="text-[10px] font-black text-emerald-600">RM {item.price}</p>
-                          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-[#062c24] text-white"><i className="fas fa-plus text-[9px]"></i></div>
+                          <p className="text-xs font-black text-emerald-600">RM {item.price}</p>
+                          <div className="w-9 h-9 rounded-full flex items-center justify-center bg-[#062c24] text-white shrink-0">
+                            <i className="fas fa-plus text-[9px]"></i>
+                          </div>
                         </div>
                       </div>
                     );
