@@ -48,9 +48,9 @@ function BlockScreen({ message, icon, iconBg }: { message: string; icon: string;
 function Section({ title, icon, defaultOpen = true, children }: { title: string; icon: string; defaultOpen?: boolean; children: React.ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
       <button onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
+        className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors rounded-2xl">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center text-sm">
             <i className={`fas ${icon}`}></i>
@@ -59,9 +59,9 @@ function Section({ title, icon, defaultOpen = true, children }: { title: string;
         </div>
         <i className={`fas fa-chevron-down text-slate-300 text-xs transition-transform duration-200 ${open ? "rotate-180" : ""}`}></i>
       </button>
-      <div className={`transition-all duration-300 ease-in-out ${open ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0 overflow-hidden"}`}>
+      {open && (
         <div className="px-4 pb-4">{children}</div>
-      </div>
+      )}
     </div>
   );
 }
