@@ -14,6 +14,7 @@ type Vendor = {
   city?: string; areas?: string[]; pickup?: string[];
   tagline?: string; slug?: string; credits?: number;
   createdAt?: any; is_vacation?: boolean; status?: string;
+  rating?: number; reviewCount?: number; // NEW
 };
 type GearItem = {
   id: string; name: string; price: number; img?: string;
@@ -29,6 +30,67 @@ const announcementThemes = {
   promo: { bg: "bg-emerald-600", icon: "fa-tag" },
 };
 
+// --- MINI FIREWOOD RATING (for cards) ---
+function MiniFirewoodRating({ rating }: { rating: number }) {
+  const roundedRating = Math.round(rating);
+  const flameOpacity = 0.5 + (rating / 5) * 0.5;
+  
+  return (
+    <svg width="28" height="28" viewBox="0 0 80 90" style={{ overflow: "visible" }}>
+      <defs>
+        <linearGradient id="miniFlame" x1="0%" y1="100%" x2="0%" y2="0%">
+          <stop offset="0%" stopColor="#ff4500" />
+          <stop offset="100%" stopColor="#ffa500" />
+        </linearGradient>
+      </defs>
+      
+      {/* Simplified flame */}
+      {roundedRating > 0 && (
+        <g transform="translate(40, 30) scale(0.6)" style={{ filter: "drop-shadow(0 0 5px rgba(255,100,0,0.6))" }}>
+          <path 
+            d="M0 28 C-8 18 -12 6 -6 -10 C-4 -5 -2 0 0 -5 C2 0 4 -5 6 -10 C12 6 8 18 0 28Z" 
+            fill="url(#miniFlame)" 
+            style={{ opacity: flameOpacity }}
+          />
+          <path 
+            d="M0 22 C-4 14 -5 8 -3 0 C-1 5 0 3 0 -1 C0 3 1 5 3 0 C5 8 4 14 0 22Z" 
+            fill="#ffd700"
+          />
+        </g>
+      )}
+      
+      {/* Simplified log stack */}
+      {[1, 2, 3].map((log, i) => {
+        const isActive = log <= Math.min(roundedRating, 3);
+        const positions = [
+          { x: 15, y: 72, r: -5 },
+          { x: 35, y: 75, r: 0 },
+          { x: 55, y: 72, r: 5 },
+        ];
+        const p = positions[i];
+        return (
+          <g key={i} transform={`translate(${p.x}, ${p.y}) rotate(${p.r})`} style={{ opacity: isActive ? 1 : 0.3 }}>
+            <ellipse cx="5" cy="2" rx="8" ry="3" fill={isActive ? "#8B4513" : "#666"} />
+            <ellipse cx="-2" cy="2" rx="3" ry="3" fill={isActive ? "#D2691E" : "#888"} />
+          </g>
+        );
+      })}
+      
+      {/* Top crossed logs for 4-5 */}
+      {roundedRating >= 4 && (
+        <g transform="translate(22, 58) rotate(15)" style={{ opacity: 1 }}>
+          <ellipse cx="5" cy="2" rx="7" ry="3" fill="#8B4513" />
+        </g>
+      )}
+      {roundedRating >= 5 && (
+        <g transform="translate(42, 58) rotate(-15)" style={{ opacity: 1 }}>
+          <ellipse cx="5" cy="2" rx="7" ry="3" fill="#8B4513" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
 // --- VENDOR CARD WITH GEAR THUMBNAILS ---
 function VendorCard({ vendor, gear, index }: { vendor: Vendor; gear: GearItem[]; index: number }) {
   const logo = vendor.logo || vendor.image || "/pacak-khemah.png";
@@ -36,6 +98,9 @@ function VendorCard({ vendor, gear, index }: { vendor: Vendor; gear: GearItem[];
   const shopPath = vendor.slug ? `/shop/${vendor.slug}` : `/shop?v=${vendor.id}`;
   const isNew = vendor.createdAt && Date.now() - vendor.createdAt.toDate().getTime() < 30 * 24 * 60 * 60 * 1000;
   const topGear = gear.slice(0, 3);
+  
+  const rating = vendor.rating || 0;
+  const reviewCount = vendor.reviewCount || 0;
 
   return (
     <Link href={shopPath}
@@ -56,9 +121,24 @@ function VendorCard({ vendor, gear, index }: { vendor: Vendor; gear: GearItem[];
             <p className="text-[9px] font-medium text-slate-400 italic truncate">{vendor.tagline || "Ready for adventure"}</p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400">
-          <i className="fas fa-map-marker-alt text-emerald-500 text-[8px]"></i>
-          <span>{city}</span>
+        
+        {/* Location & Rating Row - NEW */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400">
+            <i className="fas fa-map-marker-alt text-emerald-500 text-[8px]"></i>
+            <span>{city}</span>
+          </div>
+          
+          {/* Rating Badge */}
+          {reviewCount > 0 && (
+            <div className="flex items-center gap-1">
+              <MiniFirewoodRating rating={rating} />
+              <div className="text-right">
+                <span className="text-xs font-black text-orange-600">{rating}</span>
+                <span className="text-[8px] text-slate-400 ml-0.5">({reviewCount})</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -120,7 +200,8 @@ export default function DirectoryPage() {
   const [locationSearch, setLocationSearch] = useState("");
   const [showLocDropdown, setShowLocDropdown] = useState(false);
   const [customLocation, setCustomLocation] = useState("");
-  const [socialLinks, setSocialLinks] = useState<{ instagram?: string; threads?: string; whatsapp?: string }>({}); // typed location that has no vendors
+  const [socialLinks, setSocialLinks] = useState<{ instagram?: string; threads?: string; whatsapp?: string }>({});
+  const [sortBy, setSortBy] = useState<"default" | "rating">("default"); // NEW: Sort option
 
   // Hidden admin access
   const [logoTaps, setLogoTaps] = useState(0);
@@ -138,279 +219,237 @@ export default function DirectoryPage() {
   function handleSearchInput(val: string) {
     setSearchTerm(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => applySearch(val), 150);
+    debounceRef.current = setTimeout(() => applyFilters(allVendors, activeFilter, val), 300);
   }
 
-  useEffect(() => { loadVendors(); loadEvents(); loadAnnouncement(); loadSocialLinks(); }, []);
-
-  // Close location dropdown when clicking outside
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      const target = e.target as HTMLElement;
-      if (!target.closest('[data-loc-dropdown]')) setShowLocDropdown(false);
-    }
-    document.addEventListener('click', handleClick);
-    return () => document.removeEventListener('click', handleClick);
-  }, []);
-
+  // Load vendors
   async function loadVendors() {
+    setLoading(true);
+    setLoadError(false);
     try {
-      const q = query(collection(db, "vendors"), where("status", "==", "approved"));
-      const snap = await getDocs(q);
-      const vendors = snap.docs
+      const vSnap = await getDocs(query(
+        collection(db, "vendors"),
+        where("status", "==", "approved"),
+        where("credits", ">", 0)
+      ));
+      const vendors = vSnap.docs
         .map(d => ({ id: d.id, ...d.data() } as Vendor))
-        .filter(v => v.credits && v.credits > 0 && v.is_vacation !== true)
-        .sort((a, b) => (b.credits || 0) - (a.credits || 0));
+        .filter(v => !v.is_vacation);
+
       setAllVendors(vendors);
       setFilteredVendors(vendors);
+
+      // Extract locations
       const locs = new Set<string>();
       vendors.forEach(v => {
-        if (v.city) locs.add(v.city.trim());
-        if (v.areas) v.areas.forEach(a => locs.add(a.trim()));
+        if (v.city) locs.add(v.city);
+        v.areas?.forEach(a => locs.add(a));
+        v.pickup?.forEach(p => locs.add(p));
       });
       setLocations(Array.from(locs).sort());
-    } catch (e) { console.error(e); setLoadError(true); }
-    finally { setLoading(false); }
-  }
 
-  async function loadEvents() {
-    try {
-      const q = query(collection(db, "events"), orderBy("createdAt", "desc"), limit(4));
-      const snap = await getDocs(q);
-      setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() } as Event)));
-    } catch { }
-  }
+      // Fetch gear for each vendor
+      setLoadingGear(true);
+      const gearSnap = await getDocs(query(collection(db, "gear"), where("deleted", "!=", true)));
+      const gearByVendor: Record<string, GearItem[]> = {};
+      gearSnap.docs.forEach(d => {
+        const g = { id: d.id, ...d.data() } as GearItem;
+        if (!gearByVendor[g.vendorId]) gearByVendor[g.vendorId] = [];
+        gearByVendor[g.vendorId].push(g);
+      });
+      setVendorGear(gearByVendor);
+      setLoadingGear(false);
 
-  async function loadAnnouncement() {
-    try {
-      const snap = await getDoc(doc(db, "settings", "global_announcement"));
-      if (snap.exists()) {
-        const data = snap.data() as Announcement;
-        if (data.isActive && data.message) setAnnouncement(data);
+      // Load announcements
+      const annSnap = await getDoc(doc(db, "config", "announcement"));
+      if (annSnap.exists()) {
+        const ann = annSnap.data() as Announcement;
+        if (ann.isActive) setAnnouncement(ann);
       }
-    } catch { }
+
+      // Load events
+      const evSnap = await getDocs(query(collection(db, "events"), limit(4)));
+      setEvents(evSnap.docs.map(d => ({ id: d.id, ...d.data() } as Event)));
+
+      // Load social links
+      const socialSnap = await getDoc(doc(db, "config", "social"));
+      if (socialSnap.exists()) setSocialLinks(socialSnap.data());
+
+    } catch (e) {
+      console.error(e);
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  async function loadSocialLinks() {
-    try {
-      const snap = await getDoc(doc(db, "settings", "social_links"));
-      if (snap.exists()) setSocialLinks(snap.data());
-    } catch { }
-  }
+  useEffect(() => { loadVendors(); }, []);
 
-  // Load gear for filtered vendors
-  async function loadGearForVendors(vendors: Vendor[]) {
-    const ids = vendors.map(v => v.id);
-    if (!ids.length) { setVendorGear({}); return; }
-    setLoadingGear(true);
-    try {
-      const batchIds = ids.slice(0, 30);
-      const gSnap = await getDocs(query(collection(db, "gear"), where("vendorId", "in", batchIds)));
-      const gear = gSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted);
-      const grouped: Record<string, GearItem[]> = {};
-      gear.forEach(g => {
-        if (!grouped[g.vendorId]) grouped[g.vendorId] = [];
-        grouped[g.vendorId].push(g);
-      });
-      // Sort: packages first, then by price
-      Object.keys(grouped).forEach(k => {
-        grouped[k].sort((a, b) => {
-          const aP = a.type === "package" ? 0 : 1;
-          const bP = b.type === "package" ? 0 : 1;
-          return aP - bP || b.price - a.price;
-        });
-      });
-      setVendorGear(grouped);
-    } catch (e) { console.error(e); }
-    finally { setLoadingGear(false); }
-  }
+  // Filter logic
+  function applyFilters(vendors: Vendor[], filter: string, search: string) {
+    let result = vendors;
 
-  function applySearch(term: string) {
-    const t = term.toLowerCase();
-    const filtered = t
-      ? allVendors.filter(v =>
-          v.name.toLowerCase().includes(t) ||
-          (v.city && v.city.toLowerCase().includes(t)) ||
-          (v.areas && v.areas.some(a => a.toLowerCase().includes(t))) ||
-          (v.tagline && v.tagline.toLowerCase().includes(t))
-        )
-      : allVendors;
-    setFilteredVendors(filtered);
+    if (filter !== "all") {
+      result = result.filter(v =>
+        v.city?.toLowerCase() === filter.toLowerCase() ||
+        v.areas?.some(a => a.toLowerCase() === filter.toLowerCase()) ||
+        v.pickup?.some(p => p.toLowerCase() === filter.toLowerCase())
+      );
+    }
+
+    if (search.trim()) {
+      const s = search.toLowerCase();
+      result = result.filter(v =>
+        v.name.toLowerCase().includes(s) ||
+        v.tagline?.toLowerCase().includes(s) ||
+        v.city?.toLowerCase().includes(s)
+      );
+    }
+
+    // Apply sorting - NEW
+    if (sortBy === "rating") {
+      result = [...result].sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    }
+
+    setFilteredVendors(result);
     setVisibleCount(LOAD_STEP);
-    setActiveFilter("all");
   }
 
   function filterBy(loc: string) {
     setActiveFilter(loc);
-    setSearchTerm("");
-    const filtered = loc === "all" ? allVendors
-      : allVendors.filter(v => (v.city && v.city.includes(loc)) || (v.areas && v.areas.some(a => a.includes(loc))));
-    setFilteredVendors(filtered);
-    setVisibleCount(LOAD_STEP);
-    // Load gear for these vendors
-    loadGearForVendors(filtered);
+    applyFilters(allVendors, loc, searchTerm);
   }
 
-  async function locateMe() {
-    if (!navigator.geolocation) return alert("Geolocation not supported");
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const { latitude, longitude } = pos.coords;
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-          const data = await res.json();
-          const city = data.address.city || data.address.town || data.address.village || data.address.state;
-          if (city) handleSearchInput(city);
-          else alert("Could not determine city.");
-        } catch { alert("Location error."); }
-        finally { setLocating(false); }
-      },
-      () => { alert("Permission denied."); setLocating(false); }
-    );
+  // Sort change handler - NEW
+  function handleSortChange(sort: "default" | "rating") {
+    setSortBy(sort);
+    applyFilters(allVendors, activeFilter, searchTerm);
   }
+
+  useEffect(() => {
+    applyFilters(allVendors, activeFilter, searchTerm);
+  }, [sortBy]);
 
   const displayList = filteredVendors.slice(0, visibleCount);
-  const annTheme = announcement ? announcementThemes[announcement.type] || announcementThemes.info : null;
-  const hasGear = Object.keys(vendorGear).length > 0;
+  const theme = announcement ? announcementThemes[announcement.type] : null;
 
   return (
-    <div className="pb-24" style={{ fontFamily: "'Inter', sans-serif", color: "#062c24", backgroundColor: "#f8fafc" }}>
+    <div className="min-h-screen pb-20" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f0f2f1", color: "#0f172a" }}>
 
-      {/* Announcement */}
-      {announcement && showAnnouncement && annTheme && (
-        <div className={`relative z-50 px-4 py-3 text-white text-center shadow-md ${annTheme.bg}`}>
-          <div className="max-w-4xl mx-auto flex items-center justify-center gap-3">
-            <span className="bg-white/20 p-1.5 rounded-lg text-xs"><i className={`fas ${annTheme.icon}`}></i></span>
-            <p className="text-[10px] font-bold uppercase tracking-widest">{announcement.message}</p>
-            <button onClick={() => setShowAnnouncement(false)} className="absolute right-4 text-white/60 hover:text-white"><i className="fas fa-times"></i></button>
+      {/* Hero Header */}
+      <header className="bg-[#062c24] text-white pt-6 pb-8 px-5 text-center relative overflow-hidden">
+        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M20 0 L40 20 L20 40 L0 20 Z' fill='none' stroke='%23ffffff' stroke-width='1'/%3E%3C/svg%3E")`, backgroundSize: "25px 25px" }} />
+
+        <div className="relative z-10">
+          <div className="inline-block cursor-pointer" onClick={handleLogoTap}>
+            <img src="/pacak-khemah.png" className="w-20 h-20 mx-auto mb-3 drop-shadow-xl" alt="Pacak Khemah" />
           </div>
-        </div>
-      )}
-
-      {/* ═══ HEADER WITH REAL ASSETS ═══ */}
-      <header className="bg-[#062c24] text-white relative overflow-hidden">
-        {/* Pattern */}
-        {/* Chevron pattern */}
-        <div className="absolute inset-0 opacity-40"
-          style={{ backgroundImage: "url('/pattern-chevron.png')", backgroundSize: "300px" }} />
-        {/* Dark gradient tint — top to bottom */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#062c24] via-[#062c24]/50 to-[#062c24]/90" />
-
-        {/* Main header row */}
-        <div className="relative z-10 flex justify-between items-center px-4 py-4">
-          {/* Logo + wordmark */}
-          <div className="flex items-center gap-2.5 cursor-pointer select-none" onClick={handleLogoTap}>
-            <img src="/pacak-khemah.png" className="h-11 w-11 object-contain rounded-full" alt="Pacak Khemah" draggable={false} />
-            <div>
-              <h1 className="text-[22px] font-black tracking-tight leading-none" style={{ fontFamily: "'Inter', sans-serif" }}>pacakkhemah</h1>
-              <p className="text-[7px] font-bold text-emerald-400 uppercase tracking-[0.2em] mt-0.5">Pacak. Rehat. Ulang.</p>
-            </div>
-          </div>
-          {/* Right — rent tend wild graphic */}
-          <img src="/rent-camp.png" className="h-16 object-contain" alt="Rent, tend wild & heal soul" />
-        </div>
-
-        {/* Subtle vendor links */}
-        <div className="relative z-10 flex justify-end items-center gap-3 px-5 pb-3">
-          <Link href="/register-vendor"
-            className="text-[9px] font-bold text-emerald-300/70 uppercase tracking-widest hover:text-white transition-colors">
-            Join as Vendor
-          </Link>
-          <Link href="/store"
-            className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center text-white/60 hover:bg-white hover:text-[#062c24] transition-all"
-            title="Vendor Login">
-            <i className="fas fa-store text-xs"></i>
-          </Link>
+          <h1 className="text-2xl font-black uppercase tracking-tight">Pacak Khemah</h1>
+          <p className="text-emerald-300 text-[10px] font-bold uppercase tracking-[0.3em] mt-1">Pacak. Rehat. Ulang.</p>
         </div>
       </header>
 
-      {/* ═══ MAIN CONTENT ═══ */}
-      <main className="max-w-6xl mx-auto px-4 pt-6 space-y-6">
+      {/* Announcement Banner */}
+      {announcement && showAnnouncement && theme && (
+        <div className={`${theme.bg} text-white px-4 py-3 flex items-center justify-between`}>
+          <div className="flex items-center gap-3">
+            <i className={`fas ${theme.icon}`}></i>
+            <p className="text-xs font-bold">{announcement.message}</p>
+          </div>
+          <button onClick={() => setShowAnnouncement(false)} className="opacity-60 hover:opacity-100">
+            <i className="fas fa-times"></i>
+          </button>
+        </div>
+      )}
 
-        {/* Where to Pacak Today? */}
-        <section>
-          <h2 className="text-lg font-black text-[#062c24] mb-3">Where to Pacak Today?</h2>
-
-          {/* Searchable location input */}
-          <div className="relative mb-2" data-loc-dropdown>
-            <i className="fas fa-map-marker-alt absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500 text-sm z-10"></i>
+      <main className="max-w-6xl mx-auto px-4 py-6">
+        {/* Search & Filter Bar */}
+        <div className="flex flex-col md:flex-row gap-3 mb-6">
+          {/* Search */}
+          <div className="relative flex-1">
+            <i className="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-300"></i>
             <input
               type="text"
-              value={locationSearch}
-              onChange={e => {
-                setLocationSearch(e.target.value);
-                setShowLocDropdown(true);
-                setCustomLocation("");
-              }}
-              onFocus={() => setShowLocDropdown(true)}
-              placeholder="Search or pick a location..."
-              className="w-full bg-white text-[#062c24] py-4 pl-11 pr-20 rounded-xl shadow-sm border border-slate-200 outline-none font-bold text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500 transition-all"
+              value={searchTerm}
+              onChange={e => handleSearchInput(e.target.value)}
+              placeholder="Search vendors, gear..."
+              className="w-full bg-white border border-slate-200 pl-11 pr-4 py-3.5 rounded-xl text-sm font-medium outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
             />
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
-              {locationSearch && (
-                <button onClick={() => { setLocationSearch(""); setCustomLocation(""); filterBy("all"); setShowLocDropdown(false); }}
-                  className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-red-500 transition-colors">
-                  <i className="fas fa-times text-xs"></i>
-                </button>
-              )}
-              <button onClick={() => setShowLocDropdown(!showLocDropdown)}
-                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-emerald-600 transition-colors">
-                <i className={`fas fa-chevron-down text-xs transition-transform ${showLocDropdown ? "rotate-180" : ""}`}></i>
-              </button>
-            </div>
+          </div>
 
-            {/* Dropdown */}
+          {/* Location Filter */}
+          <div className="relative">
+            <button
+              onClick={() => setShowLocDropdown(!showLocDropdown)}
+              className="w-full md:w-auto bg-white border border-slate-200 px-4 py-3.5 rounded-xl text-sm font-bold flex items-center justify-between gap-3 min-w-[160px]"
+            >
+              <span className="flex items-center gap-2">
+                <i className="fas fa-map-marker-alt text-emerald-500"></i>
+                <span className="truncate">{activeFilter === "all" ? "All Locations" : activeFilter}</span>
+              </span>
+              <i className={`fas fa-chevron-down text-xs text-slate-400 transition-transform ${showLocDropdown ? "rotate-180" : ""}`}></i>
+            </button>
+
             {showLocDropdown && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-56 overflow-y-auto">
-                <button onClick={() => { filterBy("all"); setLocationSearch(""); setCustomLocation(""); setShowLocDropdown(false); }}
-                  className={`w-full text-left px-4 py-3 text-sm font-bold hover:bg-emerald-50 transition-colors ${activeFilter === "all" ? "text-emerald-600 bg-emerald-50/50" : "text-slate-600"}`}>
-                  <i className="fas fa-globe text-emerald-500 mr-2 text-xs"></i> All Locations
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 rounded-xl shadow-xl z-50 max-h-64 overflow-y-auto">
+                <button
+                  onClick={() => { filterBy("all"); setShowLocDropdown(false); }}
+                  className={`w-full text-left px-4 py-3 text-sm font-medium hover:bg-slate-50 ${activeFilter === "all" ? "text-emerald-600 bg-emerald-50" : ""}`}
+                >
+                  All Locations
                 </button>
-                {locations
-                  .filter(loc => !locationSearch || loc.toLowerCase().includes(locationSearch.toLowerCase()))
-                  .map(loc => (
-                    <button key={loc} onClick={() => { filterBy(loc); setLocationSearch(loc); setCustomLocation(""); setShowLocDropdown(false); }}
-                      className={`w-full text-left px-4 py-3 text-sm font-bold hover:bg-emerald-50 transition-colors ${activeFilter === loc ? "text-emerald-600 bg-emerald-50/50" : "text-slate-600"}`}>
-                      <i className="fas fa-map-marker-alt text-emerald-500 mr-2 text-xs"></i> {loc}
-                    </button>
-                  ))
-                }
-                {locationSearch && !locations.some(l => l.toLowerCase().includes(locationSearch.toLowerCase())) && (
-                  <button onClick={() => {
-                    setCustomLocation(locationSearch);
-                    setFilteredVendors([]);
-                    setShowLocDropdown(false);
-                  }}
-                    className="w-full text-left px-4 py-3 text-sm font-bold text-slate-400 hover:bg-slate-50">
-                    <i className="fas fa-search text-slate-300 mr-2 text-xs"></i> Search &ldquo;{locationSearch}&rdquo;
+                {locations.map(loc => (
+                  <button
+                    key={loc}
+                    onClick={() => { filterBy(loc); setShowLocDropdown(false); }}
+                    className={`w-full text-left px-4 py-3 text-sm font-medium hover:bg-slate-50 ${activeFilter === loc ? "text-emerald-600 bg-emerald-50" : ""}`}
+                  >
+                    {loc}
                   </button>
-                )}
+                ))}
               </div>
             )}
           </div>
 
-          <Link href="/campsites" className="inline-flex items-center gap-2 text-[10px] font-bold text-emerald-600 hover:text-emerald-800 transition-colors">
-            <i className="fas fa-campground"></i> See suggestions?
-          </Link>
-        </section>
-
-        {/* What to Pacak today? — vendors with gear */}
-        <section>
-          <div className="flex justify-between items-end mb-3">
-            <h2 className="text-lg font-black text-[#062c24]">What to Pacak today?</h2>
-            <span className="text-[9px] font-bold text-white bg-[#062c24] px-2 py-0.5 rounded-md">
-              {loading ? "..." : `${filteredVendors.length} Hubs`}
-            </span>
+          {/* Sort by Rating - NEW */}
+          <div className="flex bg-white border border-slate-200 rounded-xl overflow-hidden">
+            <button
+              onClick={() => handleSortChange("default")}
+              className={`px-4 py-3 text-[10px] font-black uppercase transition-colors ${sortBy === "default" ? "bg-[#062c24] text-white" : "text-slate-500 hover:bg-slate-50"}`}
+            >
+              Default
+            </button>
+            <button
+              onClick={() => handleSortChange("rating")}
+              className={`px-4 py-3 text-[10px] font-black uppercase transition-colors flex items-center gap-1.5 ${sortBy === "rating" ? "bg-[#062c24] text-white" : "text-slate-500 hover:bg-slate-50"}`}
+            >
+              <i className="fas fa-fire text-orange-400"></i> Top Rated
+            </button>
           </div>
+        </div>
 
+        {/* Results count */}
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-xs font-bold text-slate-400 uppercase">
+            {filteredVendors.length} vendor{filteredVendors.length !== 1 ? "s" : ""} found
+          </p>
+          <button onClick={() => setShowModal(true)} className="text-[10px] font-black text-emerald-600 uppercase hover:underline">
+            <i className="fas fa-plus mr-1"></i> Join as Vendor
+          </button>
+        </div>
+
+        {/* Vendor Grid */}
+        <section className="mb-8">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {loading ? (
-              [...Array(4)].map((_, i) => (
-                <div key={i} className="bg-white rounded-2xl border border-slate-100 p-4 skeleton" style={{ animationDelay: `${i * 100}ms` }}>
+              [...Array(6)].map((_, i) => (
+                <div key={i} className="bg-white rounded-2xl p-4 border border-slate-100 animate-pulse">
                   <div className="flex items-center gap-3 mb-3">
-                    <div className="w-12 h-12 bg-slate-200 rounded-xl"></div>
-                    <div className="flex-1"><div className="h-4 bg-slate-200 rounded-full w-2/3 mb-2"></div><div className="h-3 bg-slate-100 rounded-full w-1/2"></div></div>
+                    <div className="w-12 h-12 bg-slate-100 rounded-xl"></div>
+                    <div className="flex-1">
+                      <div className="h-4 bg-slate-100 rounded w-3/4 mb-2"></div>
+                      <div className="h-3 bg-slate-50 rounded w-1/2"></div>
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <div className="flex-1 aspect-square bg-slate-100 rounded-lg"></div>
@@ -430,36 +469,15 @@ export default function DirectoryPage() {
               </div>
             ) : displayList.length === 0 ? (
               <div className="col-span-full text-center py-16">
-                {customLocation ? (
-                  <>
-                    <div className="text-5xl mb-4">🏕️</div>
-                    <p className="text-sm font-black text-[#062c24] mb-2">Hmm, no vendors in {customLocation} yet!</p>
-                    <p className="text-xs text-slate-500 font-medium max-w-xs mx-auto mb-4 leading-relaxed">
-                      We&apos;re on the lookout for awesome gear rental vendors in this area. Hopefully someone answers our smoke signal soon! 🔥
-                    </p>
-                    <div className="flex flex-col items-center gap-2">
-                      <button onClick={() => { setLocationSearch(""); setCustomLocation(""); filterBy("all"); }}
-                        className="px-5 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors">
-                        <i className="fas fa-globe mr-2"></i> Browse All Locations
-                      </button>
-                      <Link href="/register-vendor" className="text-[10px] font-bold text-emerald-600 hover:underline">
-                        Know a vendor here? Tell them to join us!
-                      </Link>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <i className={`fas ${searchTerm ? "fa-search" : "fa-store"} text-4xl text-slate-200 mb-4 block`}></i>
-                    <p className="text-xs font-black text-slate-400 uppercase mb-2">
-                      {searchTerm ? `No results for "${searchTerm}"` : activeFilter !== "all" ? `No hubs in ${activeFilter} yet` : "No active hubs yet"}
-                    </p>
-                    {(searchTerm || activeFilter !== "all") && (
-                      <button onClick={() => { setSearchTerm(""); setLocationSearch(""); setCustomLocation(""); filterBy("all"); }}
-                        className="mt-3 px-5 py-2 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase hover:bg-slate-200">
-                        <i className="fas fa-times mr-2"></i> Clear
-                      </button>
-                    )}
-                  </>
+                <i className={`fas ${searchTerm ? "fa-search" : "fa-store"} text-4xl text-slate-200 mb-4 block`}></i>
+                <p className="text-xs font-black text-slate-400 uppercase mb-2">
+                  {searchTerm ? `No results for "${searchTerm}"` : activeFilter !== "all" ? `No hubs in ${activeFilter} yet` : "No active hubs yet"}
+                </p>
+                {(searchTerm || activeFilter !== "all") && (
+                  <button onClick={() => { setSearchTerm(""); setLocationSearch(""); setCustomLocation(""); filterBy("all"); }}
+                    className="mt-3 px-5 py-2 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase hover:bg-slate-200">
+                    <i className="fas fa-times mr-2"></i> Clear
+                  </button>
                 )}
               </div>
             ) : displayList.map((vendor, i) => (

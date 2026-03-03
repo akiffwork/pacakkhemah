@@ -13,6 +13,7 @@ import DocumentsTab from "@/components/DocumentsTab";
 import InventoryTab from "@/components/InventoryTab";
 import StorefrontTab from "@/components/StorefrontTab";
 import SettingsTab from "@/components/SettingsTab";
+import OrdersTab from "@/components/OrdersTab"; // NEW: Orders management
 
 type VendorData = {
   name: string;
@@ -28,9 +29,11 @@ type VendorData = {
   show_nav?: boolean;
   steps?: { title: string; my: string; desc?: string; desc_my?: string }[];
   rules?: string[];
+  rating?: number;      // NEW
+  reviewCount?: number; // NEW
 };
 
-type Tab = "analytics" | "documents" | "inventory" | "storefront" | "settings";
+type Tab = "analytics" | "orders" | "documents" | "inventory" | "storefront" | "settings"; // Added "orders"
 
 // --- LOGIN SCREEN ---
 function LoginScreen() {
@@ -114,8 +117,10 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
     await signOut(auth);
   }
 
-  const tabs: { id: Tab; label: string; icon: string }[] = [
+  // Updated tabs with Orders
+  const tabs: { id: Tab; label: string; icon: string; badge?: number }[] = [
     { id: "analytics", label: "Dashboard", icon: "fa-chart-line" },
+    { id: "orders", label: "Orders", icon: "fa-shopping-bag" }, // NEW
     { id: "documents", label: "Documents", icon: "fa-file-contract" },
     { id: "inventory", label: "Inventory", icon: "fa-boxes" },
     { id: "storefront", label: "Storefront", icon: "fa-store" },
@@ -125,6 +130,10 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
   const shopUrl = vendorData.slug ? `/shop/${vendorData.slug}` : `/shop?v=${vendorId}`;
   const credits = vendorData.credits || 0;
   const creditColor = credits > 10 ? "text-emerald-600 bg-emerald-50 border-emerald-100" : credits > 0 ? "text-amber-600 bg-amber-50 border-amber-100" : "text-red-600 bg-red-50 border-red-100";
+
+  // Rating display
+  const rating = vendorData.rating || 0;
+  const reviewCount = vendorData.reviewCount || 0;
 
   return (
     <div className="min-h-screen pb-32" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f8fafc", color: "#062c24" }}>
@@ -144,10 +153,16 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
             )}
             <div className="min-w-0">
               <h1 className="text-sm font-black text-[#062c24] uppercase leading-none truncate">{vendorData.name}</h1>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <span className={`text-[9px] font-black px-2 py-0.5 rounded-md border ${creditColor}`}>
                   <i className="fas fa-coins mr-1"></i>{credits} Credits
                 </span>
+                {/* Rating Badge - NEW */}
+                {reviewCount > 0 && (
+                  <span className="text-[9px] font-black px-2 py-0.5 rounded-md bg-orange-50 text-orange-600 border border-orange-100">
+                    <i className="fas fa-fire mr-1"></i>{rating} ({reviewCount})
+                  </span>
+                )}
                 {vendorData.status === "pending" && (
                   <span className="text-[9px] font-black px-2 py-0.5 rounded-md bg-amber-50 text-amber-600 border border-amber-100">Pending</span>
                 )}
@@ -198,6 +213,7 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
       {/* Tab Content */}
       <div className="max-w-7xl mx-auto px-4 mt-6">
         {activeTab === "analytics" && <AnalyticsTab vendorId={vendorId} vendorData={vendorData} />}
+        {activeTab === "orders" && <OrdersTab vendorId={vendorId} vendorName={vendorData.name} />}
         {activeTab === "documents" && <DocumentsTab vendorId={vendorId} vendorData={vendorData} />}
         {activeTab === "inventory" && <InventoryTab vendorId={vendorId} />}
         {activeTab === "storefront" && <StorefrontTab vendorId={vendorId} vendorData={vendorData} />}
