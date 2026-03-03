@@ -283,14 +283,8 @@ export default function DirectoryPage() {
               <p className="text-[7px] font-bold text-emerald-400 uppercase tracking-[0.2em] mt-0.5">Pacak. Rehat. Ulang.</p>
             </div>
           </div>
-          {/* Right — rent tend wild graphic as CSS text */}
-          <div className="text-right leading-[1.1]" style={{ fontFamily: "'Georgia', serif" }}>
-            <span className="text-[13px] font-bold italic text-white/90">rent,</span><br/>
-            <span className="text-[13px] font-bold italic text-white/90">tend </span>
-            <span className="text-[22px] font-black text-white not-italic" style={{ fontFamily: "'Inter', sans-serif" }}>&amp;</span><br/>
-            <span className="text-[13px] font-bold italic text-white/90">wild,</span><br/>
-            <span className="text-[13px] font-bold italic text-white/90">heal soul</span>
-          </div>
+          {/* Right — rent tend wild graphic */}
+          <img src="/rent-camp.png" className="h-16 object-contain" alt="Rent, tend wild & heal soul" />
         </div>
 
         {/* Subtle vendor links */}
