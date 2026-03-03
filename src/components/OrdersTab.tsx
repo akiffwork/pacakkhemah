@@ -157,27 +157,32 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards with helper text */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="bg-white rounded-xl p-4 border border-slate-100">
           <p className="text-[9px] font-black text-slate-400 uppercase">Total</p>
           <p className="text-2xl font-black text-[#062c24]">{stats.total}</p>
+          <p className="text-[8px] text-slate-300 mt-1">All time orders</p>
         </div>
-        <div className="bg-amber-50 rounded-xl p-4 border border-amber-100">
+        <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 group relative">
           <p className="text-[9px] font-black text-amber-600 uppercase">Pending</p>
           <p className="text-2xl font-black text-amber-700">{stats.pending}</p>
+          <p className="text-[8px] text-amber-500 mt-1">Needs your action</p>
         </div>
         <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
           <p className="text-[9px] font-black text-blue-600 uppercase">Confirmed</p>
           <p className="text-2xl font-black text-blue-700">{stats.confirmed}</p>
+          <p className="text-[8px] text-blue-500 mt-1">Active bookings</p>
         </div>
         <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
           <p className="text-[9px] font-black text-emerald-600 uppercase">Completed</p>
           <p className="text-2xl font-black text-emerald-700">{stats.completed}</p>
+          <p className="text-[8px] text-emerald-500 mt-1">Gear returned</p>
         </div>
         <div className="bg-orange-50 rounded-xl p-4 border border-orange-100">
           <p className="text-[9px] font-black text-orange-600 uppercase">Awaiting Review</p>
           <p className="text-2xl font-black text-orange-700">{stats.awaitingReview}</p>
+          <p className="text-[8px] text-orange-500 mt-1">No review yet</p>
         </div>
       </div>
 
@@ -214,12 +219,57 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
           ))}
         </div>
       ) : filteredOrders.length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-2xl border border-slate-100">
-          <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <i className="fas fa-inbox text-slate-300 text-2xl"></i>
+        <div className="bg-white rounded-2xl border border-slate-100 p-8">
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <i className="fas fa-inbox text-slate-300 text-2xl"></i>
+            </div>
+            <p className="text-sm font-bold text-slate-400">
+              {filter === "all" ? "No orders yet" : `No ${filter} orders`}
+            </p>
+            <p className="text-xs text-slate-300 mt-1">
+              {filter === "all" 
+                ? "Orders will appear here when customers book via WhatsApp" 
+                : "Try viewing all orders instead"}
+            </p>
           </div>
-          <p className="text-sm font-bold text-slate-400">No orders yet</p>
-          <p className="text-xs text-slate-300 mt-1">Orders will appear here when customers book</p>
+
+          {/* Order Flow Guide - Only show when no orders at all */}
+          {filter === "all" && orders.length === 0 && (
+            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-5">
+              <h4 className="text-xs font-black text-emerald-700 uppercase mb-4 flex items-center gap-2">
+                <i className="fas fa-route"></i> How Orders Work
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="text-center">
+                  <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-2 text-sm font-black">1</div>
+                  <p className="text-[10px] font-black text-slate-600 uppercase">Pending</p>
+                  <p className="text-[9px] text-slate-400 mt-1">Customer submits order via WhatsApp</p>
+                </div>
+                <div className="text-center">
+                  <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-2 text-sm font-black">2</div>
+                  <p className="text-[10px] font-black text-slate-600 uppercase">Confirmed</p>
+                  <p className="text-[9px] text-slate-400 mt-1">You accept the booking</p>
+                </div>
+                <div className="text-center">
+                  <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2 text-sm font-black">3</div>
+                  <p className="text-[10px] font-black text-slate-600 uppercase">Completed</p>
+                  <p className="text-[9px] text-slate-400 mt-1">Gear returned, mark as done</p>
+                </div>
+                <div className="text-center">
+                  <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-2 text-sm font-black">
+                    <i className="fas fa-star text-xs"></i>
+                  </div>
+                  <p className="text-[10px] font-black text-slate-600 uppercase">Review</p>
+                  <p className="text-[9px] text-slate-400 mt-1">Customer rates their experience</p>
+                </div>
+              </div>
+              <p className="text-[10px] text-emerald-600 text-center mt-4 font-medium">
+                <i className="fas fa-lightbulb mr-1"></i>
+                Mark orders "Completed" to automatically send review requests!
+              </p>
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-3">
@@ -392,38 +442,60 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
               <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Update Status</p>
               
               {selectedOrder.status === "pending" && (
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => updateStatus(selectedOrder.id, "confirmed")}
-                    className="py-3 rounded-xl font-black uppercase text-xs bg-blue-500 text-white hover:bg-blue-600"
-                  >
-                    <i className="fas fa-check mr-2"></i>Confirm
-                  </button>
-                  <button
-                    onClick={() => updateStatus(selectedOrder.id, "cancelled")}
-                    className="py-3 rounded-xl font-black uppercase text-xs bg-red-100 text-red-600 hover:bg-red-200"
-                  >
-                    <i className="fas fa-times mr-2"></i>Cancel
-                  </button>
-                </div>
+                <>
+                  <p className="text-[10px] text-slate-400 mb-2">
+                    <i className="fas fa-info-circle mr-1"></i>
+                    This order is waiting for your confirmation
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => updateStatus(selectedOrder.id, "confirmed")}
+                      className="py-3 rounded-xl font-black uppercase text-xs bg-blue-500 text-white hover:bg-blue-600"
+                      title="Accept this booking"
+                    >
+                      <i className="fas fa-check mr-2"></i>Confirm
+                    </button>
+                    <button
+                      onClick={() => updateStatus(selectedOrder.id, "cancelled")}
+                      className="py-3 rounded-xl font-black uppercase text-xs bg-red-100 text-red-600 hover:bg-red-200"
+                      title="Reject or cancel this booking"
+                    >
+                      <i className="fas fa-times mr-2"></i>Cancel
+                    </button>
+                  </div>
+                </>
               )}
 
               {selectedOrder.status === "confirmed" && (
-                <button
-                  onClick={() => updateStatus(selectedOrder.id, "completed")}
-                  className="w-full py-3 rounded-xl font-black uppercase text-xs bg-emerald-500 text-white hover:bg-emerald-600"
-                >
-                  <i className="fas fa-flag-checkered mr-2"></i>Mark as Completed
-                </button>
+                <>
+                  <p className="text-[10px] text-slate-400 mb-2">
+                    <i className="fas fa-info-circle mr-1"></i>
+                    Mark as completed after gear is returned
+                  </p>
+                  <button
+                    onClick={() => updateStatus(selectedOrder.id, "completed")}
+                    className="w-full py-3 rounded-xl font-black uppercase text-xs bg-emerald-500 text-white hover:bg-emerald-600"
+                    title="Mark as done - sends review link to customer"
+                  >
+                    <i className="fas fa-flag-checkered mr-2"></i>Mark as Completed
+                  </button>
+                </>
               )}
 
               {selectedOrder.status === "completed" && !selectedOrder.reviewTokenUsed && (
-                <button
-                  onClick={() => sendReviewLinkWhatsApp(selectedOrder)}
-                  className="w-full py-3 rounded-xl font-black uppercase text-xs bg-gradient-to-r from-orange-500 to-amber-500 text-white hover:from-orange-600 hover:to-amber-600"
-                >
-                  <i className="fas fa-fire mr-2"></i>Send Review Request
-                </button>
+                <>
+                  <p className="text-[10px] text-slate-400 mb-2">
+                    <i className="fas fa-info-circle mr-1"></i>
+                    Remind customer to leave a review
+                  </p>
+                  <button
+                    onClick={() => sendReviewLinkWhatsApp(selectedOrder)}
+                    className="w-full py-3 rounded-xl font-black uppercase text-xs bg-gradient-to-r from-orange-500 to-amber-500 text-white hover:from-orange-600 hover:to-amber-600"
+                    title="Send review link via WhatsApp"
+                  >
+                    <i className="fas fa-fire mr-2"></i>Send Review Request
+                  </button>
+                </>
               )}
 
               {selectedOrder.status === "completed" && selectedOrder.reviewTokenUsed && (

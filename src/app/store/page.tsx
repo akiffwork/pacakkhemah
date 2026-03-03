@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import {
@@ -14,6 +15,7 @@ import InventoryTab from "@/components/InventoryTab";
 import StorefrontTab from "@/components/StorefrontTab";
 import SettingsTab from "@/components/SettingsTab";
 import OrdersTab from "@/components/OrdersTab";
+import UpdatesTab from "@/components/UpdatesTab";
 
 type VendorData = {
   name: string;
@@ -33,7 +35,7 @@ type VendorData = {
   reviewCount?: number;
 };
 
-type Tab = "analytics" | "orders" | "documents" | "inventory" | "storefront" | "settings";
+type Tab = "analytics" | "orders" | "updates" | "documents" | "inventory" | "storefront" | "settings";
 
 // --- LOGIN SCREEN ---
 function LoginScreen() {
@@ -111,7 +113,23 @@ function LoginScreen() {
 
 // --- MAIN DASHBOARD SHELL ---
 function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: VendorData; vendorId: string }) {
-  const [activeTab, setActiveTab] = useState<Tab>("analytics");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const tabParam = searchParams.get("tab") as Tab | null;
+  const [activeTab, setActiveTab] = useState<Tab>(tabParam || "analytics");
+
+  // Sync tab with URL
+  function handleTabChange(tab: Tab) {
+    setActiveTab(tab);
+    router.push(`/store?tab=${tab}`, { scroll: false });
+  }
+
+  // Update state if URL changes externally
+  useEffect(() => {
+    if (tabParam && tabParam !== activeTab) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
 
   async function logout() {
     await signOut(auth);
@@ -120,6 +138,7 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: "analytics", label: "Dashboard", icon: "fa-chart-line" },
     { id: "orders", label: "Orders", icon: "fa-shopping-bag" },
+    { id: "updates", label: "Updates", icon: "fa-bullhorn" },
     { id: "documents", label: "Documents", icon: "fa-file-contract" },
     { id: "inventory", label: "Inventory", icon: "fa-boxes" },
     { id: "storefront", label: "Storefront", icon: "fa-store" },
@@ -185,7 +204,7 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
           {tabs.map(t => (
             <button
               key={t.id}
-              onClick={() => setActiveTab(t.id)}
+              onClick={() => handleTabChange(t.id)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap shrink-0 transition-all min-h-[44px] ${
                 activeTab === t.id
                   ? "bg-[#062c24] text-white shadow-md"
@@ -203,6 +222,7 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
       <div className="max-w-7xl mx-auto px-4 mt-6">
         {activeTab === "analytics" && <AnalyticsTab vendorId={vendorId} vendorData={vendorData} />}
         {activeTab === "orders" && <OrdersTab vendorId={vendorId} vendorName={vendorData.name} />}
+        {activeTab === "updates" && <UpdatesTab vendorId={vendorId} />}
         {activeTab === "documents" && <DocumentsTab vendorId={vendorId} vendorData={vendorData} />}
         {activeTab === "inventory" && <InventoryTab vendorId={vendorId} />}
         {activeTab === "storefront" && <StorefrontTab vendorId={vendorId} vendorData={vendorData} />}
