@@ -25,8 +25,11 @@ type VendorData = {
 };
 type GearItem = {
   id: string; name: string; price: number; img?: string;
+  images?: string[]; // Multiple photos support
   desc?: string; category?: string; type?: string;
-  stock?: number; inc?: string[]; deleted?: boolean;
+  stock?: number; inc?: string[]; 
+  linkedItems?: { itemId: string; qty: number }[]; // Linked add-ons
+  deleted?: boolean;
 };
 type CartItem = GearItem & { qty: number };
 type AvailRule = { itemId?: string; type?: string; start: string; end?: string; qty?: number };
@@ -269,6 +272,16 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       <span>{r}</span>
     </div>
   ));
+  // Get linked items data for a gear item
+function getLinkedItemsData(item: GearItem): { item: GearItem; qty: number }[] {
+  if (!item.linkedItems || item.linkedItems.length === 0) return [];
+  return item.linkedItems
+    .map(li => {
+      const linkedItem = allGear.find(g => g.id === li.itemId);
+      return linkedItem ? { item: linkedItem, qty: li.qty } : null;
+    })
+    .filter(Boolean) as { item: GearItem; qty: number }[];
+}
 
   const rating = vendorData?.rating || 0;
   const reviewCount = vendorData?.reviewCount || 0;
@@ -331,17 +344,22 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
           <div className="w-20 h-20 bg-white rounded-2xl p-1 shadow-2xl mb-4">
             <img src={vendorData?.image || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-[0.9rem]" alt="logo" />
           </div>
+{/* Name + Verified Badge */}
+<div className="flex items-center gap-2 mb-2">
+  <h1 className="text-xl font-black uppercase tracking-tight">{vendorData?.name || "Loading..."}</h1>
+  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase">
+    <i className="fas fa-check-circle mr-1"></i>Verified
+  </span>
+</div>
 
-          {/* Tagline block */}
-          <div className="bg-white/10 backdrop-blur-sm border border-white/10 rounded-2xl px-5 py-4 max-w-md w-full mb-4">
-            {vendorData?.tagline && (
-              <p className="text-sm font-bold text-white leading-relaxed">{vendorData.tagline}</p>
-            )}
-            {vendorData?.tagline_my && (
-              <p className="text-xs font-medium text-emerald-300/80 italic mt-1.5 leading-relaxed">{vendorData.tagline_my}</p>
-            )}
-          </div>
-
+{/* Rating */}
+{reviewCount > 0 && (
+  <div className="bg-orange-500/20 text-orange-300 border border-orange-500/30 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wide flex items-center gap-1.5 mb-3">
+    <i className="fas fa-fire"></i>
+    <span>{rating.toFixed(1)}</span>
+    <span className="text-orange-200/60">({reviewCount} reviews)</span>
+  </div>
+)}
           {/* Info pills */}
           <div className="flex flex-wrap justify-center gap-2 text-[9px] font-bold uppercase mb-3">
             <span className="bg-white/10 backdrop-blur-sm px-2.5 py-1 rounded-full border border-white/10">
@@ -361,21 +379,6 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
             {vendorData?.ig && <a href={vendorData.ig} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center hover:bg-white/20 transition-colors border border-white/10"><i className="fab fa-instagram text-sm"></i></a>}
             {vendorData?.threads && <a href={vendorData.threads} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center hover:bg-white/20 transition-colors border border-white/10"><i className="fab fa-threads text-sm"></i></a>}
             {vendorData?.fb && <a href={vendorData.fb} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center hover:bg-white/20 transition-colors border border-white/10"><i className="fab fa-facebook text-sm"></i></a>}
-          </div>
-        </div>
-
-        {/* Name bar + rating + verified badge at bottom of header */}
-        <div className="relative z-10 bg-white/5 border-t border-white/10 px-5 py-3 flex items-center justify-between">
-          <h1 className="text-base font-black uppercase tracking-tight leading-tight">{vendorData?.name || "Loading..."}</h1>
-          <div className="flex items-center gap-2 shrink-0 ml-3">
-            {reviewCount > 0 && (
-              <span className="bg-orange-500/20 text-orange-300 border border-orange-500/30 px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center gap-1">
-                <i className="fas fa-fire"></i>{rating.toFixed(1)} ({reviewCount})
-              </span>
-            )}
-            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest">
-              <i className="fas fa-check-circle mr-1"></i>Verified
-            </span>
           </div>
         </div>
       </header>
@@ -412,6 +415,19 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         {/* GEAR TAB CONTENT */}
         {mainTab === "gear" && (
           <>
+          {/* About Us Section */}
+{(vendorData?.tagline || vendorData?.tagline_my) && (
+  <Section title="About Us" icon="fa-info-circle" defaultOpen={false}>
+    <div className="space-y-3">
+      {vendorData.tagline && (
+        <p className="text-sm text-slate-700 leading-relaxed">{vendorData.tagline}</p>
+      )}
+      {vendorData.tagline_my && (
+        <p className="text-sm text-emerald-700 italic leading-relaxed">{vendorData.tagline_my}</p>
+      )}
+    </div>
+  </Section>
+)}
         {vendorData?.steps && vendorData.steps.length > 0 && (
           <Section title="How to Rent?" icon="fa-list-ol" defaultOpen={false}>
             <div className="space-y-2">
@@ -494,6 +510,11 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                         <div className="aspect-square rounded-xl overflow-hidden bg-slate-100 mb-2.5 relative">
                           <img src={item.img || "/pacak-khemah.png"} className="w-full h-full object-cover" alt={item.name} />
                           {inCart && <div className="absolute top-2 right-2 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[9px] font-black shadow">{inCart.qty}</div>}
+                          {item.linkedItems && item.linkedItems.length > 0 && (
+  <div className="absolute bottom-2 left-2 bg-purple-500 text-white px-1.5 py-0.5 rounded text-[7px] font-black uppercase">
+    <i className="fas fa-box-open mr-0.5"></i>Package
+  </div>
+)}
                           {/* Share button - appears on hover */}
                           <button 
                             onClick={(e) => { e.stopPropagation(); handleShare(item.id); }}
@@ -615,27 +636,64 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       )}
 
       {showItemModal && selectedItem && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[300] flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) setShowItemModal(false); }}>
-          <div className="bg-white rounded-[2rem] w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl relative" style={{ scrollbarWidth: "none" }}>
-            <button onClick={() => setShowItemModal(false)} className="absolute top-5 right-5 w-11 h-11 bg-black/20 rounded-full flex items-center justify-center text-white z-10 hover:bg-black/40 transition-colors"><i className="fas fa-times"></i></button>
-            {/* Share button in modal */}
-            <button onClick={() => handleShare(selectedItem.id)} className="absolute top-5 left-5 w-11 h-11 bg-white/90 rounded-full flex items-center justify-center text-slate-500 z-10 hover:text-emerald-600 hover:bg-white transition-colors shadow-sm"><i className="fas fa-share-alt text-sm"></i></button>
-            <div className="h-64 w-full"><img src={selectedItem.img || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-t-[2rem]" alt={selectedItem.name} /></div>
-            <div className="p-6">
-              <h3 className="text-xl font-black text-[#062c24] uppercase mb-1">{selectedItem.name}</h3>
-              <p className="text-emerald-600 font-black text-lg mb-4">RM {selectedItem.price} <span className="text-[10px] text-slate-400 font-bold">/ NIGHT</span></p>
-              <p className="text-slate-600 text-sm leading-relaxed mb-6">{selectedItem.desc}</p>
-              {selectedItem.inc && selectedItem.inc.length > 0 && (
-                <div className="mb-6 p-3 bg-slate-50 rounded-xl">
-                  <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Includes:</p>
-                  <div className="flex flex-wrap gap-1.5">{selectedItem.inc.map(inc => (<span key={inc} className="bg-white border border-emerald-100 text-emerald-700 px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase">{inc}</span>))}</div>
+  <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[300] flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) setShowItemModal(false); }}>
+    <div className="bg-white rounded-[2rem] w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl relative" style={{ scrollbarWidth: "none" }}>
+      <button onClick={() => setShowItemModal(false)} className="absolute top-5 right-5 w-11 h-11 bg-black/20 rounded-full flex items-center justify-center text-white z-20 hover:bg-black/40 transition-colors"><i className="fas fa-times"></i></button>
+      <button onClick={() => handleShare(selectedItem.id)} className="absolute top-5 left-5 w-11 h-11 bg-white/90 rounded-full flex items-center justify-center text-slate-500 z-20 hover:text-emerald-600 hover:bg-white transition-colors shadow-sm"><i className="fas fa-share-alt text-sm"></i></button>
+      
+      {/* Image - can be enhanced to carousel later */}
+      <div className="h-64 w-full">
+        <img src={selectedItem.img || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-t-[2rem]" alt={selectedItem.name} />
+      </div>
+      
+      <div className="p-6">
+        {selectedItem.type === "package" && (
+          <span className="inline-block bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-[9px] font-black uppercase mb-2">
+            <i className="fas fa-box-open mr-1"></i>Package
+          </span>
+        )}
+        <h3 className="text-xl font-black text-[#062c24] uppercase mb-1">{selectedItem.name}</h3>
+        <p className="text-emerald-600 font-black text-lg mb-4">RM {selectedItem.price} <span className="text-[10px] text-slate-400 font-bold">/ NIGHT</span></p>
+        <p className="text-slate-600 text-sm leading-relaxed mb-6">{selectedItem.desc}</p>
+        
+        {/* Linked Items Section - NEW */}
+        {selectedItem.linkedItems && selectedItem.linkedItems.length > 0 && (
+          <div className="mb-6 p-4 bg-purple-50 rounded-xl border border-purple-100">
+            <p className="text-[9px] font-black text-purple-700 uppercase mb-3 flex items-center gap-2">
+              <i className="fas fa-link"></i> What's Included in This Package
+            </p>
+            <div className="space-y-2">
+              {getLinkedItemsData(selectedItem).map(({ item, qty }) => (
+                <div key={item.id} className="flex items-center gap-3 bg-white p-2 rounded-lg border border-purple-100">
+                  <div className="w-10 h-10 rounded-lg overflow-hidden bg-slate-100 shrink-0">
+                    <img src={item.img || "/pacak-khemah.png"} className="w-full h-full object-cover" alt={item.name} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-black text-[#062c24] uppercase truncate">{item.name}</p>
+                    <p className="text-[9px] text-slate-400">RM {item.price}/night each</p>
+                  </div>
+                  <div className="bg-purple-100 text-purple-700 px-2 py-1 rounded-lg text-[10px] font-black">
+                    ×{qty}
+                  </div>
                 </div>
-              )}
-              <button onClick={() => addToCart(selectedItem)} className="w-full bg-[#062c24] text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all">Add to Cart</button>
+              ))}
             </div>
           </div>
-        </div>
-      )}
+        )}
+        
+        {/* Text-based Includes */}
+        {selectedItem.inc && selectedItem.inc.length > 0 && (
+          <div className="mb-6 p-3 bg-slate-50 rounded-xl">
+            <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Also Includes:</p>
+            <div className="flex flex-wrap gap-1.5">{selectedItem.inc.map(inc => (<span key={inc} className="bg-white border border-emerald-100 text-emerald-700 px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase">{inc}</span>))}</div>
+          </div>
+        )}
+        
+        <button onClick={() => addToCart(selectedItem)} className="w-full bg-[#062c24] text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all">Add to Cart</button>
+      </div>
+    </div>
+  </div>
+)}
 
       {showCart && (
         <div className="fixed inset-0 bg-[#062c24]/95 backdrop-blur-md z-[300] flex items-center justify-center p-4">
