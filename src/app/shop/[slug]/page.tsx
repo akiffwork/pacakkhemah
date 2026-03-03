@@ -92,6 +92,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
   const [loading, setLoading] = useState(true);
   const [showShareToast, setShowShareToast] = useState(false);
   const [addToast, setAddToast] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const cpRef = useRef<any>(null);
   const opRef = useRef<any>(null);
 
@@ -245,6 +246,10 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
   }
 
   const categories = Array.from(new Set(allGear.map(g => g.category || (g.type === "package" ? "Packages" : "Add-ons")))).sort();
+  // Auto-select first category if none selected
+  useEffect(() => {
+    if (categories.length > 0 && !activeCategory) setActiveCategory(categories[0]);
+  }, [categories.length]);
   const filteredGear = (cat: string) => allGear.filter(g => (g.category || (g.type === "package" ? "Packages" : "Add-ons")) === cat && g.name.toLowerCase().includes(searchTerm.toLowerCase()));
   const cartCount = cart.reduce((a, i) => a + i.qty, 0);
   const canOrder = cartCount > 0 && selectedDates[0] && selectedDates[1] && termsAgreed;
@@ -273,6 +278,8 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       {/* Compact Profile Header */}
       <header className="bg-[#062c24] text-white relative overflow-hidden">
         <div className="absolute inset-0 opacity-[0.06]" style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/dark-wood.png')" }} />
+
+        {/* Nav row */}
         <div className="relative z-10 flex justify-between items-center px-4 pt-4">
           <Link href="/directory" className="w-10 h-10 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center hover:bg-white hover:text-[#062c24] transition-all">
             <i className="fas fa-arrow-left text-sm"></i>
@@ -288,17 +295,27 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
             )}
           </div>
         </div>
-        <div className="relative z-10 flex items-center gap-4 px-5 py-5">
-          <div className="w-16 h-16 bg-white rounded-2xl p-0.5 shadow-lg shrink-0">
-            <img src={vendorData?.image || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-[0.9rem]" alt="logo" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-black uppercase tracking-tight leading-tight truncate">{vendorData?.name || "Loading..."}</h1>
-            <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-widest mt-0.5 truncate">{vendorData?.tagline}</p>
-            {vendorData?.tagline_my && <p className="text-[9px] font-medium text-white/50 italic mt-0.5 truncate">{vendorData.tagline_my}</p>}
+
+        {/* Profile — logo + info stacked on mobile for long names */}
+        <div className="relative z-10 px-5 pt-4 pb-2">
+          <div className="flex items-start gap-4">
+            <div className="w-16 h-16 bg-white rounded-2xl p-0.5 shadow-lg shrink-0">
+              <img src={vendorData?.image || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-[0.9rem]" alt="logo" />
+            </div>
+            <div className="min-w-0 flex-1 pt-1">
+              <h1 className="text-lg font-black uppercase tracking-tight leading-tight">{vendorData?.name || "Loading..."}</h1>
+              {vendorData?.tagline && (
+                <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wide mt-1 leading-relaxed">{vendorData.tagline}</p>
+              )}
+              {vendorData?.tagline_my && (
+                <p className="text-[9px] font-medium text-white/50 italic mt-0.5 leading-relaxed">{vendorData.tagline_my}</p>
+              )}
+            </div>
           </div>
         </div>
-        <div className="relative z-10 px-5 pb-4 flex items-center justify-between">
+
+        {/* Social + badge row */}
+        <div className="relative z-10 px-5 pb-4 pt-2 flex items-center justify-between">
           <div className="flex gap-3">
             {vendorData?.ig && <a href={vendorData.ig} target="_blank" rel="noreferrer" className="w-9 h-9 bg-white/10 rounded-xl flex items-center justify-center hover:bg-white/20 transition-colors"><i className="fab fa-instagram"></i></a>}
             {vendorData?.tiktok && <a href={vendorData.tiktok} target="_blank" rel="noreferrer" className="w-9 h-9 bg-white/10 rounded-xl flex items-center justify-center hover:bg-white/20 transition-colors"><i className="fab fa-tiktok"></i></a>}
@@ -356,14 +373,22 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
             <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search gear..."
               className="w-full bg-slate-50 border border-slate-200 pl-9 pr-4 py-3 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500" />
           </div>
-          <div className="overflow-x-auto flex gap-2 mb-3 pb-1" style={{ scrollbarWidth: "none" }}>
+          {/* Category tabs — active tab filters visible items */}
+          <div className="flex rounded-xl bg-slate-100 p-1 mb-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
             {categories.map(cat => (
-              <button key={cat} onClick={() => document.getElementById(`cat-${cat}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
-                className="shrink-0 px-4 py-2 bg-emerald-50 border border-emerald-100 rounded-full text-[10px] font-black uppercase text-emerald-700 whitespace-nowrap min-h-[36px] hover:bg-emerald-100 transition-colors">
+              <button key={cat}
+                onClick={() => setActiveCategory(prev => prev === cat ? null : cat)}
+                className={`flex-1 min-w-0 px-3 py-2.5 rounded-lg text-[10px] font-black uppercase whitespace-nowrap transition-all ${
+                  (activeCategory === cat || (!activeCategory && categories.length === 1))
+                    ? "bg-[#062c24] text-white shadow-sm"
+                    : "text-slate-500 hover:text-[#062c24]"
+                }`}>
                 {cat}
               </button>
             ))}
           </div>
+
+          {/* Gear Grid — shows active category or all */}
           {loading ? (
             <div className="grid grid-cols-2 gap-3">
               {[...Array(4)].map((_, i) => (
@@ -374,7 +399,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                 </div>
               ))}
             </div>
-          ) : categories.map(cat => {
+          ) : (categories.filter(c => !activeCategory || c === activeCategory)).map(cat => {
             const items = filteredGear(cat);
             if (!items.length) return null;
             return (
