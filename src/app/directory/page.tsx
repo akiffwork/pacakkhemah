@@ -7,6 +7,7 @@ import {
   collection, getDocs, query, where, orderBy, limit, doc, getDoc,
 } from "firebase/firestore";
 import BottomNav from "@/components/BottomNav";
+import AdBanner from "@/components/AdBanner";
 
 // --- TYPES ---
 type Vendor = {
@@ -472,9 +473,19 @@ export default function DirectoryPage() {
                   </>
                 )}
               </div>
-            ) : displayList.map((vendor, i) => (
-              <VendorCard key={vendor.id} vendor={vendor} gear={vendorGear[vendor.id] || []} index={i} />
-            ))}
+          ) : (
+              <>
+                {displayList.map((vendor, i) => (
+                  <VendorCard key={vendor.id} vendor={vendor} gear={vendorGear[vendor.id] || []} index={i} />
+                ))}
+                {/* Ad blends with vendor cards - shows after grid loads */}
+                {displayList.length >= 6 && (
+                  <div className="col-span-1 row-start-4 md:col-start-3">
+                    <AdBanner variant="card" />
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           {visibleCount < filteredVendors.length && (

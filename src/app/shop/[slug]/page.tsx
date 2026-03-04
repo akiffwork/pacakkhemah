@@ -11,6 +11,7 @@ import {
 import { onAuthStateChanged } from "firebase/auth";
 import flatpickr from "flatpickr";
 import "flatpickr/dist/flatpickr.min.css";
+import AdBanner from "@/components/AdBanner";
 
 type VendorData = {
   name: string; tagline?: string; tagline_my?: string; image?: string;
@@ -761,11 +762,14 @@ function getLinkedItemsData(item: GearItem): { item: GearItem; qty: number }[] {
                 </label>
               </div>
             </div>
-            <div className="p-5 bg-slate-50 border-t border-slate-100">
+            <div className="p-5 bg-slate-50 border-t border-slate-100 space-y-4">
               <button onClick={canOrder ? sendWhatsAppOrder : undefined} disabled={!canOrder}
                 className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl transition-all ${canOrder ? "bg-[#062c24] text-white hover:bg-emerald-900 active:scale-95" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}>
                 {!cart.length ? "Add Items to Start" : !selectedDates[0] || !selectedDates[1] ? "Select Pickup & Return Dates" : !termsAgreed ? "Agree to Terms to Proceed" : "Submit Order via WhatsApp 🟢"}
               </button>
+              
+              {/* Seamless ad placement */}
+              <AdBanner variant="inline" />
             </div>
           </div>
         </div>
