@@ -23,6 +23,7 @@ type GearItem = {
 };
 type Event = { id: string; name: string; poster: string; link: string; organizer?: string };
 type Announcement = { isActive: boolean; message: string; type: "info" | "warning" | "promo" };
+type Testimonial = { id: string; name: string; location: string; text: string; rating: number };
 
 const LOAD_STEP = 12;
 const announcementThemes = {
@@ -31,7 +32,13 @@ const announcementThemes = {
   promo: { bg: "bg-emerald-600", icon: "fa-tag" },
 };
 
-// --- VENDOR CARD WITH GEAR THUMBNAILS ---
+const DEFAULT_TESTIMONIALS: Testimonial[] = [
+  { id: "1", name: "Ahmad", location: "Shah Alam", text: "First time camping and the vendor was super helpful! Gear was clean and ready.", rating: 5 },
+  { id: "2", name: "Siti", location: "Kuantan", text: "So convenient! Found everything I needed in one place. Will use again.", rating: 5 },
+  { id: "3", name: "Farid", location: "Johor Bahru", text: "Great prices and booking via WhatsApp was easy. Highly recommend!", rating: 5 },
+];
+
+// --- VENDOR CARD ---
 function VendorCard({ vendor, gear, index }: { vendor: Vendor; gear: GearItem[]; index: number }) {
   const logo = vendor.logo || vendor.image || "/pacak-khemah.png";
   const city = vendor.city || "Malaysia";
@@ -43,8 +50,6 @@ function VendorCard({ vendor, gear, index }: { vendor: Vendor; gear: GearItem[];
     <Link href={shopPath}
       className="group bg-white rounded-2xl border border-slate-100 hover:border-emerald-300 shadow-sm hover:shadow-xl transition-all flex flex-col h-full cursor-pointer stagger-in overflow-hidden"
       style={{ animationDelay: `${index * 60}ms` }}>
-
-      {/* Vendor info */}
       <div className="p-4 pb-3">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-12 h-12 bg-slate-50 rounded-xl p-1 shrink-0 group-hover:bg-emerald-50 transition-colors">
@@ -72,8 +77,6 @@ function VendorCard({ vendor, gear, index }: { vendor: Vendor; gear: GearItem[];
           )}
         </div>
       </div>
-
-      {/* Gear thumbnails */}
       {topGear.length > 0 && (
         <div className="px-3 pb-3">
           <div className="flex gap-2">
@@ -86,7 +89,6 @@ function VendorCard({ vendor, gear, index }: { vendor: Vendor; gear: GearItem[];
                 <p className="text-[8px] font-bold text-emerald-600">RM {item.price}</p>
               </div>
             ))}
-            {/* Fill empty slots if less than 3 */}
             {topGear.length < 3 && [...Array(3 - topGear.length)].map((_, i) => (
               <div key={`empty-${i}`} className="flex-1 min-w-0">
                 <div className="aspect-square rounded-lg bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center">
@@ -97,14 +99,10 @@ function VendorCard({ vendor, gear, index }: { vendor: Vendor; gear: GearItem[];
           </div>
         </div>
       )}
-
-      {/* Bottom bar */}
       <div className="mt-auto border-t border-slate-50 px-4 py-2.5 bg-slate-50/50 group-hover:bg-emerald-50/50 transition-colors">
         <div className="flex items-center justify-between">
           <span className="text-[9px] font-bold text-emerald-600 uppercase">View Shop →</span>
-          {gear.length > 3 && (
-            <span className="text-[8px] font-bold text-slate-400">+{gear.length - 3} more items</span>
-          )}
+          {gear.length > 3 && <span className="text-[8px] font-bold text-slate-400">+{gear.length - 3} more</span>}
         </div>
       </div>
     </Link>
@@ -125,17 +123,18 @@ export default function DirectoryPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [locating, setLocating] = useState(false);
   const [vendorGear, setVendorGear] = useState<Record<string, GearItem[]>>({});
   const [loadingGear, setLoadingGear] = useState(false);
   const [locationSearch, setLocationSearch] = useState("");
   const [showLocDropdown, setShowLocDropdown] = useState(false);
   const [customLocation, setCustomLocation] = useState("");
-  const [socialLinks, setSocialLinks] = useState<{ instagram?: string; threads?: string; whatsapp?: string }>({}); // typed location that has no vendors
+  const [socialLinks, setSocialLinks] = useState<{ instagram?: string; threads?: string; whatsapp?: string }>({});
+  const [testimonials, setTestimonials] = useState<Testimonial[]>(DEFAULT_TESTIMONIALS);
 
-  // Hidden admin access
   const [logoTaps, setLogoTaps] = useState(0);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const vendorSectionRef = useRef<HTMLElement>(null);
+  
   function handleLogoTap() {
     const next = logoTaps + 1;
     setLogoTaps(next);
@@ -144,7 +143,10 @@ export default function DirectoryPage() {
     if (next >= 5) { setLogoTaps(0); window.location.href = "/admin"; }
   }
 
-  // Debounced search
+  function scrollToVendors() {
+    vendorSectionRef.current?.scrollIntoView({ behavior: "smooth" });
+  }
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   function handleSearchInput(val: string) {
     setSearchTerm(val);
@@ -152,9 +154,8 @@ export default function DirectoryPage() {
     debounceRef.current = setTimeout(() => applySearch(val), 150);
   }
 
-  useEffect(() => { loadVendors(); loadEvents(); loadAnnouncement(); loadSocialLinks(); }, []);
+  useEffect(() => { loadVendors(); loadEvents(); loadAnnouncement(); loadSocialLinks(); loadTestimonials(); }, []);
 
-  // Close location dropdown when clicking outside
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       const target = e.target as HTMLElement;
@@ -180,6 +181,7 @@ export default function DirectoryPage() {
         if (v.areas) v.areas.forEach(a => locs.add(a.trim()));
       });
       setLocations(Array.from(locs).sort());
+      loadGearForVendors(vendors);
     } catch (e) { console.error(e); setLoadError(true); }
     finally { setLoading(false); }
   }
@@ -209,7 +211,15 @@ export default function DirectoryPage() {
     } catch { }
   }
 
-  // Load gear for filtered vendors
+  async function loadTestimonials() {
+    try {
+      const snap = await getDocs(query(collection(db, "testimonials"), limit(3)));
+      if (!snap.empty) {
+        setTestimonials(snap.docs.map(d => ({ id: d.id, ...d.data() } as Testimonial)));
+      }
+    } catch { }
+  }
+
   async function loadGearForVendors(vendors: Vendor[]) {
     const ids = vendors.map(v => v.id);
     if (!ids.length) { setVendorGear({}); return; }
@@ -223,7 +233,6 @@ export default function DirectoryPage() {
         if (!grouped[g.vendorId]) grouped[g.vendorId] = [];
         grouped[g.vendorId].push(g);
       });
-      // Sort: packages first, then by price
       Object.keys(grouped).forEach(k => {
         grouped[k].sort((a, b) => {
           const aP = a.type === "package" ? 0 : 1;
@@ -258,32 +267,11 @@ export default function DirectoryPage() {
       : allVendors.filter(v => (v.city && v.city.includes(loc)) || (v.areas && v.areas.some(a => a.includes(loc))));
     setFilteredVendors(filtered);
     setVisibleCount(LOAD_STEP);
-    // Load gear for these vendors
     loadGearForVendors(filtered);
-  }
-
-  async function locateMe() {
-    if (!navigator.geolocation) return alert("Geolocation not supported");
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const { latitude, longitude } = pos.coords;
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-          const data = await res.json();
-          const city = data.address.city || data.address.town || data.address.village || data.address.state;
-          if (city) handleSearchInput(city);
-          else alert("Could not determine city.");
-        } catch { alert("Location error."); }
-        finally { setLocating(false); }
-      },
-      () => { alert("Permission denied."); setLocating(false); }
-    );
   }
 
   const displayList = filteredVendors.slice(0, visibleCount);
   const annTheme = announcement ? announcementThemes[announcement.type] || announcementThemes.info : null;
-  const hasGear = Object.keys(vendorGear).length > 0;
 
   return (
     <div className="pb-24" style={{ fontFamily: "'Inter', sans-serif", color: "#062c24", backgroundColor: "#f8fafc" }}>
@@ -299,61 +287,97 @@ export default function DirectoryPage() {
         </div>
       )}
 
-      {/* ═══ HEADER WITH REAL ASSETS ═══ */}
+      {/* ═══ HERO SECTION ═══ */}
       <header className="bg-[#062c24] text-white relative overflow-hidden">
-        {/* Pattern */}
-        {/* Chevron pattern */}
-        <div className="absolute inset-0 opacity-40"
-          style={{ backgroundImage: "url('/pattern-chevron.png')", backgroundSize: "300px" }} />
-        {/* Dark gradient tint — top to bottom */}
+        <div className="absolute inset-0 opacity-40" style={{ backgroundImage: "url('/pattern-chevron.png')", backgroundSize: "300px" }} />
         <div className="absolute inset-0 bg-gradient-to-b from-[#062c24] via-[#062c24]/50 to-[#062c24]/90" />
 
-        {/* Main header row */}
-        <div className="relative z-10 flex justify-between items-center px-4 py-4">
-          {/* Logo + wordmark */}
-          <div className="flex items-center gap-2.5 cursor-pointer select-none" onClick={handleLogoTap}>
-            <img src="/pacak-khemah.png" className="h-11 w-11 object-contain rounded-full" alt="Pacak Khemah" draggable={false} />
-            <div>
-              <h1 className="text-[22px] font-black tracking-tight leading-none" style={{ fontFamily: "'Inter', sans-serif" }}>pacakkhemah</h1>
-              <p className="text-[7px] font-bold text-emerald-400 uppercase tracking-[0.2em] mt-0.5">Pacak. Rehat. Ulang.</p>
+        <div className="relative z-10 max-w-4xl mx-auto px-4 pt-6 pb-10">
+          {/* Logo row */}
+          <div className="flex justify-between items-center mb-8">
+            <div className="flex items-center gap-2.5 cursor-pointer select-none" onClick={handleLogoTap}>
+              <img src="/pacak-khemah.png" className="h-10 w-10 object-contain rounded-xl" alt="Pacak Khemah" draggable={false} />
+              <div>
+                <h1 className="text-lg font-black tracking-tight leading-none">pacakkhemah</h1>
+                <p className="text-[7px] font-bold text-emerald-400 uppercase tracking-[0.15em]">Pacak. Rehat. Ulang.</p>
+              </div>
+            </div>
+            <Link href="/store" className="text-[9px] font-bold text-white/60 hover:text-white transition-colors flex items-center gap-2">
+              <i className="fas fa-store"></i> <span className="hidden sm:inline">Vendor Login</span>
+            </Link>
+          </div>
+
+          {/* Hero content */}
+          <div className="text-center">
+            <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-tight mb-3 leading-tight">
+              Sewa Gear Camping.<br/>
+              <span className="text-emerald-400">Tanpa Hassle.</span>
+            </h2>
+            <p className="text-sm text-white/70 max-w-md mx-auto mb-6 leading-relaxed">
+              Rent quality camping gear from verified local vendors across Malaysia. Tents, sleeping bags, cooking equipment & more.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <button onClick={scrollToVendors} className="bg-emerald-500 hover:bg-emerald-400 text-white px-6 py-3.5 rounded-xl font-black uppercase text-xs tracking-widest transition-all shadow-lg">
+                <i className="fas fa-search mr-2"></i> Find Vendors
+              </button>
+              <Link href="/register" className="bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-3.5 rounded-xl font-black uppercase text-xs tracking-widest transition-all">
+                <i className="fas fa-store mr-2"></i> Become a Vendor
+              </Link>
             </div>
           </div>
-          {/* Right — rent tend wild graphic */}
-          <img src="/rent-camp.png" className="h-16 object-contain" alt="Rent, tend wild & heal soul" />
-        </div>
-
-        {/* Subtle vendor links */}
-        <div className="relative z-10 flex justify-end items-center gap-3 px-5 pb-3">
-          <Link href="/register-vendor"
-            className="text-[9px] font-bold text-emerald-300/70 uppercase tracking-widest hover:text-white transition-colors">
-            Join as Vendor
-          </Link>
-          <Link href="/store"
-            className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center text-white/60 hover:bg-white hover:text-[#062c24] transition-all"
-            title="Vendor Login">
-            <i className="fas fa-store text-xs"></i>
-          </Link>
         </div>
       </header>
 
-      {/* ═══ MAIN CONTENT ═══ */}
-      <main className="max-w-6xl mx-auto px-4 pt-6 space-y-6">
+      {/* ═══ TRUST BADGES ═══ */}
+      <section className="bg-white border-b border-slate-100">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <div className="flex flex-wrap justify-center gap-x-6 gap-y-2">
+            {[
+              { icon: "fa-check-circle", text: "Verified Vendors" },
+              { icon: "fa-shield-alt", text: "Secure Booking" },
+              { icon: "fa-whatsapp", text: "Direct WhatsApp", fab: true },
+              { icon: "fa-tag", text: "No Hidden Fees" },
+            ].map((badge, i) => (
+              <div key={i} className="flex items-center gap-2 text-[10px] font-bold text-slate-500">
+                <i className={`${badge.fab ? "fab" : "fas"} ${badge.icon} text-emerald-500`}></i>
+                <span>{badge.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-        {/* Where to Pacak Today? */}
+      {/* ═══ HOW IT WORKS ═══ */}
+      <section className="max-w-4xl mx-auto px-4 py-8">
+        <h3 className="text-center text-xs font-black text-slate-400 uppercase tracking-widest mb-6">How It Works</h3>
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { step: "1", icon: "fa-search", title: "Find", desc: "Browse vendors near you" },
+            { step: "2", icon: "fa-calendar-check", title: "Select", desc: "Pick dates & gear" },
+            { step: "3", icon: "fa-comments", title: "Book", desc: "Confirm via WhatsApp" },
+          ].map((item, i) => (
+            <div key={i} className="bg-white rounded-2xl p-4 text-center border border-slate-100 shadow-sm">
+              <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3 text-sm font-black">
+                {item.step}
+              </div>
+              <p className="text-xs font-black text-[#062c24] uppercase mb-1">{item.title}</p>
+              <p className="text-[10px] text-slate-500">{item.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ═══ VENDOR SEARCH & GRID ═══ */}
+      <main className="max-w-6xl mx-auto px-4 space-y-6" ref={vendorSectionRef}>
         <section>
           <h2 className="text-lg font-black text-[#062c24] mb-3">Where to Pacak Today?</h2>
 
-          {/* Searchable location input */}
           <div className="relative mb-2" data-loc-dropdown>
             <i className="fas fa-map-marker-alt absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500 text-sm z-10"></i>
             <input
               type="text"
               value={locationSearch}
-              onChange={e => {
-                setLocationSearch(e.target.value);
-                setShowLocDropdown(true);
-                setCustomLocation("");
-              }}
+              onChange={e => { setLocationSearch(e.target.value); setShowLocDropdown(true); setCustomLocation(""); }}
               onFocus={() => setShowLocDropdown(true)}
               placeholder="Search or pick a location..."
               className="w-full bg-white text-[#062c24] py-4 pl-11 pr-20 rounded-xl shadow-sm border border-slate-200 outline-none font-bold text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500 transition-all"
@@ -371,7 +395,6 @@ export default function DirectoryPage() {
               </button>
             </div>
 
-            {/* Dropdown */}
             {showLocDropdown && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-56 overflow-y-auto">
                 <button onClick={() => { filterBy("all"); setLocationSearch(""); setCustomLocation(""); setShowLocDropdown(false); }}
@@ -388,28 +411,19 @@ export default function DirectoryPage() {
                   ))
                 }
                 {locationSearch && !locations.some(l => l.toLowerCase().includes(locationSearch.toLowerCase())) && (
-                  <button onClick={() => {
-                    setCustomLocation(locationSearch);
-                    setFilteredVendors([]);
-                    setShowLocDropdown(false);
-                  }}
+                  <button onClick={() => { setCustomLocation(locationSearch); setFilteredVendors([]); setShowLocDropdown(false); }}
                     className="w-full text-left px-4 py-3 text-sm font-bold text-slate-400 hover:bg-slate-50">
-                    <i className="fas fa-search text-slate-300 mr-2 text-xs"></i> Search &ldquo;{locationSearch}&rdquo;
+                    <i className="fas fa-search text-slate-300 mr-2 text-xs"></i> Search "{locationSearch}"
                   </button>
                 )}
               </div>
             )}
           </div>
-
-          <Link href="/campsites" className="inline-flex items-center gap-2 text-[10px] font-bold text-emerald-600 hover:text-emerald-800 transition-colors">
-            <i className="fas fa-campground"></i> See suggestions?
-          </Link>
         </section>
 
-        {/* What to Pacak today? — vendors with gear */}
         <section>
           <div className="flex justify-between items-end mb-3">
-            <h2 className="text-lg font-black text-[#062c24]">What to Pacak today?</h2>
+            <h2 className="text-lg font-black text-[#062c24]">What to Pacak Today?</h2>
             <span className="text-[9px] font-bold text-white bg-[#062c24] px-2 py-0.5 rounded-md">
               {loading ? "..." : `${filteredVendors.length} Hubs`}
             </span>
@@ -444,46 +458,29 @@ export default function DirectoryPage() {
                 {customLocation ? (
                   <>
                     <div className="text-5xl mb-4">🏕️</div>
-                    <p className="text-sm font-black text-[#062c24] mb-2">Hmm, no vendors in {customLocation} yet!</p>
-                    <p className="text-xs text-slate-500 font-medium max-w-xs mx-auto mb-4 leading-relaxed">
-                      We&apos;re on the lookout for awesome gear rental vendors in this area. Hopefully someone answers our smoke signal soon! 🔥
-                    </p>
-                    <div className="flex flex-col items-center gap-2">
-                      <button onClick={() => { setLocationSearch(""); setCustomLocation(""); filterBy("all"); }}
-                        className="px-5 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors">
-                        <i className="fas fa-globe mr-2"></i> Browse All Locations
-                      </button>
-                      <Link href="/register-vendor" className="text-[10px] font-bold text-emerald-600 hover:underline">
-                        Know a vendor here? Tell them to join us!
-                      </Link>
-                    </div>
+                    <p className="text-sm font-black text-[#062c24] mb-2">No vendors in {customLocation} yet!</p>
+                    <p className="text-xs text-slate-500 font-medium max-w-xs mx-auto mb-4">We&apos;re on the lookout for vendors here. Check back soon!</p>
+                    <button onClick={() => { setLocationSearch(""); setCustomLocation(""); filterBy("all"); }}
+                      className="px-5 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-100">
+                      <i className="fas fa-globe mr-2"></i> Browse All
+                    </button>
                   </>
                 ) : (
                   <>
-                    <i className={`fas ${searchTerm ? "fa-search" : "fa-store"} text-4xl text-slate-200 mb-4 block`}></i>
-                    <p className="text-xs font-black text-slate-400 uppercase mb-2">
-                      {searchTerm ? `No results for "${searchTerm}"` : activeFilter !== "all" ? `No hubs in ${activeFilter} yet` : "No active hubs yet"}
-                    </p>
-                    {(searchTerm || activeFilter !== "all") && (
-                      <button onClick={() => { setSearchTerm(""); setLocationSearch(""); setCustomLocation(""); filterBy("all"); }}
-                        className="mt-3 px-5 py-2 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase hover:bg-slate-200">
-                        <i className="fas fa-times mr-2"></i> Clear
-                      </button>
-                    )}
+                    <i className="fas fa-store text-4xl text-slate-200 mb-4 block"></i>
+                    <p className="text-xs font-black text-slate-400 uppercase mb-2">No active hubs yet</p>
                   </>
                 )}
               </div>
-          ) : (
+            ) : (
               <>
-                {displayList.map((vendor, i) => (
+                {displayList.slice(0, 6).map((vendor, i) => (
                   <VendorCard key={vendor.id} vendor={vendor} gear={vendorGear[vendor.id] || []} index={i} />
                 ))}
-                {/* Ad blends with vendor cards - shows after grid loads */}
-                {displayList.length >= 6 && (
-                  <div className="col-span-1 row-start-4 md:col-start-3">
-                    <AdBanner variant="card" />
-                  </div>
-                )}
+                {displayList.length >= 6 && <AdBanner variant="card" />}
+                {displayList.slice(6).map((vendor, i) => (
+                  <VendorCard key={vendor.id} vendor={vendor} gear={vendorGear[vendor.id] || []} index={i + 6} />
+                ))}
               </>
             )}
           </div>
@@ -524,15 +521,61 @@ export default function DirectoryPage() {
         )}
       </main>
 
-      {/* Footer */}
+      {/* ═══ TESTIMONIALS ═══ */}
+      <section className="bg-white border-y border-slate-100 py-8">
+        <div className="max-w-4xl mx-auto px-4">
+          <h3 className="text-center text-xs font-black text-slate-400 uppercase tracking-widest mb-6">What Campers Say</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {testimonials.map((t) => (
+              <div key={t.id} className="bg-slate-50 rounded-2xl p-5">
+                <div className="flex gap-0.5 mb-3">
+                  {[...Array(5)].map((_, j) => (
+                    <i key={j} className={`fas fa-star text-xs ${j < t.rating ? "text-amber-400" : "text-slate-200"}`}></i>
+                  ))}
+                </div>
+                <p className="text-sm text-slate-600 leading-relaxed mb-4">&ldquo;{t.text}&rdquo;</p>
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-xs font-black">
+                    {t.name.charAt(0)}
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-[#062c24]">{t.name}</p>
+                    <p className="text-[9px] text-slate-400">{t.location}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ VENDOR CTA ═══ */}
+      <section className="max-w-4xl mx-auto px-4 py-10">
+        <div className="bg-gradient-to-br from-[#062c24] to-emerald-800 rounded-3xl p-8 text-white text-center relative overflow-hidden">
+          <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "url('/pattern-chevron.png')", backgroundSize: "200px" }} />
+          <div className="relative z-10">
+            <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <i className="fas fa-store text-2xl"></i>
+            </div>
+            <h3 className="text-xl font-black uppercase mb-2">Got Camping Gear?</h3>
+            <p className="text-sm text-emerald-200 max-w-md mx-auto mb-6">
+              Turn your equipment into income. Join {allVendors.length > 0 ? `${allVendors.length}+` : "our"} verified vendors on Pacak Khemah.
+            </p>
+            <Link href="/register" className="inline-block bg-white text-[#062c24] px-8 py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-50 transition-colors shadow-lg">
+              <i className="fas fa-rocket mr-2"></i> Start Earning
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ FOOTER ═══ */}
       <footer className="text-center py-8 border-t border-slate-200 bg-white">
         <h4 className="font-black text-[#062c24] text-lg mb-1">PACAK KHEMAH</h4>
         <p className="text-[9px] font-bold text-slate-400 uppercase mb-4">Pacak. Rehat. Ulang.</p>
         
-        {/* Quick Links */}
         <div className="flex justify-center gap-6 mb-4">
           <Link href="/about" className="text-[10px] font-bold text-slate-500 hover:text-emerald-600 transition-colors">
-            <i className="fas fa-info-circle mr-1.5"></i>About Us
+            <i className="fas fa-info-circle mr-1.5"></i>About
           </Link>
           <Link href="/faq" className="text-[10px] font-bold text-slate-500 hover:text-emerald-600 transition-colors">
             <i className="fas fa-question-circle mr-1.5"></i>FAQ
@@ -542,7 +585,6 @@ export default function DirectoryPage() {
           </Link>
         </div>
         
-        {/* Social Links */}
         <div className="flex justify-center gap-3 mb-4">
           {socialLinks.instagram && (
             <a href={socialLinks.instagram} target="_blank" rel="noreferrer" className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 hover:text-pink-500 hover:bg-pink-50 transition-colors"><i className="fab fa-instagram text-sm"></i></a>
@@ -566,7 +608,7 @@ export default function DirectoryPage() {
             <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-6 text-emerald-600 text-2xl"><i className="fas fa-store"></i></div>
             <h3 className="text-2xl font-black text-[#062c24] uppercase mb-2">Want to Rent Out Gear?</h3>
             <p className="text-xs text-slate-500 mb-6 font-medium">Join Malaysia&apos;s fastest growing camping gear rental network.</p>
-            <Link href="/register-vendor" className="block w-full bg-[#062c24] text-white py-4 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-900 shadow-lg">
+            <Link href="/register" className="block w-full bg-[#062c24] text-white py-4 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-900 shadow-lg">
               <i className="fas fa-rocket mr-2"></i> Get Started
             </Link>
           </div>
