@@ -528,10 +528,22 @@ export default function DirectoryPage() {
       <footer className="text-center py-8 border-t border-slate-200 bg-white">
         <h4 className="font-black text-[#062c24] text-lg mb-1">PACAK KHEMAH</h4>
         <p className="text-[9px] font-bold text-slate-400 uppercase mb-4">Pacak. Rehat. Ulang.</p>
-        <p className="text-[9px] text-slate-400 font-medium mb-2">
-          Already a vendor? <Link href="/store" className="text-emerald-600 font-bold hover:underline">Log in here</Link>
-        </p>
-        <div className="flex justify-center gap-4 mb-4">
+        
+        {/* Quick Links */}
+        <div className="flex justify-center gap-6 mb-4">
+          <Link href="/about" className="text-[10px] font-bold text-slate-500 hover:text-emerald-600 transition-colors">
+            <i className="fas fa-info-circle mr-1.5"></i>About Us
+          </Link>
+          <Link href="/faq" className="text-[10px] font-bold text-slate-500 hover:text-emerald-600 transition-colors">
+            <i className="fas fa-question-circle mr-1.5"></i>FAQ
+          </Link>
+          <Link href="/store" className="text-[10px] font-bold text-slate-500 hover:text-emerald-600 transition-colors">
+            <i className="fas fa-store mr-1.5"></i>Vendor Login
+          </Link>
+        </div>
+        
+        {/* Social Links */}
+        <div className="flex justify-center gap-3 mb-4">
           {socialLinks.instagram && (
             <a href={socialLinks.instagram} target="_blank" rel="noreferrer" className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 hover:text-pink-500 hover:bg-pink-50 transition-colors"><i className="fab fa-instagram text-sm"></i></a>
           )}
@@ -542,6 +554,7 @@ export default function DirectoryPage() {
             <a href={socialLinks.whatsapp} target="_blank" rel="noreferrer" className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 transition-colors"><i className="fab fa-whatsapp text-sm"></i></a>
           )}
         </div>
+        
         <p className="text-[8px] text-slate-300 uppercase">© 2026 Pacak Khemah. All rights reserved.</p>
       </footer>
 
