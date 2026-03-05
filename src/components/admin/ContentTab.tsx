@@ -2,10 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, getDocs, addDoc, deleteDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 
 type FAQItem = { question: string; answer: string };
 type FAQSection = { title: string; icon: string; items: FAQItem[] };
+type Testimonial = { id?: string; name: string; location: string; text: string; rating: number };
+type Event = { id?: string; name: string; poster: string; link: string; organizer: string };
+type Announcement = { isActive: boolean; message: string; type: "info" | "warning" | "promo" };
 
 type AboutContent = {
   story: string;
@@ -22,107 +25,50 @@ type HomepageContent = {
   heroTitle: string;
   heroSubtitle: string;
   heroCta: string;
-  bannerEnabled: boolean;
-  bannerText: string;
-  bannerLink: string;
 };
 
 type FooterContent = {
   companyName: string;
   copyright: string;
   links: { label: string; url: string }[];
-  socialLinks: { platform: string; url: string }[];
 };
 
-type ContentData = {
-  about: AboutContent;
-  faq: FAQSection[];
-  homepage: HomepageContent;
-  footer: FooterContent;
-};
-
-const DEFAULT_CONTENT: ContentData = {
-  about: {
-    story: "Pacak Khemah was born out of a passion for the outdoors and a desire to make camping accessible to everyone. We noticed a gap between people who wanted to experience the beauty of nature and the local vendors who own high-quality camping gear. Our platform acts as the digital bridge that connects these two worlds.",
-    whatWeDo: "We provide a comprehensive multi-vendor ecosystem specifically designed for the camping community.",
-    forCampers: "We offer a seamless \"browse and book\" experience. From tents and power stations to complete camping packages, users can find everything they need in one place and communicate directly with vendors via WhatsApp.",
-    forVendors: "We provide a powerful \"Vendor Studio\" Command Center. Our tools allow gear owners to manage inventory, track analytics, set custom rental policies, and even verify customer identities through digital agreements.",
-    whyChooseUs: [
-      { title: "Local Expertise", desc: "We empower local gear owners and small businesses to reach a wider audience.", icon: "fa-map-marker-alt" },
-      { title: "Simplified Logistics", desc: "With dynamic pickup hubs and integrated rental steps, we take the stress out of gear coordination.", icon: "fa-truck" },
-      { title: "Security & Trust", desc: "Our platform features built-in identity verification and standardized legal agreements to protect both the owner and the renter.", icon: "fa-shield-alt" },
-      { title: "Transparent Pricing", desc: "We support complex discounting rules, including nightly bulk discounts and promo codes, ensuring customers always get the best deal.", icon: "fa-tags" },
-    ],
-    mission: "To become the ultimate companion for every outdoor enthusiast in Malaysia. Whether you are a first-time camper or a seasoned trekker, Pacak Khemah is here to ensure you have the right gear for your next adventure.",
-    contactEmail: "hello@pacakkhemah.com",
-    contactWhatsApp: "60123456789",
-  },
-  faq: [
-    {
-      title: "General Questions",
-      icon: "fa-circle-question",
-      items: [
-        { question: "What is Pacak Khemah?", answer: "Pacak Khemah is Malaysia's dedicated multi-vendor camping gear rental platform. We connect outdoor enthusiasts with local gear owners, making it easier to rent high-quality equipment like tents, power stations, and complete camping sets for your next adventure." },
-        { question: "Is Pacak Khemah a rental shop?", answer: "No. We are a technology platform that hosts multiple independent vendors. When you rent gear, you are renting directly from the shop owner (Vendor) listed on the page." },
-      ]
-    },
-    {
-      title: "For Customers",
-      icon: "fa-user",
-      items: [
-        { question: "How do I make a booking?", answer: "1) Browse the gear on a vendor's storefront. 2) Select your \"Pickup\" and \"Return\" dates to check real-time availability. 3) Add items to your cart and click \"Submit Order via WhatsApp.\" 4) You will be connected directly to the vendor to finalize details and confirm availability." },
-        { question: "Why do I need to upload my IC/ID?", answer: "To ensure the security of high-value equipment, vendors require identity verification. After the vendor confirms your booking, they will send you a link to a secure digital agreement where you will upload a photo of your ID (Front & Back) and sign the rental terms." },
-        { question: "Is my personal data safe?", answer: "Yes. Your ID copies are stored in a secure, restricted folder. Only the specific vendor you are renting from can view your documents, and they are used solely for rental verification purposes." },
-        { question: "How do I pay for my rental?", answer: "Payment is handled directly between you and the vendor. Most vendors accept bank transfers or E-Wallets. Details will be provided during your WhatsApp conversation." },
-        { question: "Is there a security deposit?", answer: "Yes. Most vendors require a refundable security deposit. The amount depends on the vendor's policy (either a fixed RM amount or a percentage of the total rental). This is clearly displayed in your cart summary during the checkout process." },
-      ]
-    },
-    {
-      title: "For Vendors",
-      icon: "fa-store",
-      items: [
-        { question: "How do I list my gear?", answer: "Once you have a Vendor account, log in to your Vendor Studio. In the \"Inventory\" tab, you can add items, set prices, upload photos, and manage stock levels." },
-        { question: "How do I verify a customer?", answer: "In your Vendor Studio, navigate to the \"Documents\" tab. Copy your unique Verification Link and send it to your customer via WhatsApp. Once they sign and upload their ID, their record will instantly appear in your dashboard for you to view or download as a PDF." },
-        { question: "How do I manage my availability?", answer: "Use the Calendar feature in your dashboard to block out dates when gear is already rented or when your shop is closed. This prevents customers from selecting unavailable dates on your storefront." },
-        { question: "What happens if gear is damaged?", answer: "Your digital rental agreement includes dynamic \"House Rules\" that you can customize in your Settings. These terms legally bind the customer to your damage and loss policies. You can use the signed PDF copy as a record of the agreement." },
-      ]
-    },
-    {
-      title: "Cancellations & Refunds",
-      icon: "fa-rotate-left",
-      items: [
-        { question: "What is the cancellation policy?", answer: "Since every vendor is independent, cancellation policies may vary. Please check the \"Terms of Service\" section on the vendor's storefront or ask them directly via WhatsApp before finalizing your payment." },
-      ]
-    },
+const DEFAULT_ABOUT: AboutContent = {
+  story: "Pacak Khemah was born out of a passion for the outdoors...",
+  whatWeDo: "We provide a comprehensive multi-vendor ecosystem...",
+  forCampers: "We offer a seamless browse and book experience...",
+  forVendors: "We provide a powerful Vendor Studio Command Center...",
+  whyChooseUs: [
+    { title: "Local Expertise", desc: "We empower local gear owners.", icon: "fa-map-marker-alt" },
+    { title: "Simplified Logistics", desc: "Dynamic pickup hubs.", icon: "fa-truck" },
+    { title: "Security & Trust", desc: "Built-in identity verification.", icon: "fa-shield-alt" },
+    { title: "Transparent Pricing", desc: "Complex discounting rules.", icon: "fa-tags" },
   ],
-  homepage: {
-    heroTitle: "Sewa Gear Camping Malaysia",
-    heroSubtitle: "Cari peralatan camping dari vendor dipercayai di seluruh Malaysia",
-    heroCta: "Cari Vendor",
-    bannerEnabled: false,
-    bannerText: "",
-    bannerLink: "",
-  },
-  footer: {
-    companyName: "Pacak Khemah",
-    copyright: "© 2026 Pacak Khemah. All Rights Reserved.",
-    links: [
-      { label: "About", url: "/about" },
-      { label: "FAQ", url: "/faq" },
-      { label: "Directory", url: "/directory" },
-    ],
-    socialLinks: [],
-  },
+  mission: "To become the ultimate companion for every outdoor enthusiast in Malaysia.",
+  contactEmail: "hello@pacakkhemah.com",
+  contactWhatsApp: "60123456789",
 };
+
+const DEFAULT_ANNOUNCEMENT: Announcement = { isActive: false, message: "", type: "info" };
 
 export default function ContentTab() {
-  const [content, setContent] = useState<ContentData>(DEFAULT_CONTENT);
-  const [activeSection, setActiveSection] = useState<"about" | "faq" | "homepage" | "footer">("about");
+  const [activeSection, setActiveSection] = useState<"about" | "faq" | "homepage" | "testimonials" | "events" | "announcement">("about");
+  const [about, setAbout] = useState<AboutContent>(DEFAULT_ABOUT);
+  const [faq, setFaq] = useState<FAQSection[]>([]);
+  const [homepage, setHomepage] = useState<HomepageContent>({ heroTitle: "", heroSubtitle: "", heroCta: "" });
+  const [footer, setFooter] = useState<FooterContent>({ companyName: "", copyright: "", links: [] });
+  const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
+  const [announcement, setAnnouncement] = useState<Announcement>(DEFAULT_ANNOUNCEMENT);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [editingFaqSection, setEditingFaqSection] = useState<number | null>(null);
-  const [editingFaqItem, setEditingFaqItem] = useState<{ section: number; item: number } | null>(null);
+
+  // Modal states
+  const [showTestimonialModal, setShowTestimonialModal] = useState(false);
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [editingTestimonial, setEditingTestimonial] = useState<Testimonial | null>(null);
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
 
   useEffect(() => {
     loadContent();
@@ -130,10 +76,28 @@ export default function ContentTab() {
 
   async function loadContent() {
     try {
-      const snap = await getDoc(doc(db, "settings", "content"));
-      if (snap.exists()) {
-        setContent({ ...DEFAULT_CONTENT, ...snap.data() as ContentData });
+      const [contentSnap, faqSnap, announcementSnap, testimonialsSnap, eventsSnap] = await Promise.all([
+        getDoc(doc(db, "settings", "content")),
+        getDoc(doc(db, "settings", "faq")),
+        getDoc(doc(db, "settings", "global_announcement")),
+        getDocs(collection(db, "testimonials")),
+        getDocs(collection(db, "events")),
+      ]);
+
+      if (contentSnap.exists()) {
+        const data = contentSnap.data();
+        if (data.about) setAbout({ ...DEFAULT_ABOUT, ...data.about });
+        if (data.homepage) setHomepage(data.homepage);
+        if (data.footer) setFooter(data.footer);
       }
+      if (faqSnap.exists() && faqSnap.data().sections) {
+        setFaq(faqSnap.data().sections);
+      }
+      if (announcementSnap.exists()) {
+        setAnnouncement({ ...DEFAULT_ANNOUNCEMENT, ...announcementSnap.data() });
+      }
+      setTestimonials(testimonialsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Testimonial)));
+      setEvents(eventsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Event)));
     } catch (e) {
       console.error(e);
     } finally {
@@ -144,7 +108,11 @@ export default function ContentTab() {
   async function saveContent() {
     setSaving(true);
     try {
-      await setDoc(doc(db, "settings", "content"), content);
+      await Promise.all([
+        setDoc(doc(db, "settings", "content"), { about, homepage, footer }),
+        setDoc(doc(db, "settings", "faq"), { sections: faq }),
+        setDoc(doc(db, "settings", "global_announcement"), announcement),
+      ]);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
@@ -155,79 +123,86 @@ export default function ContentTab() {
     }
   }
 
-  function updateAbout(field: keyof AboutContent, value: any) {
-    setContent(prev => ({ ...prev, about: { ...prev.about, [field]: value } }));
+  // Testimonial CRUD
+  async function saveTestimonial(t: Testimonial) {
+    try {
+      if (t.id) {
+        await updateDoc(doc(db, "testimonials", t.id), { name: t.name, location: t.location, text: t.text, rating: t.rating });
+      } else {
+        await addDoc(collection(db, "testimonials"), { ...t, createdAt: serverTimestamp() });
+      }
+      loadContent();
+      setShowTestimonialModal(false);
+      setEditingTestimonial(null);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to save testimonial");
+    }
   }
 
-  function updateHomepage(field: keyof HomepageContent, value: any) {
-    setContent(prev => ({ ...prev, homepage: { ...prev.homepage, [field]: value } }));
+  async function deleteTestimonial(id: string) {
+    if (!confirm("Delete this testimonial?")) return;
+    try {
+      await deleteDoc(doc(db, "testimonials", id));
+      loadContent();
+    } catch (e) {
+      console.error(e);
+    }
   }
 
-  function updateFooter(field: keyof FooterContent, value: any) {
-    setContent(prev => ({ ...prev, footer: { ...prev.footer, [field]: value } }));
+  // Event CRUD
+  async function saveEvent(e: Event) {
+    try {
+      if (e.id) {
+        await updateDoc(doc(db, "events", e.id), { name: e.name, poster: e.poster, link: e.link, organizer: e.organizer });
+      } else {
+        await addDoc(collection(db, "events"), { ...e, createdAt: serverTimestamp() });
+      }
+      loadContent();
+      setShowEventModal(false);
+      setEditingEvent(null);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to save event");
+    }
   }
 
-  function updateWhyChooseUs(index: number, field: string, value: string) {
-    const updated = [...content.about.whyChooseUs];
-    updated[index] = { ...updated[index], [field]: value };
-    updateAbout("whyChooseUs", updated);
+  async function deleteEvent(id: string) {
+    if (!confirm("Delete this event?")) return;
+    try {
+      await deleteDoc(doc(db, "events", id));
+      loadContent();
+    } catch (e) {
+      console.error(e);
+    }
   }
 
-  function addWhyChooseUs() {
-    updateAbout("whyChooseUs", [...content.about.whyChooseUs, { title: "", desc: "", icon: "fa-star" }]);
-  }
-
-  function removeWhyChooseUs(index: number) {
-    updateAbout("whyChooseUs", content.about.whyChooseUs.filter((_, i) => i !== index));
-  }
-
-  function updateFaqSection(sectionIndex: number, field: string, value: string) {
-    const updated = [...content.faq];
-    updated[sectionIndex] = { ...updated[sectionIndex], [field]: value };
-    setContent(prev => ({ ...prev, faq: updated }));
-  }
-
+  // FAQ helpers
   function addFaqSection() {
-    setContent(prev => ({
-      ...prev,
-      faq: [...prev.faq, { title: "New Section", icon: "fa-question", items: [] }]
-    }));
+    setFaq([...faq, { title: "New Section", icon: "fa-question", items: [] }]);
   }
-
-  function removeFaqSection(index: number) {
-    setContent(prev => ({ ...prev, faq: prev.faq.filter((_, i) => i !== index) }));
+  function removeFaqSection(idx: number) {
+    setFaq(faq.filter((_, i) => i !== idx));
   }
-
-  function updateFaqItem(sectionIndex: number, itemIndex: number, field: string, value: string) {
-    const updated = [...content.faq];
-    updated[sectionIndex].items[itemIndex] = { ...updated[sectionIndex].items[itemIndex], [field]: value };
-    setContent(prev => ({ ...prev, faq: updated }));
+  function updateFaqSection(idx: number, field: string, value: string) {
+    const updated = [...faq];
+    updated[idx] = { ...updated[idx], [field]: value };
+    setFaq(updated);
   }
-
-  function addFaqItem(sectionIndex: number) {
-    const updated = [...content.faq];
-    updated[sectionIndex].items.push({ question: "", answer: "" });
-    setContent(prev => ({ ...prev, faq: updated }));
+  function addFaqItem(sectionIdx: number) {
+    const updated = [...faq];
+    updated[sectionIdx].items.push({ question: "", answer: "" });
+    setFaq(updated);
   }
-
-  function removeFaqItem(sectionIndex: number, itemIndex: number) {
-    const updated = [...content.faq];
-    updated[sectionIndex].items = updated[sectionIndex].items.filter((_, i) => i !== itemIndex);
-    setContent(prev => ({ ...prev, faq: updated }));
+  function removeFaqItem(sectionIdx: number, itemIdx: number) {
+    const updated = [...faq];
+    updated[sectionIdx].items = updated[sectionIdx].items.filter((_, i) => i !== itemIdx);
+    setFaq(updated);
   }
-
-  function updateFooterLink(index: number, field: string, value: string) {
-    const updated = [...content.footer.links];
-    updated[index] = { ...updated[index], [field]: value };
-    updateFooter("links", updated);
-  }
-
-  function addFooterLink() {
-    updateFooter("links", [...content.footer.links, { label: "", url: "" }]);
-  }
-
-  function removeFooterLink(index: number) {
-    updateFooter("links", content.footer.links.filter((_, i) => i !== index));
+  function updateFaqItem(sectionIdx: number, itemIdx: number, field: string, value: string) {
+    const updated = [...faq];
+    updated[sectionIdx].items[itemIdx] = { ...updated[sectionIdx].items[itemIdx], [field]: value };
+    setFaq(updated);
   }
 
   if (loading) {
@@ -238,349 +213,300 @@ export default function ContentTab() {
     );
   }
 
+  const sections = [
+    { id: "announcement", label: "Announcement", icon: "fa-bullhorn" },
+    { id: "about", label: "About Page", icon: "fa-info-circle" },
+    { id: "faq", label: "FAQ", icon: "fa-question-circle" },
+    { id: "testimonials", label: "Testimonials", icon: "fa-star" },
+    { id: "events", label: "Events", icon: "fa-calendar" },
+    { id: "homepage", label: "Homepage", icon: "fa-home" },
+  ] as const;
+
   return (
     <div className="space-y-6">
       {/* Section Tabs */}
       <div className="flex flex-wrap gap-2">
-        {([
-          { id: "about", label: "About Page", icon: "fa-info-circle" },
-          { id: "faq", label: "FAQ", icon: "fa-question-circle" },
-          { id: "homepage", label: "Homepage", icon: "fa-home" },
-          { id: "footer", label: "Footer", icon: "fa-shoe-prints" },
-        ] as const).map(tab => (
+        {sections.map(sec => (
           <button
-            key={tab.id}
-            onClick={() => setActiveSection(tab.id)}
+            key={sec.id}
+            onClick={() => setActiveSection(sec.id)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase transition-all ${
-              activeSection === tab.id
+              activeSection === sec.id
                 ? "bg-[#062c24] text-white"
                 : "bg-white text-slate-500 hover:bg-slate-100 border border-slate-200"
             }`}
           >
-            <i className={`fas ${tab.icon}`}></i>
-            {tab.label}
+            <i className={`fas ${sec.icon}`}></i>
+            {sec.label}
           </button>
         ))}
       </div>
 
-      {/* About Page Editor */}
-      {activeSection === "about" && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-100 p-6">
-            <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Our Story</h3>
-            <textarea
-              value={content.about.story}
-              onChange={e => updateAbout("story", e.target.value)}
-              rows={4}
-              className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm outline-none focus:border-emerald-300 resize-none"
-              placeholder="Tell your story..."
-            />
+      {/* Announcement */}
+      {activeSection === "announcement" && (
+        <div className="bg-white rounded-2xl border border-slate-100 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-black text-[#062c24] uppercase">Global Announcement Banner</h3>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={announcement.isActive}
+                onChange={e => setAnnouncement({ ...announcement, isActive: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+            </label>
           </div>
-
-          <div className="bg-white rounded-2xl border border-slate-100 p-6">
-            <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">What We Do</h3>
-            <textarea
-              value={content.about.whatWeDo}
-              onChange={e => updateAbout("whatWeDo", e.target.value)}
-              rows={2}
-              className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm outline-none focus:border-emerald-300 resize-none mb-4"
-              placeholder="What do you do..."
-            />
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">For Campers</label>
-                <textarea
-                  value={content.about.forCampers}
-                  onChange={e => updateAbout("forCampers", e.target.value)}
-                  rows={4}
-                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none focus:border-emerald-300 resize-none"
-                />
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">For Vendors</label>
-                <textarea
-                  value={content.about.forVendors}
-                  onChange={e => updateAbout("forVendors", e.target.value)}
-                  rows={4}
-                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none focus:border-emerald-300 resize-none"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-slate-100 p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-sm font-black text-[#062c24] uppercase">Why Choose Us</h3>
-              <button onClick={addWhyChooseUs} className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg hover:bg-emerald-100">
-                + Add Point
-              </button>
-            </div>
-            <div className="space-y-3">
-              {content.about.whyChooseUs.map((item, i) => (
-                <div key={i} className="flex gap-3 items-start bg-slate-50 p-4 rounded-xl">
-                  <input
-                    value={item.icon}
-                    onChange={e => updateWhyChooseUs(i, "icon", e.target.value)}
-                    className="w-24 bg-white border border-slate-200 p-2 rounded-lg text-xs outline-none"
-                    placeholder="fa-icon"
-                  />
-                  <div className="flex-1 space-y-2">
-                    <input
-                      value={item.title}
-                      onChange={e => updateWhyChooseUs(i, "title", e.target.value)}
-                      className="w-full bg-white border border-slate-200 p-2 rounded-lg text-sm font-bold outline-none"
-                      placeholder="Title"
-                    />
-                    <input
-                      value={item.desc}
-                      onChange={e => updateWhyChooseUs(i, "desc", e.target.value)}
-                      className="w-full bg-white border border-slate-200 p-2 rounded-lg text-sm outline-none"
-                      placeholder="Description"
-                    />
-                  </div>
-                  <button onClick={() => removeWhyChooseUs(i)} className="text-slate-300 hover:text-red-500 p-2">
-                    <i className="fas fa-trash"></i>
+          <div className="space-y-4">
+            <div>
+              <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Type</label>
+              <div className="flex gap-2">
+                {(["info", "warning", "promo"] as const).map(type => (
+                  <button
+                    key={type}
+                    onClick={() => setAnnouncement({ ...announcement, type })}
+                    className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase transition-all ${
+                      announcement.type === type
+                        ? type === "info" ? "bg-blue-500 text-white" :
+                          type === "warning" ? "bg-amber-500 text-white" :
+                          "bg-emerald-500 text-white"
+                        : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    <i className={`fas ${type === "info" ? "fa-info-circle" : type === "warning" ? "fa-exclamation-triangle" : "fa-tag"} mr-2`}></i>
+                    {type}
                   </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-slate-100 p-6">
-            <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Our Mission</h3>
-            <textarea
-              value={content.about.mission}
-              onChange={e => updateAbout("mission", e.target.value)}
-              rows={3}
-              className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm outline-none focus:border-emerald-300 resize-none"
-              placeholder="Your mission statement..."
-            />
-          </div>
-
-          <div className="bg-white rounded-2xl border border-slate-100 p-6">
-            <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Contact Info</h3>
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Email</label>
-                <input
-                  value={content.about.contactEmail}
-                  onChange={e => updateAbout("contactEmail", e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none focus:border-emerald-300"
-                  placeholder="hello@example.com"
-                />
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">WhatsApp Number</label>
-                <input
-                  value={content.about.contactWhatsApp}
-                  onChange={e => updateAbout("contactWhatsApp", e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none focus:border-emerald-300"
-                  placeholder="60123456789"
-                />
+                ))}
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* FAQ Editor */}
-      {activeSection === "faq" && (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <p className="text-sm text-slate-500">{content.faq.length} sections, {content.faq.reduce((a, s) => a + s.items.length, 0)} questions</p>
-            <button onClick={addFaqSection} className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-4 py-2 rounded-lg hover:bg-emerald-100">
-              + Add Section
-            </button>
-          </div>
-
-          {content.faq.map((section, sectionIdx) => (
-            <div key={sectionIdx} className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-              <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                <div className="flex items-center gap-3 flex-1">
-                  <input
-                    value={section.icon}
-                    onChange={e => updateFaqSection(sectionIdx, "icon", e.target.value)}
-                    className="w-28 bg-white border border-slate-200 p-2 rounded-lg text-xs outline-none"
-                    placeholder="fa-icon"
-                  />
-                  <input
-                    value={section.title}
-                    onChange={e => updateFaqSection(sectionIdx, "title", e.target.value)}
-                    className="flex-1 bg-white border border-slate-200 p-2 rounded-lg text-sm font-bold outline-none"
-                    placeholder="Section Title"
-                  />
-                </div>
-                <div className="flex items-center gap-2 ml-3">
-                  <button onClick={() => addFaqItem(sectionIdx)} className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg hover:bg-emerald-100">
-                    + Question
-                  </button>
-                  <button onClick={() => removeFaqSection(sectionIdx)} className="text-slate-300 hover:text-red-500 p-2">
-                    <i className="fas fa-trash"></i>
-                  </button>
-                </div>
-              </div>
-              <div className="p-4 space-y-3">
-                {section.items.length === 0 ? (
-                  <p className="text-sm text-slate-400 text-center py-4">No questions yet. Click "+ Question" to add one.</p>
-                ) : (
-                  section.items.map((item, itemIdx) => (
-                    <div key={itemIdx} className="bg-slate-50 p-4 rounded-xl">
-                      <div className="flex items-start gap-3">
-                        <div className="flex-1 space-y-2">
-                          <input
-                            value={item.question}
-                            onChange={e => updateFaqItem(sectionIdx, itemIdx, "question", e.target.value)}
-                            className="w-full bg-white border border-slate-200 p-2 rounded-lg text-sm font-bold outline-none"
-                            placeholder="Question"
-                          />
-                          <textarea
-                            value={item.answer}
-                            onChange={e => updateFaqItem(sectionIdx, itemIdx, "answer", e.target.value)}
-                            rows={3}
-                            className="w-full bg-white border border-slate-200 p-2 rounded-lg text-sm outline-none resize-none"
-                            placeholder="Answer"
-                          />
-                        </div>
-                        <button onClick={() => removeFaqItem(sectionIdx, itemIdx)} className="text-slate-300 hover:text-red-500 p-2">
-                          <i className="fas fa-trash"></i>
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
+            <div>
+              <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Message</label>
+              <input
+                value={announcement.message}
+                onChange={e => setAnnouncement({ ...announcement, message: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none"
+                placeholder="🎉 Special announcement here!"
+              />
             </div>
-          ))}
-        </div>
-      )}
-
-      {/* Homepage Editor */}
-      {activeSection === "homepage" && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-100 p-6">
-            <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Hero Section</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Title</label>
-                <input
-                  value={content.homepage.heroTitle}
-                  onChange={e => updateHomepage("heroTitle", e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none focus:border-emerald-300"
-                  placeholder="Main headline"
-                />
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Subtitle</label>
-                <input
-                  value={content.homepage.heroSubtitle}
-                  onChange={e => updateHomepage("heroSubtitle", e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none focus:border-emerald-300"
-                  placeholder="Supporting text"
-                />
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">CTA Button Text</label>
-                <input
-                  value={content.homepage.heroCta}
-                  onChange={e => updateHomepage("heroCta", e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none focus:border-emerald-300"
-                  placeholder="Button text"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-slate-100 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-black text-[#062c24] uppercase">Announcement Banner</h3>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={content.homepage.bannerEnabled}
-                  onChange={e => updateHomepage("bannerEnabled", e.target.checked)}
-                  className="w-5 h-5 accent-emerald-500"
-                />
-                <span className="text-xs font-bold text-slate-500">Enabled</span>
-              </label>
-            </div>
-            {content.homepage.bannerEnabled && (
-              <div className="space-y-4">
-                <div>
-                  <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Banner Text</label>
-                  <input
-                    value={content.homepage.bannerText}
-                    onChange={e => updateHomepage("bannerText", e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none focus:border-emerald-300"
-                    placeholder="🎉 Special announcement here!"
-                  />
-                </div>
-                <div>
-                  <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Banner Link (optional)</label>
-                  <input
-                    value={content.homepage.bannerLink}
-                    onChange={e => updateHomepage("bannerLink", e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none focus:border-emerald-300"
-                    placeholder="/promo or https://..."
-                  />
-                </div>
+            {announcement.isActive && announcement.message && (
+              <div className={`p-3 rounded-xl text-white text-center text-xs font-bold ${
+                announcement.type === "info" ? "bg-blue-600" :
+                announcement.type === "warning" ? "bg-amber-500" :
+                "bg-emerald-600"
+              }`}>
+                Preview: {announcement.message}
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Footer Editor */}
-      {activeSection === "footer" && (
-        <div className="space-y-6">
+      {/* About Page */}
+      {activeSection === "about" && (
+        <div className="space-y-4">
           <div className="bg-white rounded-2xl border border-slate-100 p-6">
-            <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Basic Info</h3>
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Company Name</label>
-                <input
-                  value={content.footer.companyName}
-                  onChange={e => updateFooter("companyName", e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none focus:border-emerald-300"
-                />
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Copyright Text</label>
-                <input
-                  value={content.footer.copyright}
-                  onChange={e => updateFooter("copyright", e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none focus:border-emerald-300"
-                />
-              </div>
+            <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Our Story</h3>
+            <textarea
+              value={about.story}
+              onChange={e => setAbout({ ...about, story: e.target.value })}
+              rows={4}
+              className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm outline-none resize-none"
+            />
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="bg-white rounded-2xl border border-slate-100 p-6">
+              <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">For Campers</h3>
+              <textarea
+                value={about.forCampers}
+                onChange={e => setAbout({ ...about, forCampers: e.target.value })}
+                rows={3}
+                className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none resize-none"
+              />
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-100 p-6">
+              <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">For Vendors</h3>
+              <textarea
+                value={about.forVendors}
+                onChange={e => setAbout({ ...about, forVendors: e.target.value })}
+                rows={3}
+                className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none resize-none"
+              />
             </div>
           </div>
-
           <div className="bg-white rounded-2xl border border-slate-100 p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-sm font-black text-[#062c24] uppercase">Footer Links</h3>
-              <button onClick={addFooterLink} className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg hover:bg-emerald-100">
-                + Add Link
-              </button>
+            <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Our Mission</h3>
+            <textarea
+              value={about.mission}
+              onChange={e => setAbout({ ...about, mission: e.target.value })}
+              rows={2}
+              className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none resize-none"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* FAQ */}
+      {activeSection === "faq" && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <p className="text-sm text-slate-500">{faq.length} sections</p>
+            <button onClick={addFaqSection} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold">
+              <i className="fas fa-plus mr-2"></i>Add Section
+            </button>
+          </div>
+          {faq.map((section, sIdx) => (
+            <div key={sIdx} className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+              <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center gap-3">
+                <input
+                  value={section.icon}
+                  onChange={e => updateFaqSection(sIdx, "icon", e.target.value)}
+                  className="w-24 bg-white border border-slate-200 p-2 rounded-lg text-xs outline-none"
+                  placeholder="fa-icon"
+                />
+                <input
+                  value={section.title}
+                  onChange={e => updateFaqSection(sIdx, "title", e.target.value)}
+                  className="flex-1 bg-white border border-slate-200 p-2 rounded-lg text-sm font-bold outline-none"
+                  placeholder="Section Title"
+                />
+                <button onClick={() => addFaqItem(sIdx)} className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg">+ Q&A</button>
+                <button onClick={() => removeFaqSection(sIdx)} className="text-slate-400 hover:text-red-500 p-2">
+                  <i className="fas fa-trash"></i>
+                </button>
+              </div>
+              <div className="p-4 space-y-3">
+                {section.items.map((item, iIdx) => (
+                  <div key={iIdx} className="bg-slate-50 p-4 rounded-xl flex gap-3">
+                    <div className="flex-1 space-y-2">
+                      <input
+                        value={item.question}
+                        onChange={e => updateFaqItem(sIdx, iIdx, "question", e.target.value)}
+                        className="w-full bg-white border border-slate-200 p-2 rounded-lg text-sm font-bold outline-none"
+                        placeholder="Question"
+                      />
+                      <textarea
+                        value={item.answer}
+                        onChange={e => updateFaqItem(sIdx, iIdx, "answer", e.target.value)}
+                        rows={2}
+                        className="w-full bg-white border border-slate-200 p-2 rounded-lg text-sm outline-none resize-none"
+                        placeholder="Answer"
+                      />
+                    </div>
+                    <button onClick={() => removeFaqItem(sIdx, iIdx)} className="text-slate-400 hover:text-red-500">
+                      <i className="fas fa-trash"></i>
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="space-y-3">
-              {content.footer.links.map((link, i) => (
-                <div key={i} className="flex gap-3 items-center">
-                  <input
-                    value={link.label}
-                    onChange={e => updateFooterLink(i, "label", e.target.value)}
-                    className="flex-1 bg-slate-50 border border-slate-200 p-2 rounded-lg text-sm outline-none"
-                    placeholder="Label"
-                  />
-                  <input
-                    value={link.url}
-                    onChange={e => updateFooterLink(i, "url", e.target.value)}
-                    className="flex-1 bg-slate-50 border border-slate-200 p-2 rounded-lg text-sm outline-none"
-                    placeholder="/page or https://..."
-                  />
-                  <button onClick={() => removeFooterLink(i)} className="text-slate-300 hover:text-red-500 p-2">
-                    <i className="fas fa-trash"></i>
-                  </button>
+          ))}
+        </div>
+      )}
+
+      {/* Testimonials */}
+      {activeSection === "testimonials" && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <p className="text-sm text-slate-500">{testimonials.length} testimonials</p>
+            <button onClick={() => { setEditingTestimonial({ name: "", location: "", text: "", rating: 5 }); setShowTestimonialModal(true); }}
+              className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold">
+              <i className="fas fa-plus mr-2"></i>Add Testimonial
+            </button>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {testimonials.map(t => (
+              <div key={t.id} className="bg-white rounded-2xl border border-slate-100 p-5">
+                <div className="flex gap-0.5 mb-3">
+                  {[...Array(5)].map((_, j) => (
+                    <i key={j} className={`fas fa-star text-xs ${j < t.rating ? "text-amber-400" : "text-slate-200"}`}></i>
+                  ))}
                 </div>
-              ))}
+                <p className="text-sm text-slate-600 mb-4 line-clamp-3">"{t.text}"</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-[#062c24]">{t.name}</p>
+                    <p className="text-[9px] text-slate-400">{t.location}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => { setEditingTestimonial(t); setShowTestimonialModal(true); }}
+                      className="text-slate-400 hover:text-blue-500"><i className="fas fa-pen text-xs"></i></button>
+                    <button onClick={() => deleteTestimonial(t.id!)}
+                      className="text-slate-400 hover:text-red-500"><i className="fas fa-trash text-xs"></i></button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Events */}
+      {activeSection === "events" && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <p className="text-sm text-slate-500">{events.length} events</p>
+            <button onClick={() => { setEditingEvent({ name: "", poster: "", link: "", organizer: "" }); setShowEventModal(true); }}
+              className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold">
+              <i className="fas fa-plus mr-2"></i>Add Event
+            </button>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {events.map(e => (
+              <div key={e.id} className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+                <div className="h-32 bg-slate-100">
+                  {e.poster && <img src={e.poster} className="w-full h-full object-cover" alt={e.name} />}
+                </div>
+                <div className="p-4">
+                  <p className="text-xs font-bold text-[#062c24] truncate mb-1">{e.name}</p>
+                  <p className="text-[9px] text-slate-400 mb-3">{e.organizer}</p>
+                  <div className="flex gap-2">
+                    <button onClick={() => { setEditingEvent(e); setShowEventModal(true); }}
+                      className="flex-1 bg-slate-100 text-slate-500 py-1.5 rounded-lg text-[9px] font-bold hover:bg-blue-100 hover:text-blue-600">
+                      <i className="fas fa-pen mr-1"></i>Edit
+                    </button>
+                    <button onClick={() => deleteEvent(e.id!)}
+                      className="bg-slate-100 text-slate-500 px-3 py-1.5 rounded-lg text-[9px] font-bold hover:bg-red-100 hover:text-red-600">
+                      <i className="fas fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Homepage */}
+      {activeSection === "homepage" && (
+        <div className="bg-white rounded-2xl border border-slate-100 p-6">
+          <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Hero Section</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Title</label>
+              <input
+                value={homepage.heroTitle}
+                onChange={e => setHomepage({ ...homepage, heroTitle: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none"
+                placeholder="Sewa Gear Camping. Tanpa Hassle."
+              />
+            </div>
+            <div>
+              <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Subtitle</label>
+              <input
+                value={homepage.heroSubtitle}
+                onChange={e => setHomepage({ ...homepage, heroSubtitle: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none"
+                placeholder="Rent quality camping gear..."
+              />
+            </div>
+            <div>
+              <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">CTA Button Text</label>
+              <input
+                value={homepage.heroCta}
+                onChange={e => setHomepage({ ...homepage, heroCta: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none"
+                placeholder="Find Vendors"
+              />
             </div>
           </div>
         </div>
@@ -598,6 +524,65 @@ export default function ContentTab() {
           {saving ? <><i className="fas fa-spinner fa-spin mr-2"></i>Saving...</> : saved ? "✓ Saved!" : "Save All Changes"}
         </button>
       </div>
+
+      {/* Testimonial Modal */}
+      {showTestimonialModal && editingTestimonial && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+            <h3 className="text-lg font-black text-[#062c24] uppercase mb-4">{editingTestimonial.id ? "Edit" : "Add"} Testimonial</h3>
+            <div className="space-y-4">
+              <input value={editingTestimonial.name} onChange={e => setEditingTestimonial({ ...editingTestimonial, name: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none" placeholder="Name" />
+              <input value={editingTestimonial.location} onChange={e => setEditingTestimonial({ ...editingTestimonial, location: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none" placeholder="Location" />
+              <textarea value={editingTestimonial.text} onChange={e => setEditingTestimonial({ ...editingTestimonial, text: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none resize-none" rows={3} placeholder="Testimonial text" />
+              <div>
+                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Rating</label>
+                <div className="flex gap-2">
+                  {[1,2,3,4,5].map(r => (
+                    <button key={r} onClick={() => setEditingTestimonial({ ...editingTestimonial, rating: r })}
+                      className={`w-10 h-10 rounded-lg ${editingTestimonial.rating >= r ? "bg-amber-400 text-white" : "bg-slate-100 text-slate-400"}`}>
+                      <i className="fas fa-star"></i>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => { setShowTestimonialModal(false); setEditingTestimonial(null); }}
+                className="flex-1 py-3 rounded-xl text-sm font-bold text-slate-500 bg-slate-100">Cancel</button>
+              <button onClick={() => saveTestimonial(editingTestimonial)}
+                className="flex-1 py-3 rounded-xl text-sm font-bold text-white bg-emerald-500">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Event Modal */}
+      {showEventModal && editingEvent && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+            <h3 className="text-lg font-black text-[#062c24] uppercase mb-4">{editingEvent.id ? "Edit" : "Add"} Event</h3>
+            <div className="space-y-4">
+              <input value={editingEvent.name} onChange={e => setEditingEvent({ ...editingEvent, name: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none" placeholder="Event Name" />
+              <input value={editingEvent.organizer} onChange={e => setEditingEvent({ ...editingEvent, organizer: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none" placeholder="Organizer" />
+              <input value={editingEvent.poster} onChange={e => setEditingEvent({ ...editingEvent, poster: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none" placeholder="Poster URL" />
+              <input value={editingEvent.link} onChange={e => setEditingEvent({ ...editingEvent, link: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none" placeholder="Event Link" />
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => { setShowEventModal(false); setEditingEvent(null); }}
+                className="flex-1 py-3 rounded-xl text-sm font-bold text-slate-500 bg-slate-100">Cancel</button>
+              <button onClick={() => saveEvent(editingEvent)}
+                className="flex-1 py-3 rounded-xl text-sm font-bold text-white bg-emerald-500">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

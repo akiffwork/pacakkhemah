@@ -2,145 +2,362 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import {
-  collection, query, onSnapshot, orderBy, limit, doc, updateDoc, getDoc, increment,
-} from "firebase/firestore";
+import { collection, getDocs, query, where, orderBy, limit } from "firebase/firestore";
 
-type Vendor = { id: string; name: string; email: string; phone?: string; status?: string; credits?: number };
-type Lead = { vendorName?: string; totalAmount?: number; timestamp?: any };
+type Vendor = {
+  id: string;
+  name: string;
+  status: string;
+  credits?: number;
+  createdAt?: any;
+  city?: string;
+  is_vacation?: boolean;
+};
 
-type Props = { allVendors: Vendor[] };
+type Transaction = {
+  id: string;
+  vendorId: string;
+  vendorName?: string;
+  amount: number;
+  credits: number;
+  type: string;
+  createdAt: any;
+};
 
-export default function DashboardTab({ allVendors }: Props) {
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [totalLeads, setTotalLeads] = useState(0);
+type StatCard = {
+  label: string;
+  value: string | number;
+  change?: string;
+  changeType?: "up" | "down" | "neutral";
+  icon: string;
+  color: string;
+};
 
-  const active = allVendors.filter(v => v.status === "approved");
-  const pending = allVendors.filter(v => v.status === "pending");
-  const totalRevenue = allVendors.reduce((sum, v) => sum + (v.credits || 0), 0);
+export default function DashboardTab({ allVendors }: { allVendors: Vendor[] }) {
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [timeRange, setTimeRange] = useState<"7d" | "30d" | "90d">("30d");
 
   useEffect(() => {
-    const unsub = onSnapshot(
-      query(collection(db, "analytics"), orderBy("timestamp", "desc"), limit(20)),
-      snap => {
-        setLeads(snap.docs.map(d => d.data() as Lead));
-        setTotalLeads(snap.size);
-      }
-    );
-    return () => unsub();
+    loadTransactions();
   }, []);
 
-  async function approveVendor(id: string, depositEl: string) {
-    const dep = (document.getElementById(depositEl) as HTMLInputElement)?.value || "50";
-    const config = await getDoc(doc(db, "settings", "payment_config"));
-    const startCredits = config.exists() ? config.data().startingCredits || 10 : 10;
-    await updateDoc(doc(db, "vendors", id), {
-      status: "approved",
-      security_deposit: Number(dep),
-      credits: startCredits,
-    });
+  async function loadTransactions() {
+    try {
+      const snap = await getDocs(query(collection(db, "transactions"), orderBy("createdAt", "desc"), limit(100)));
+      setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Transaction)));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  const stats = [
-    { label: "Credit Pool", value: totalRevenue, prefix: "", color: "text-[#062c24]", bg: "bg-emerald-50", icon: "fa-coins", iconColor: "text-emerald-600" },
-    { label: "Active Vendors", value: active.length, prefix: "", color: "text-[#062c24]", bg: "bg-blue-50", icon: "fa-store", iconColor: "text-blue-500" },
-    { label: "Pending", value: pending.length, prefix: "", color: "text-amber-500", bg: "bg-amber-50", icon: "fa-clock", iconColor: "text-amber-500" },
-    { label: "Total Leads", value: `${totalLeads}+`, prefix: "", color: "text-emerald-500", bg: "bg-emerald-50", icon: "fa-bolt", iconColor: "text-emerald-500" },
+  // Calculate stats
+  const now = new Date();
+  const daysAgo = (days: number) => new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  
+  const activeVendors = allVendors.filter(v => v.status === "approved" && (v.credits || 0) > 0 && !v.is_vacation);
+  const pendingVendors = allVendors.filter(v => v.status === "pending");
+  const lowCreditVendors = allVendors.filter(v => v.status === "approved" && (v.credits || 0) <= 5 && (v.credits || 0) > 0);
+  
+  const rangeDays = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90;
+  const rangeStart = daysAgo(rangeDays);
+  
+  const recentTransactions = transactions.filter(t => t.createdAt?.toDate() >= rangeStart);
+  const totalRevenue = recentTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+  const totalCredits = recentTransactions.reduce((sum, t) => sum + (t.credits || 0), 0);
+  
+  const newVendors = allVendors.filter(v => v.createdAt?.toDate() >= rangeStart);
+
+  // Previous period for comparison
+  const prevStart = daysAgo(rangeDays * 2);
+  const prevEnd = rangeStart;
+  const prevTransactions = transactions.filter(t => {
+    const date = t.createdAt?.toDate();
+    return date >= prevStart && date < prevEnd;
+  });
+  const prevRevenue = prevTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+  const revenueChange = prevRevenue > 0 ? Math.round(((totalRevenue - prevRevenue) / prevRevenue) * 100) : 0;
+
+  // Chart data - last 7 days
+  const chartDays = 7;
+  const chartData = Array.from({ length: chartDays }, (_, i) => {
+    const date = daysAgo(chartDays - 1 - i);
+    const dayStart = new Date(date.setHours(0, 0, 0, 0));
+    const dayEnd = new Date(date.setHours(23, 59, 59, 999));
+    const dayTransactions = transactions.filter(t => {
+      const tDate = t.createdAt?.toDate();
+      return tDate >= dayStart && tDate <= dayEnd;
+    });
+    return {
+      day: dayStart.toLocaleDateString("en", { weekday: "short" }),
+      revenue: dayTransactions.reduce((sum, t) => sum + (t.amount || 0), 0),
+    };
+  });
+  const maxRevenue = Math.max(...chartData.map(d => d.revenue), 1);
+
+  // Top vendors by credits
+  const topVendors = [...allVendors]
+    .filter(v => v.status === "approved")
+    .sort((a, b) => (b.credits || 0) - (a.credits || 0))
+    .slice(0, 5);
+
+  // Location distribution
+  const locationCounts: Record<string, number> = {};
+  allVendors.filter(v => v.status === "approved").forEach(v => {
+    const city = v.city || "Unknown";
+    locationCounts[city] = (locationCounts[city] || 0) + 1;
+  });
+  const topLocations = Object.entries(locationCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+
+  const stats: StatCard[] = [
+    {
+      label: "Total Revenue",
+      value: `RM ${totalRevenue.toLocaleString()}`,
+      change: revenueChange !== 0 ? `${revenueChange > 0 ? "+" : ""}${revenueChange}%` : undefined,
+      changeType: revenueChange > 0 ? "up" : revenueChange < 0 ? "down" : "neutral",
+      icon: "fa-coins",
+      color: "emerald",
+    },
+    {
+      label: "Active Vendors",
+      value: activeVendors.length,
+      icon: "fa-store",
+      color: "blue",
+    },
+    {
+      label: "Pending Approval",
+      value: pendingVendors.length,
+      icon: "fa-clock",
+      color: "amber",
+    },
+    {
+      label: "New Vendors",
+      value: newVendors.length,
+      change: `Last ${rangeDays}d`,
+      changeType: "neutral",
+      icon: "fa-user-plus",
+      color: "purple",
+    },
   ];
 
-  return (
-    <div className="space-y-8">
+  const colorClasses: Record<string, { bg: string; text: string; light: string }> = {
+    emerald: { bg: "bg-emerald-500", text: "text-emerald-600", light: "bg-emerald-50" },
+    blue: { bg: "bg-blue-500", text: "text-blue-600", light: "bg-blue-50" },
+    amber: { bg: "bg-amber-500", text: "text-amber-600", light: "bg-amber-50" },
+    purple: { bg: "bg-purple-500", text: "text-purple-600", light: "bg-purple-50" },
+    red: { bg: "bg-red-500", text: "text-red-600", light: "bg-red-50" },
+  };
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map(s => (
-          <div key={s.label} className="bg-white p-5 lg:p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all">
-            <div className={`w-10 h-10 ${s.bg} rounded-xl flex items-center justify-center mb-4`}>
-              <i className={`fas ${s.icon} ${s.iconColor}`}></i>
-            </div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{s.label}</p>
-            <h3 className={`text-2xl lg:text-3xl font-black ${s.color}`}>{s.prefix}{s.value}</h3>
-          </div>
-        ))}
+  return (
+    <div className="space-y-6">
+      {/* Time Range Selector */}
+      <div className="flex justify-between items-center">
+        <h3 className="text-sm font-black text-[#062c24] uppercase">Overview</h3>
+        <div className="flex bg-white rounded-lg border border-slate-200 p-1">
+          {(["7d", "30d", "90d"] as const).map(range => (
+            <button
+              key={range}
+              onClick={() => setTimeRange(range)}
+              className={`px-3 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${
+                timeRange === range ? "bg-[#062c24] text-white" : "text-slate-500 hover:bg-slate-100"
+              }`}
+            >
+              {range}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Pending Applications */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
-            Pending Applications
-            {pending.length > 0 && (
-              <span className="ml-2 bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full text-[9px]">{pending.length}</span>
-            )}
-          </h3>
+      {/* Alerts */}
+      {(pendingVendors.length > 0 || lowCreditVendors.length > 0) && (
+        <div className="flex flex-wrap gap-3">
+          {pendingVendors.length > 0 && (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-2 rounded-xl text-xs font-bold">
+              <i className="fas fa-exclamation-circle"></i>
+              {pendingVendors.length} vendor{pendingVendors.length > 1 ? "s" : ""} awaiting approval
+            </div>
+          )}
+          {lowCreditVendors.length > 0 && (
+            <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-xl text-xs font-bold">
+              <i className="fas fa-battery-quarter"></i>
+              {lowCreditVendors.length} vendor{lowCreditVendors.length > 1 ? "s" : ""} with low credits
+            </div>
+          )}
         </div>
-        {pending.length === 0 ? (
-          <div className="bg-white rounded-[2rem] border border-slate-100 p-8 text-center">
-            <i className="fas fa-check-circle text-3xl text-emerald-200 mb-3 block"></i>
-            <p className="text-[10px] font-bold text-slate-400 uppercase">No pending applications</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-3">
-            {pending.map(v => (
-              <div key={v.id} className="bg-amber-50 p-5 rounded-2xl border border-amber-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center font-black text-sm">
-                    {v.name?.[0]?.toUpperCase()}
-                  </div>
-                  <div>
-                    <h4 className="font-black uppercase text-xs text-amber-900">{v.name}</h4>
-                    <p className="text-[9px] text-amber-700/70 font-medium">{v.email}</p>
-                  </div>
+      )}
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {stats.map((stat, i) => {
+          const colors = colorClasses[stat.color];
+          return (
+            <div key={i} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+              <div className="flex items-start justify-between mb-3">
+                <div className={`w-10 h-10 ${colors.light} ${colors.text} rounded-xl flex items-center justify-center`}>
+                  <i className={`fas ${stat.icon}`}></i>
                 </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <div className="flex items-center gap-1.5 bg-white rounded-xl px-3 py-2 border border-amber-100">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase">Dep. RM</span>
-                    <input id={`dep-${v.id}`} type="number" defaultValue={50}
-                      className="w-12 text-center text-[10px] font-black outline-none text-[#062c24]" />
-                  </div>
-                  <button onClick={() => approveVendor(v.id, `dep-${v.id}`)}
-                    className="flex-1 sm:flex-none bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-[9px] font-black uppercase shadow-sm hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
-                    <i className="fas fa-check"></i> Approve
-                  </button>
+                {stat.change && (
+                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
+                    stat.changeType === "up" ? "bg-emerald-100 text-emerald-600" :
+                    stat.changeType === "down" ? "bg-red-100 text-red-600" :
+                    "bg-slate-100 text-slate-500"
+                  }`}>
+                    {stat.changeType === "up" && <i className="fas fa-arrow-up mr-1"></i>}
+                    {stat.changeType === "down" && <i className="fas fa-arrow-down mr-1"></i>}
+                    {stat.change}
+                  </span>
+                )}
+              </div>
+              <p className="text-2xl font-black text-[#062c24] mb-1">{stat.value}</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase">{stat.label}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Charts Row */}
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* Revenue Chart */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+          <h4 className="text-xs font-black text-[#062c24] uppercase mb-4">Revenue (Last 7 Days)</h4>
+          <div className="flex items-end gap-2 h-40">
+            {chartData.map((d, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-2">
+                <div className="w-full bg-slate-100 rounded-t-lg relative" style={{ height: "120px" }}>
+                  <div
+                    className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-emerald-500 to-emerald-400 rounded-t-lg transition-all duration-500"
+                    style={{ height: `${(d.revenue / maxRevenue) * 100}%` }}
+                  />
                 </div>
+                <span className="text-[9px] font-bold text-slate-400">{d.day}</span>
               </div>
             ))}
           </div>
-        )}
-      </section>
-
-      {/* Live Lead Feed */}
-      <section className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
-        <div className="p-6 border-b border-slate-50 flex items-center justify-between">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-            <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse inline-block"></span>
-            Live Lead Feed
-          </h3>
-          <span className="text-[9px] font-bold text-slate-300 uppercase">Last 20 leads</span>
+          {totalRevenue === 0 && (
+            <p className="text-center text-xs text-slate-400 mt-4">No transactions yet</p>
+          )}
         </div>
-        <div className="divide-y divide-slate-50">
-          {leads.length === 0 ? (
-            <div className="p-8 text-center text-[10px] font-bold text-slate-300 uppercase">No leads yet</div>
-          ) : leads.map((l, i) => (
-            <div key={i} className="flex justify-between items-center p-4 hover:bg-slate-50 transition-colors">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                  <i className="fab fa-whatsapp text-sm"></i>
+
+        {/* Top Vendors */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+          <h4 className="text-xs font-black text-[#062c24] uppercase mb-4">Top Vendors (by Credits)</h4>
+          {topVendors.length === 0 ? (
+            <p className="text-center text-xs text-slate-400 py-8">No vendors yet</p>
+          ) : (
+            <div className="space-y-3">
+              {topVendors.map((v, i) => (
+                <div key={v.id} className="flex items-center gap-3">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
+                    i === 0 ? "bg-amber-100 text-amber-600" :
+                    i === 1 ? "bg-slate-200 text-slate-600" :
+                    i === 2 ? "bg-orange-100 text-orange-600" :
+                    "bg-slate-100 text-slate-400"
+                  }`}>
+                    {i + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-[#062c24] truncate">{v.name}</p>
+                    <p className="text-[9px] text-slate-400">{v.city || "Unknown"}</p>
+                  </div>
+                  <span className="text-xs font-black text-emerald-600">{v.credits || 0}</span>
                 </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase text-slate-700">{l.vendorName || "Unknown Vendor"}</p>
-                  <p className="text-[9px] text-slate-400 font-medium">
-                    {l.timestamp?.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) || "Now"}
-                  </p>
-                </div>
-              </div>
-              <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg">
-                RM {l.totalAmount || 0}
-              </span>
+              ))}
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom Row */}
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* Location Distribution */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+          <h4 className="text-xs font-black text-[#062c24] uppercase mb-4">Vendors by Location</h4>
+          {topLocations.length === 0 ? (
+            <p className="text-center text-xs text-slate-400 py-8">No data yet</p>
+          ) : (
+            <div className="space-y-3">
+              {topLocations.map(([loc, count], i) => {
+                const percentage = Math.round((count / activeVendors.length) * 100);
+                return (
+                  <div key={loc}>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs font-bold text-slate-600">{loc}</span>
+                      <span className="text-[10px] font-bold text-slate-400">{count} ({percentage}%)</span>
+                    </div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full"
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Recent Transactions */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+          <h4 className="text-xs font-black text-[#062c24] uppercase mb-4">Recent Transactions</h4>
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <i className="fas fa-spinner fa-spin text-slate-300"></i>
+            </div>
+          ) : transactions.length === 0 ? (
+            <p className="text-center text-xs text-slate-400 py-8">No transactions yet</p>
+          ) : (
+            <div className="space-y-3 max-h-48 overflow-y-auto">
+              {transactions.slice(0, 10).map(t => (
+                <div key={t.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+                  <div>
+                    <p className="text-xs font-bold text-[#062c24]">{t.vendorName || "Unknown"}</p>
+                    <p className="text-[9px] text-slate-400">
+                      {t.createdAt?.toDate().toLocaleDateString("en", { day: "numeric", month: "short" })}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs font-black text-emerald-600">+RM {t.amount}</p>
+                    <p className="text-[9px] text-slate-400">{t.credits} credits</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="bg-gradient-to-r from-[#062c24] to-emerald-800 rounded-2xl p-6 text-white">
+        <h4 className="text-xs font-black uppercase mb-4">Quick Actions</h4>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: "Review Pending", icon: "fa-user-check", count: pendingVendors.length },
+            { label: "Send Reminder", icon: "fa-bell", count: lowCreditVendors.length },
+            { label: "Export Report", icon: "fa-file-export" },
+            { label: "Site Settings", icon: "fa-cog" },
+          ].map((action, i) => (
+            <button
+              key={i}
+              className="bg-white/10 hover:bg-white/20 p-4 rounded-xl text-center transition-all"
+            >
+              <div className="relative inline-block">
+                <i className={`fas ${action.icon} text-lg mb-2`}></i>
+                {action.count !== undefined && action.count > 0 && (
+                  <span className="absolute -top-1 -right-2 w-4 h-4 bg-red-500 text-[8px] font-black rounded-full flex items-center justify-center">
+                    {action.count}
+                  </span>
+                )}
+              </div>
+              <p className="text-[9px] font-bold uppercase">{action.label}</p>
+            </button>
           ))}
         </div>
-      </section>
+      </div>
     </div>
   );
 }
