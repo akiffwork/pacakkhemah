@@ -267,6 +267,16 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       localStorage.setItem(storageKey, String(Date.now()));
     } catch (e) { console.error(e); }
   }
+  if (typeof window !== "undefined" && typeof (window as any).gtag === "function") {
+      (window as any).gtag("event", "whatsapp_booking", {
+        currency: "MYR",
+        value: total,
+        vendor_id: vendorId,
+        vendor_name: vendorData?.name,
+        pickup_location: selectedHub, // <-- Changed this line!
+        items_count: cartCount
+      });
+    }
   window.open(`https://wa.me/${vendorData?.phone}?text=${msg}`, "_blank");
 }
 
