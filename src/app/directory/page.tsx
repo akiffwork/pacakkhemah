@@ -320,7 +320,7 @@ export default function DirectoryPage() {
               <button onClick={scrollToVendors} className="bg-emerald-500 hover:bg-emerald-400 text-white px-6 py-3.5 rounded-xl font-black uppercase text-xs tracking-widest transition-all shadow-lg">
                 <i className="fas fa-search mr-2"></i> Find Vendors
               </button>
-              <Link href="/register" className="bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-3.5 rounded-xl font-black uppercase text-xs tracking-widest transition-all">
+              <Link href="/register-vendor" className="bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-3.5 rounded-xl font-black uppercase text-xs tracking-widest transition-all">
                 <i className="fas fa-store mr-2"></i> Become a Vendor
               </Link>
             </div>
@@ -565,7 +565,7 @@ export default function DirectoryPage() {
             <p className="text-sm text-emerald-200 max-w-md mx-auto mb-6">
               Turn your equipment into income. Join {allVendors.length > 0 ? `${allVendors.length}+` : "our"} verified vendors on Pacak Khemah.
             </p>
-            <Link href="/register" className="inline-block bg-white text-[#062c24] px-8 py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-50 transition-colors shadow-lg">
+            <Link href="/register-vendor" className="inline-block bg-white text-[#062c24] px-8 py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-50 transition-colors shadow-lg">
               <i className="fas fa-rocket mr-2"></i> Start Earning
             </Link>
           </div>
