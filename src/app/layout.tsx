@@ -73,22 +73,33 @@ export default function RootLayout({
           rel="stylesheet"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
         />
-        {/* Google Analytics */}
+      </head>
+      <body className={inter.className}>
+        {children}
+
+        {/* Google AdSense */}
         <Script
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2429364031062979"
           strategy="afterInteractive"
           crossOrigin="anonymous"
         />
+
+        {/* Google Analytics Library (This was missing!) */}
+        <Script 
+          src="https://www.googletagmanager.com/gtag/js?id=G-129EPBWVDH" 
+          strategy="afterInteractive" 
+        />
+
+        {/* Google Analytics Configuration */}
         <Script id="google-analytics" strategy="afterInteractive">
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
             gtag('js', new Date());
-            gtag('config', 'G-LTMWBHSF7G');
+            gtag('config', 'G-129EPBWVDH');
           `}
         </Script>
-      </head>
-      <body className={inter.className}>{children}</body>
+      </body>
     </html>
   );
 }
