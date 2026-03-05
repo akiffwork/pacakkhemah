@@ -12,6 +12,7 @@ type Vendor = {
   createdAt?: any;
   city?: string;
   is_vacation?: boolean;
+  phone?: string;
 };
 
 type Transaction = {
@@ -33,7 +34,14 @@ type StatCard = {
   color: string;
 };
 
-export default function DashboardTab({ allVendors }: { allVendors: Vendor[] }) {
+type View = "dashboard" | "vendors" | "finance" | "content" | "settings";
+
+type Props = {
+  allVendors: Vendor[];
+  onNavigate?: (tab: View) => void;
+};
+
+export default function DashboardTab({ allVendors, onNavigate }: Props) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<"7d" | "30d" | "90d">("30d");
@@ -224,21 +232,28 @@ export default function DashboardTab({ allVendors }: { allVendors: Vendor[] }) {
         {/* Revenue Chart */}
         <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
           <h4 className="text-xs font-black text-[#062c24] uppercase mb-4">Revenue (Last 7 Days)</h4>
-          <div className="flex items-end gap-2 h-40">
-            {chartData.map((d, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                <div className="w-full bg-slate-100 rounded-t-lg relative" style={{ height: "120px" }}>
-                  <div
-                    className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-emerald-500 to-emerald-400 rounded-t-lg transition-all duration-500"
-                    style={{ height: `${(d.revenue / maxRevenue) * 100}%` }}
-                  />
-                </div>
-                <span className="text-[9px] font-bold text-slate-400">{d.day}</span>
-              </div>
-            ))}
-          </div>
-          {totalRevenue === 0 && (
-            <p className="text-center text-xs text-slate-400 mt-4">No transactions yet</p>
+          {transactions.length === 0 || totalRevenue === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-slate-300">
+              <i className="fas fa-chart-bar text-4xl mb-3"></i>
+              <p className="text-xs font-bold">No transactions yet</p>
+            </div>
+          ) : (
+            <div className="flex items-end gap-3" style={{ height: "120px" }}>
+              {chartData.map((d, i) => {
+                const heightPercent = maxRevenue > 0 ? (d.revenue / maxRevenue) * 100 : 0;
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center h-full">
+                    <div className="w-full flex-1 flex items-end">
+                      <div
+                        className={`w-full rounded-t-md transition-all duration-500 ${heightPercent > 0 ? "bg-gradient-to-t from-emerald-500 to-emerald-400" : "bg-slate-100"}`}
+                        style={{ height: heightPercent > 0 ? `${Math.max(heightPercent, 8)}%` : "4px" }}
+                      />
+                    </div>
+                    <span className="text-[9px] font-bold text-slate-400 mt-2 shrink-0">{d.day}</span>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
 
@@ -335,27 +350,103 @@ export default function DashboardTab({ allVendors }: { allVendors: Vendor[] }) {
       <div className="bg-gradient-to-r from-[#062c24] to-emerald-800 rounded-2xl p-6 text-white">
         <h4 className="text-xs font-black uppercase mb-4">Quick Actions</h4>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: "Review Pending", icon: "fa-user-check", count: pendingVendors.length },
-            { label: "Send Reminder", icon: "fa-bell", count: lowCreditVendors.length },
-            { label: "Export Report", icon: "fa-file-export" },
-            { label: "Site Settings", icon: "fa-cog" },
-          ].map((action, i) => (
-            <button
-              key={i}
-              className="bg-white/10 hover:bg-white/20 p-4 rounded-xl text-center transition-all"
-            >
-              <div className="relative inline-block">
-                <i className={`fas ${action.icon} text-lg mb-2`}></i>
-                {action.count !== undefined && action.count > 0 && (
-                  <span className="absolute -top-1 -right-2 w-4 h-4 bg-red-500 text-[8px] font-black rounded-full flex items-center justify-center">
-                    {action.count}
-                  </span>
-                )}
-              </div>
-              <p className="text-[9px] font-bold uppercase">{action.label}</p>
-            </button>
-          ))}
+          {/* Review Pending */}
+          <button
+            onClick={() => onNavigate?.("vendors")}
+            className="bg-white/10 hover:bg-white/20 p-4 rounded-xl text-center transition-all"
+          >
+            <div className="relative inline-block">
+              <i className="fas fa-user-check text-lg mb-2"></i>
+              {pendingVendors.length > 0 && (
+                <span className="absolute -top-1 -right-2 w-4 h-4 bg-red-500 text-[8px] font-black rounded-full flex items-center justify-center">
+                  {pendingVendors.length}
+                </span>
+              )}
+            </div>
+            <p className="text-[9px] font-bold uppercase">Review Pending</p>
+          </button>
+
+          {/* Send Reminder - Opens WhatsApp for each low credit vendor */}
+          <button
+            onClick={() => {
+              if (lowCreditVendors.length === 0) {
+                alert("✅ All vendors have sufficient credits!");
+                return;
+              }
+              const vendor = lowCreditVendors[0];
+              if (vendor.phone) {
+                const msg = encodeURIComponent(`Hi ${vendor.name}! 👋\n\nThis is a friendly reminder from Pacak Khemah. Your credit balance is running low (${vendor.credits || 0} credits remaining).\n\nTop up now to keep your shop visible in the directory!\n\n- Pacak Khemah Team`);
+                window.open(`https://wa.me/${vendor.phone.replace(/\D/g, "")}?text=${msg}`, "_blank");
+              } else {
+                alert(`📋 Low Credit Vendors:\n\n${lowCreditVendors.map(v => `• ${v.name}: ${v.credits || 0} credits`).join("\n")}\n\nNo phone numbers available for WhatsApp.`);
+              }
+            }}
+            className="bg-white/10 hover:bg-white/20 p-4 rounded-xl text-center transition-all"
+          >
+            <div className="relative inline-block">
+              <i className="fas fa-bell text-lg mb-2"></i>
+              {lowCreditVendors.length > 0 && (
+                <span className="absolute -top-1 -right-2 w-4 h-4 bg-amber-500 text-[8px] font-black rounded-full flex items-center justify-center">
+                  {lowCreditVendors.length}
+                </span>
+              )}
+            </div>
+            <p className="text-[9px] font-bold uppercase">Send Reminder</p>
+          </button>
+
+          {/* Export Report - Downloads JSON */}
+          <button
+            onClick={() => {
+              const data = {
+                exportedAt: new Date().toISOString(),
+                summary: {
+                  totalVendors: allVendors.length,
+                  activeVendors: activeVendors.length,
+                  pendingVendors: pendingVendors.length,
+                  totalRevenue,
+                  totalCredits,
+                },
+                vendors: allVendors.map(v => ({
+                  name: v.name,
+                  city: v.city,
+                  credits: v.credits,
+                  status: v.status,
+                })),
+                recentTransactions: transactions.slice(0, 50).map(t => ({
+                  vendor: t.vendorName,
+                  amount: t.amount,
+                  credits: t.credits,
+                  type: t.type,
+                  date: t.createdAt?.toDate?.()?.toISOString() || null,
+                })),
+              };
+              const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `pacakkhemah-report-${new Date().toISOString().split("T")[0]}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+              alert("✅ Report downloaded!");
+            }}
+            className="bg-white/10 hover:bg-white/20 p-4 rounded-xl text-center transition-all"
+          >
+            <div className="relative inline-block">
+              <i className="fas fa-file-export text-lg mb-2"></i>
+            </div>
+            <p className="text-[9px] font-bold uppercase">Export Report</p>
+          </button>
+
+          {/* Site Settings */}
+          <button
+            onClick={() => onNavigate?.("settings")}
+            className="bg-white/10 hover:bg-white/20 p-4 rounded-xl text-center transition-all"
+          >
+            <div className="relative inline-block">
+              <i className="fas fa-cog text-lg mb-2"></i>
+            </div>
+            <p className="text-[9px] font-bold uppercase">Site Settings</p>
+          </button>
         </div>
       </div>
     </div>

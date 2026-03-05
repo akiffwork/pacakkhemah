@@ -114,7 +114,7 @@ function AdminShell({ user, allVendors }: { user: User; allVendors: any[] }) {
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 lg:p-8" style={{ scrollbarWidth: "thin" }}>
-          {activeView === "dashboard" && <DashboardTab allVendors={allVendors} />}
+          {activeView === "dashboard" && <DashboardTab allVendors={allVendors} onNavigate={setActiveView} />}
           {activeView === "vendors" && <VendorsTab allVendors={allVendors} />}
           {activeView === "finance" && <FinanceTab />}
           {activeView === "content" && <ContentTab />}
