@@ -310,8 +310,8 @@ export default function DirectoryPage() {
           {/* Hero content */}
           <div className="text-center">
             <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-tight mb-3 leading-tight">
-              Sewa Gear Camping.<br/>
-              <span className="text-emerald-400">Tanpa Hassle.</span>
+              Rent Camping Gear.<br/>
+              <span className="text-emerald-400">Without Hassle.</span>
             </h2>
             <p className="text-sm text-white/70 max-w-md mx-auto mb-6 leading-relaxed">
               Rent quality camping gear from verified local vendors across Malaysia. Tents, sleeping bags, cooking equipment & more.
@@ -370,7 +370,7 @@ export default function DirectoryPage() {
       {/* ═══ VENDOR SEARCH & GRID ═══ */}
       <main className="max-w-6xl mx-auto px-4 space-y-6" ref={vendorSectionRef}>
         <section>
-          <h2 className="text-lg font-black text-[#062c24] mb-3">Where to Pacak Today?</h2>
+          <h2 className="text-base font-black text-[#062c24] mb-3">Where to Pacak Khemah Today? or your preffered pick up location</h2>
 
           <div className="relative mb-2" data-loc-dropdown>
             <i className="fas fa-map-marker-alt absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500 text-sm z-10"></i>
@@ -423,7 +423,7 @@ export default function DirectoryPage() {
 
         <section>
           <div className="flex justify-between items-end mb-3">
-            <h2 className="text-lg font-black text-[#062c24]">What to Pacak Today?</h2>
+            <h2 className="text-base font-black text-[#062c24]">What to Pacak Khemah Today? Select Vendor Near You</h2>
             <span className="text-[9px] font-bold text-white bg-[#062c24] px-2 py-0.5 rounded-md">
               {loading ? "..." : `${filteredVendors.length} Hubs`}
             </span>
