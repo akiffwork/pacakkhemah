@@ -370,7 +370,8 @@ export default function DirectoryPage() {
       {/* ═══ VENDOR SEARCH & GRID ═══ */}
       <main className="max-w-6xl mx-auto px-4 space-y-6" ref={vendorSectionRef}>
         <section>
-          <h2 className="text-base font-black text-[#062c24] mb-3">Where to Pacak Khemah Today? or your preffered pick up location</h2>
+          <h2 className="text-base font-black text-[#062c24] mb-1">Where to Pacak Khemah Today?</h2>
+<p className="text-xs text-slate-400 mb-3">or your preferred pick up location</p>
 
           <div className="relative mb-2" data-loc-dropdown>
             <i className="fas fa-map-marker-alt absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500 text-sm z-10"></i>
@@ -423,7 +424,10 @@ export default function DirectoryPage() {
 
         <section>
           <div className="flex justify-between items-end mb-3">
-            <h2 className="text-base font-black text-[#062c24]">What to Pacak Khemah Today? Select Vendor Near You</h2>
+  <div>
+    <h2 className="text-base font-black text-[#062c24]">What to Pacak Khemah Today?</h2>
+    <p className="text-xs text-slate-400">select vendor near you</p>
+  </div>
             <span className="text-[9px] font-bold text-white bg-[#062c24] px-2 py-0.5 rounded-md">
               {loading ? "..." : `${filteredVendors.length} Hubs`}
             </span>
