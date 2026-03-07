@@ -20,6 +20,8 @@ import AdBanner from "@/components/AdBanner";
 type DeliveryZone = { name: string; fee: number };
 type TimeSlot = { time: string; label: string };
 
+type Badge = "verified" | "id_verified" | "top_rated" | "fast_responder" | "premium";
+
 type ServicesConfig = {
   delivery: {
     enabled: boolean;
@@ -57,6 +59,11 @@ type VendorData = {
   allow_stacking?: boolean;
   rating?: number; reviewCount?: number;
   services?: ServicesConfig;
+  // NEW: Badge & Mock-up fields
+  badges?: Badge[];
+  is_mockup?: boolean;
+  avg_response_time?: number; // in minutes
+  total_orders?: number;
 };
 
 type GearItem = {
@@ -181,6 +188,105 @@ function ImageCarousel({ images }: { images: string[] }) {
     </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BADGE SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════
+
+const BADGE_CONFIG: Record<Badge, { label: string; icon: string; bg: string; text: string; border: string }> = {
+  verified: {
+    label: "Verified",
+    icon: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+    bg: "bg-emerald-50",
+    text: "text-emerald-600",
+    border: "border-emerald-200",
+  },
+  id_verified: {
+    label: "ID Verified",
+    icon: "M15 9h3.75M15 12h3.75M15 15h3.75M4.5 19.5h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5zm6-10.125a1.875 1.875 0 11-3.75 0 1.875 1.875 0 013.75 0zm1.294 6.336a6.721 6.721 0 01-3.17.789 6.721 6.721 0 01-3.168-.789 3.376 3.376 0 016.338 0z",
+    bg: "bg-teal-50",
+    text: "text-teal-600",
+    border: "border-teal-200",
+  },
+  top_rated: {
+    label: "Top Rated",
+    icon: "M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z",
+    bg: "bg-amber-50",
+    text: "text-amber-600",
+    border: "border-amber-200",
+  },
+  fast_responder: {
+    label: "Fast Responder",
+    icon: "M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z",
+    bg: "bg-blue-50",
+    text: "text-blue-600",
+    border: "border-blue-200",
+  },
+  premium: {
+    label: "Premium",
+    icon: "M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M7.73 9.728a6.726 6.726 0 002.748 1.35m8.272-6.842V4.5c0 2.108-.966 3.99-2.48 5.228m2.48-5.492a46.32 46.32 0 012.916.52 6.003 6.003 0 01-5.395 4.972m0 0a6.726 6.726 0 01-2.749 1.35m0 0a6.772 6.772 0 01-3.044 0",
+    bg: "bg-purple-50",
+    text: "text-purple-600",
+    border: "border-purple-200",
+  },
+};
+
+function BadgeIcon({ badge, size = "sm" }: { badge: Badge; size?: "sm" | "md" | "lg" }) {
+  const config = BADGE_CONFIG[badge];
+  const sizeClasses = {
+    sm: "w-5 h-5 p-0.5",
+    md: "w-6 h-6 p-1",
+    lg: "w-8 h-8 p-1.5",
+  };
+  
+  return (
+    <div className={`${sizeClasses[size]} ${config.bg} ${config.text} rounded-full border ${config.border} flex items-center justify-center`} title={config.label}>
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-full h-full">
+        <path strokeLinecap="round" strokeLinejoin="round" d={config.icon} />
+      </svg>
+    </div>
+  );
+}
+
+function BadgePill({ badge }: { badge: Badge }) {
+  const config = BADGE_CONFIG[badge];
+  return (
+    <div className={`inline-flex items-center gap-1.5 ${config.bg} ${config.text} border ${config.border} px-2 py-1 rounded-full`}>
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+        <path strokeLinecap="round" strokeLinejoin="round" d={config.icon} />
+      </svg>
+      <span className="text-[9px] font-bold uppercase tracking-wide">{config.label}</span>
+    </div>
+  );
+}
+
+function MockupBanner() {
+  return (
+    <div className="bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white">
+      <div className="max-w-4xl mx-auto px-4 py-3">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+              <i className="fas fa-store text-lg"></i>
+            </div>
+            <div className="text-center sm:text-left">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-white/70">Demo Shop</p>
+              <p className="text-sm font-black">This could be YOUR store!</p>
+            </div>
+          </div>
+          <Link href="/register" className="bg-white text-indigo-600 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-all shadow-lg flex items-center gap-2">
+            <i className="fas fa-rocket"></i>
+            Register Now
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Mock-up vendor ID constant
+const MOCKUP_VENDOR_ID = "UHdf5wMhsPbwi7qFGPSloXGdbu53";
+const ADMIN_WHATSAPP = "6011136904336";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN SHOP PAGE
@@ -517,55 +623,69 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       pricingSection += ` (excl. delivery)`;
     }
 
-    const msg = `Hi ${vendorData?.name}, Booking Request:%0A` +
-      `%0A📦 *ITEMS*%0A${cartLines}` +
-      `%0A%0A📅 *DATES*%0APick-up: ${pickupDate}%0AReturn: ${returnDate}%0ADuration: ${nights} night${nights > 1 ? "s" : ""}` +
-      fulfillmentSection +
-      pricingSection;
+    // Mock-up shop: Different message for demo inquiries
+    const isMockupShop = vendorId === MOCKUP_VENDOR_ID || vendorData?.is_mockup === true;
+    
+    let msg: string;
+    if (isMockupShop) {
+      msg = `Hi Pacak Khemah,%0A%0AI just tried the DEMO SHOP and I'm interested in becoming a vendor!%0A%0A📦 *DEMO ORDER PREVIEW*%0A${cartLines}` +
+        `%0A%0A📅 *DATES*%0APick-up: ${pickupDate}%0AReturn: ${returnDate}%0ADuration: ${nights} night${nights > 1 ? "s" : ""}` +
+        fulfillmentSection +
+        pricingSection +
+        `%0A%0A----%0A🚀 I want to register my own shop like this!`;
+    } else {
+      msg = `Hi ${vendorData?.name}, Booking Request:%0A` +
+        `%0A📦 *ITEMS*%0A${cartLines}` +
+        `%0A%0A📅 *DATES*%0APick-up: ${pickupDate}%0AReturn: ${returnDate}%0ADuration: ${nights} night${nights > 1 ? "s" : ""}` +
+        fulfillmentSection +
+        pricingSection;
+    }
 
-    // Analytics & credits
-    const storageKey = `click_${vendorId}`;
-    const lastClick = localStorage.getItem(storageKey);
-    if (!lastClick || Date.now() - Number(lastClick) > 86400000) {
-      try {
-        await runTransaction(db, async (t) => {
-          const vRef = doc(db, "vendors", vendorId!);
-          const vDoc = await t.get(vRef);
-          const c = vDoc.data()?.credits || 0;
-          if (c > 0) {
-            t.update(vRef, { credits: c - 1 });
-            t.set(doc(collection(db, "analytics")), {
-              vendorId, vendorName: vendorData?.name, totalAmount: total,
-              timestamp: serverTimestamp(), type: "whatsapp_lead",
-              fulfillmentType,
-              deliveryAddress: fulfillmentType === "delivery" ? deliveryAddress : null,
-              deliveryZone: selectedZone?.name || null,
-              timeSlot: selectedTimeSlot?.label || null,
-              bookingDates: { start: pickupDate, end: returnDate },
-              cartItems: cart.map(i => ({ 
-                id: i.id, name: i.name, qty: i.qty, price: i.price,
-                addSetup: i.addSetup || false,
-                setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0
-              })),
-            });
-          }
+    // Analytics & credits - Skip for mock-up shops
+    if (!isMockupShop) {
+      const storageKey = `click_${vendorId}`;
+      const lastClick = localStorage.getItem(storageKey);
+      if (!lastClick || Date.now() - Number(lastClick) > 86400000) {
+        try {
+          await runTransaction(db, async (t) => {
+            const vRef = doc(db, "vendors", vendorId!);
+            const vDoc = await t.get(vRef);
+            const c = vDoc.data()?.credits || 0;
+            if (c > 0) {
+              t.update(vRef, { credits: c - 1 });
+              t.set(doc(collection(db, "analytics")), {
+                vendorId, vendorName: vendorData?.name, totalAmount: total,
+                timestamp: serverTimestamp(), type: "whatsapp_lead",
+                fulfillmentType,
+                deliveryAddress: fulfillmentType === "delivery" ? deliveryAddress : null,
+                deliveryZone: selectedZone?.name || null,
+                timeSlot: selectedTimeSlot?.label || null,
+                bookingDates: { start: pickupDate, end: returnDate },
+                cartItems: cart.map(i => ({ 
+                  id: i.id, name: i.name, qty: i.qty, price: i.price,
+                  addSetup: i.addSetup || false,
+                  setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0
+                })),
+              });
+            }
+          });
+          localStorage.setItem(storageKey, String(Date.now()));
+        } catch (e) { console.error(e); }
+      }
+      
+      if (typeof window !== "undefined" && typeof (window as any).gtag === "function") {
+        (window as any).gtag("event", "whatsapp_booking", {
+          currency: "MYR",
+          value: total,
+          vendor_id: vendorId,
+          vendor_name: vendorData?.name,
+          fulfillment_type: fulfillmentType,
+          items_count: cartCount
         });
-        localStorage.setItem(storageKey, String(Date.now()));
-      } catch (e) { console.error(e); }
+      }
     }
     
-    if (typeof window !== "undefined" && typeof (window as any).gtag === "function") {
-      (window as any).gtag("event", "whatsapp_booking", {
-        currency: "MYR",
-        value: total,
-        vendor_id: vendorId,
-        vendor_name: vendorData?.name,
-        fulfillment_type: fulfillmentType,
-        items_count: cartCount
-      });
-    }
-    
-    window.open(`https://wa.me/${vendorData?.phone}?text=${msg}`, "_blank");
+    window.open(`https://wa.me/${isMockupShop ? ADMIN_WHATSAPP : vendorData?.phone}?text=${msg}`, "_blank");
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -624,6 +744,19 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
 
   const rating = vendorData?.rating || 0;
   const reviewCount = vendorData?.reviewCount || 0;
+  
+  // Mock-up detection
+  const isMockup = vendorId === MOCKUP_VENDOR_ID || vendorData?.is_mockup === true;
+  const whatsappNumber = isMockup ? ADMIN_WHATSAPP : vendorData?.phone;
+  
+  // Auto-calculate badges based on vendor data
+  const calculatedBadges: Badge[] = [];
+  if (vendorData?.status === "approved") calculatedBadges.push("verified");
+  if ((vendorData?.total_orders || 0) >= 30 && rating >= 4.7) calculatedBadges.push("top_rated");
+  if ((vendorData?.avg_response_time || 999) <= 120) calculatedBadges.push("fast_responder");
+  
+  // Combine auto badges with manual badges from Firestore
+  const allBadges: Badge[] = [...new Set([...calculatedBadges, ...(vendorData?.badges || [])])];
 
   function handleShare(itemId?: string) {
     const url = itemId ? `${window.location.href}?item=${itemId}` : window.location.href;
@@ -651,6 +784,9 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
 
   return (
     <div className="pb-8 min-h-screen" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f0f2f1", color: "#0f172a" }}>
+      {/* Mock-up Banner */}
+      {isMockup && <MockupBanner />}
+      
       {ownerPreview && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-amber-400 text-[#062c24] px-4 py-2 rounded-full text-[10px] font-black uppercase shadow-xl z-[200] animate-bounce">PREVIEW MODE</div>
       )}
@@ -683,12 +819,30 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
             <img src={vendorData?.image || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-[0.9rem]" alt="logo" />
           </div>
           
+          {/* Vendor Name + Badges */}
           <div className="flex items-center gap-2 mb-2">
             <h1 className="text-xl font-black uppercase tracking-tight">{vendorData?.name || "Loading..."}</h1>
-            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase">
-              <i className="fas fa-check-circle mr-1"></i>Verified
-            </span>
+            {/* Badge Icons Row */}
+            {allBadges.length > 0 && (
+              <div className="flex items-center gap-1">
+                {allBadges.slice(0, 3).map(badge => (
+                  <BadgeIcon key={badge} badge={badge} size="sm" />
+                ))}
+                {allBadges.length > 3 && (
+                  <span className="text-[9px] text-white/60 font-bold">+{allBadges.length - 3}</span>
+                )}
+              </div>
+            )}
           </div>
+          
+          {/* Full Badge Pills (expandable) */}
+          {allBadges.length > 0 && (
+            <div className="flex flex-wrap justify-center gap-1.5 mb-3">
+              {allBadges.map(badge => (
+                <BadgePill key={badge} badge={badge} />
+              ))}
+            </div>
+          )}
 
           {reviewCount > 0 && (
             <div className="bg-orange-500/20 text-orange-300 border border-orange-500/30 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wide flex items-center gap-1.5 mb-3">
@@ -722,7 +876,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
 
           {/* Social icons */}
           <div className="flex gap-2 mb-2">
-            {vendorData?.phone && <a href={`https://wa.me/${vendorData.phone}`} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center hover:bg-emerald-500 transition-colors border border-white/10"><i className="fab fa-whatsapp text-sm"></i></a>}
+            {whatsappNumber && <a href={`https://wa.me/${whatsappNumber}`} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center hover:bg-emerald-500 transition-colors border border-white/10"><i className="fab fa-whatsapp text-sm"></i></a>}
             {vendorData?.tiktok && <a href={vendorData.tiktok} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center hover:bg-white/20 transition-colors border border-white/10"><i className="fab fa-tiktok text-sm"></i></a>}
             {vendorData?.ig && <a href={vendorData.ig} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center hover:bg-white/20 transition-colors border border-white/10"><i className="fab fa-instagram text-sm"></i></a>}
             {vendorData?.threads && <a href={vendorData.threads} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center hover:bg-white/20 transition-colors border border-white/10"><i className="fab fa-threads text-sm"></i></a>}
