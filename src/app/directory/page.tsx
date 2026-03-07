@@ -322,7 +322,7 @@ export default function DirectoryPage() {
         </div>
       )}
 
-      <AdBanner slot="top" />
+      <AdBanner />
 
       <main className="max-w-4xl mx-auto px-4 py-6">
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-6 space-y-3">
