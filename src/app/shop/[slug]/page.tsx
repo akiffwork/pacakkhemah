@@ -274,7 +274,7 @@ function MockupBanner() {
               <p className="text-sm font-black">This could be YOUR store!</p>
             </div>
           </div>
-          <Link href="/register" className="bg-white text-indigo-600 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-all shadow-lg flex items-center gap-2">
+          <Link href="/register-vendor" className="bg-white text-indigo-600 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-all shadow-lg flex items-center gap-2">
             <i className="fas fa-rocket"></i>
             Register Now
           </Link>

@@ -17,6 +17,7 @@ import SettingsTab from "@/components/SettingsTab";
 import OrdersTab from "@/components/OrdersTab";
 import UpdatesTab from "@/components/UpdatesTab";
 import ReferralsTab from "@/components/ReferralsTab";
+import WelcomeTour from "@/components/vendor/WelcomeTour";
 
 type VendorData = {
   name: string;
@@ -35,6 +36,11 @@ type VendorData = {
   rating?: number;
   reviewCount?: number;
   myReferralCode?: string;
+  tutorials_completed?: {
+    welcome?: boolean;
+    welcome_skipped?: boolean;
+    welcome_completed_at?: string;
+  };
 };
 
 type Tab = "analytics" | "orders" | "updates" | "documents" | "inventory" | "storefront" | "referrals" | "settings";
@@ -65,7 +71,6 @@ function LoginScreen() {
   return (
     <div className="fixed inset-0 bg-[#062c24] z-[200] flex items-center justify-center p-6">
       <div className="bg-white p-10 rounded-[2.5rem] max-w-sm w-full text-center shadow-2xl relative">
-        {/* Back to directory */}
         <Link href="/directory"
           className="absolute top-5 left-6 w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:text-[#062c24] transition-colors">
           <i className="fas fa-arrow-left text-sm"></i>
@@ -89,11 +94,9 @@ function LoginScreen() {
             <span className="relative bg-white px-2 text-[9px] text-slate-300 uppercase font-bold">Or Email</span>
           </div>
 
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-            placeholder="Email Address"
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email Address"
             className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-[0.85rem] text-sm font-semibold outline-none text-center focus:border-emerald-500 focus:bg-white transition-all" />
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-            placeholder="Password"
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password"
             className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-[0.85rem] text-sm font-semibold outline-none text-center focus:border-emerald-500 focus:bg-white transition-all" />
 
           {error && <p className="text-red-500 text-[10px] font-bold">{error}</p>}
@@ -119,18 +122,35 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
   const router = useRouter();
   const tabParam = searchParams.get("tab") as Tab | null;
   const [activeTab, setActiveTab] = useState<Tab>(tabParam || "analytics");
+  const [showTour, setShowTour] = useState(false);
 
-  // Sync tab with URL
+  // Check if welcome tour should be shown
+  useEffect(() => {
+    if (vendorData && !vendorData.tutorials_completed?.welcome) {
+      const timer = setTimeout(() => setShowTour(true), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [vendorData]);
+
   function handleTabChange(tab: Tab) {
     setActiveTab(tab);
     router.push(`/store?tab=${tab}`, { scroll: false });
   }
 
-  // Update state if URL changes externally
+  function handleTourNavigate(tab: string) {
+    const tabMap: Record<string, Tab> = {
+      profile: "settings",
+      storefront: "storefront",
+      inventory: "inventory",
+      settings: "settings",
+    };
+    const targetTab = tabMap[tab] || "analytics";
+    setActiveTab(targetTab);
+    router.push(`/store?tab=${targetTab}`, { scroll: false });
+  }
+
   useEffect(() => {
-    if (tabParam && tabParam !== activeTab) {
-      setActiveTab(tabParam);
-    }
+    if (tabParam && tabParam !== activeTab) setActiveTab(tabParam);
   }, [tabParam]);
 
   async function logout() {
@@ -155,10 +175,16 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
   return (
     <div className="min-h-screen pb-32" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f8fafc", color: "#062c24" }}>
 
+      {/* Welcome Tour */}
+      <WelcomeTour
+        vendorId={vendorId}
+        isOpen={showTour}
+        onClose={() => setShowTour(false)}
+        onNavigateTab={handleTourNavigate}
+      />
+
       {/* Sticky Header */}
       <header className="bg-white/90 backdrop-blur-xl border border-slate-100 shadow-sm sticky top-4 z-40 mx-4 mt-4 rounded-[2rem] p-4 space-y-3">
-
-        {/* Top row — branding + actions */}
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             {vendorData.image ? (
@@ -182,38 +208,24 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
           </div>
 
           <div className="flex gap-2 shrink-0">
-            <Link href="/calendar"
-              className="w-11 h-11 flex items-center justify-center bg-blue-50 text-blue-500 rounded-xl hover:bg-blue-100 border border-blue-100 transition-all"
-              title="Availability Calendar">
+            <Link href="/calendar" className="w-11 h-11 flex items-center justify-center bg-blue-50 text-blue-500 rounded-xl hover:bg-blue-100 border border-blue-100 transition-all" title="Availability Calendar">
               <i className="fas fa-calendar-alt text-sm"></i>
             </Link>
-            <Link href={shopUrl} target="_blank"
-              className="w-11 h-11 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 border border-emerald-100 transition-all"
-              title="View Live Shop">
+            <Link href={shopUrl} target="_blank" className="w-11 h-11 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 border border-emerald-100 transition-all" title="View Live Shop">
               <i className="fas fa-external-link-alt text-sm"></i>
             </Link>
-            <button onClick={logout}
-              className="w-11 h-11 flex items-center justify-center bg-red-50 text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all">
+            <button onClick={logout} className="w-11 h-11 flex items-center justify-center bg-red-50 text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all">
               <i className="fas fa-power-off text-sm"></i>
             </button>
           </div>
         </div>
 
-        {/* Tab bar — scrollable pills on mobile, same on desktop */}
-        <div
-          className="flex gap-2 overflow-x-auto pb-0.5"
-          style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}
-        >
+        <div className="flex gap-2 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
           {tabs.map(t => (
-            <button
-              key={t.id}
-              onClick={() => handleTabChange(t.id)}
+            <button key={t.id} onClick={() => handleTabChange(t.id)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap shrink-0 transition-all min-h-[44px] ${
-                activeTab === t.id
-                  ? "bg-[#062c24] text-white shadow-md"
-                  : "bg-slate-100 text-slate-500 hover:text-[#062c24] hover:bg-slate-200"
-              }`}
-            >
+                activeTab === t.id ? "bg-[#062c24] text-white shadow-md" : "bg-slate-100 text-slate-500 hover:text-[#062c24] hover:bg-slate-200"
+              }`}>
               <i className={`fas ${t.icon}`}></i>
               <span>{t.label}</span>
             </button>
@@ -230,7 +242,8 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
         {activeTab === "inventory" && <InventoryTab vendorId={vendorId} />}
         {activeTab === "storefront" && <StorefrontTab vendorId={vendorId} vendorData={vendorData} />}
         {activeTab === "referrals" && <ReferralsTab vendorId={vendorId} vendorName={vendorData.name} />}
-        {activeTab === "settings" && <SettingsTab vendorId={vendorId} vendorData={vendorData} />}
+        {/* @ts-ignore - onRestartTour prop added in new SettingsTab */}
+        {activeTab === "settings" && <SettingsTab vendorId={vendorId} vendorData={vendorData} onRestartTour={() => setShowTour(true)} />}
       </div>
     </div>
   );
@@ -248,7 +261,6 @@ export default function StorePage() {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        // Find vendor by owner uid
         const { collection, query, where, getDocs } = await import("firebase/firestore");
         const q = query(collection(db, "vendors"), where("owner_uid", "==", u.uid));
         const snap = await getDocs(q);
@@ -284,12 +296,8 @@ export default function StorePage() {
         <h2 className="text-white text-2xl font-black uppercase mb-2">No Vendor Found</h2>
         <p className="text-white/60 text-sm mb-8">This account is not linked to any vendor profile.</p>
         <div className="flex flex-col gap-3 items-center">
-          <Link href="/register-vendor" className="inline-block bg-white text-[#062c24] px-8 py-4 rounded-2xl font-black uppercase text-xs">
-            Register as Vendor
-          </Link>
-          <Link href="/directory" className="text-[10px] font-bold text-white/40 hover:text-white/80 uppercase tracking-widest transition-colors">
-            ← Back to Directory
-          </Link>
+          <Link href="/register-vendor" className="inline-block bg-white text-[#062c24] px-8 py-4 rounded-2xl font-black uppercase text-xs">Register as Vendor</Link>
+          <Link href="/directory" className="text-[10px] font-bold text-white/40 hover:text-white/80 uppercase tracking-widest transition-colors">← Back to Directory</Link>
         </div>
       </div>
     </div>
