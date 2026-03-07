@@ -119,6 +119,69 @@ function Section({ title, icon, defaultOpen = true, children }: { title: string;
   );
 }
 
+function ImageCarousel({ images }: { images: string[] }) {
+  const [current, setCurrent] = useState(0);
+  const [touchStart, setTouchStart] = useState(0);
+  const [touchEnd, setTouchEnd] = useState(0);
+
+  const goTo = (index: number) => {
+    if (index < 0) setCurrent(images.length - 1);
+    else if (index >= images.length) setCurrent(0);
+    else setCurrent(index);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => setTouchStart(e.targetTouches[0].clientX);
+  const handleTouchMove = (e: React.TouchEvent) => setTouchEnd(e.targetTouches[0].clientX);
+  const handleTouchEnd = () => {
+    if (touchStart - touchEnd > 75) goTo(current + 1);
+    if (touchStart - touchEnd < -75) goTo(current - 1);
+  };
+
+  return (
+    <div className="relative aspect-square rounded-t-[2rem] overflow-hidden"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}>
+      {/* Images */}
+      <div className="flex transition-transform duration-300 ease-out h-full"
+        style={{ transform: `translateX(-${current * 100}%)` }}>
+        {images.map((img, i) => (
+          <img key={i} src={img} className="w-full h-full object-cover flex-shrink-0" alt={`Image ${i + 1}`} />
+        ))}
+      </div>
+      
+      {/* Arrow buttons */}
+      {images.length > 1 && (
+        <>
+          <button onClick={() => goTo(current - 1)} 
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-slate-600 hover:bg-white shadow-lg z-10">
+            <i className="fas fa-chevron-left text-xs"></i>
+          </button>
+          <button onClick={() => goTo(current + 1)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-slate-600 hover:bg-white shadow-lg z-10">
+            <i className="fas fa-chevron-right text-xs"></i>
+          </button>
+        </>
+      )}
+      
+      {/* Dots indicator */}
+      {images.length > 1 && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+          {images.map((_, i) => (
+            <button key={i} onClick={() => setCurrent(i)}
+              className={`w-2 h-2 rounded-full transition-all ${i === current ? "bg-white w-4" : "bg-white/50 hover:bg-white/70"}`} />
+          ))}
+        </div>
+      )}
+      
+      {/* Image counter */}
+      <div className="absolute bottom-3 right-3 bg-black/50 text-white text-[9px] font-bold px-2 py-1 rounded-full z-10">
+        {current + 1} / {images.length}
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN SHOP PAGE
 // ═══════════════════════════════════════════════════════════════════════════
@@ -509,7 +572,26 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
   // HELPERS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const categories = Array.from(new Set(allGear.map(g => g.category || (g.type === "package" ? "Packages" : "Add-ons")))).sort();
+  // Sort categories: Packages first, then main items, then add-ons/accessories last
+  const sortCategories = (cats: string[]): string[] => {
+    const packagesFirst = ["Packages", "Package", "Pakej"];
+    const accessoriesLast = ["Add-ons", "Add-on", "Addon", "Accessories", "Accessory", "Aksesori", "Others", "Lain-lain"];
+    
+    return cats.sort((a, b) => {
+      const aIsPackage = packagesFirst.some(p => a.toLowerCase().includes(p.toLowerCase()));
+      const bIsPackage = packagesFirst.some(p => b.toLowerCase().includes(p.toLowerCase()));
+      const aIsAccessory = accessoriesLast.some(p => a.toLowerCase().includes(p.toLowerCase()));
+      const bIsAccessory = accessoriesLast.some(p => b.toLowerCase().includes(p.toLowerCase()));
+      
+      if (aIsPackage && !bIsPackage) return -1;
+      if (!aIsPackage && bIsPackage) return 1;
+      if (aIsAccessory && !bIsAccessory) return 1;
+      if (!aIsAccessory && bIsAccessory) return -1;
+      return a.localeCompare(b);
+    });
+  };
+  
+  const categories = sortCategories(Array.from(new Set(allGear.map(g => g.category || (g.type === "package" ? "Packages" : "Add-ons")))));
   
   useEffect(() => {
     if (categories.length > 0 && !activeCategory) setActiveCategory(categories[0]);
@@ -734,19 +816,26 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                   className="w-full bg-slate-50 border border-slate-200 pl-9 pr-4 py-3 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500" />
               </div>
               
-              {/* Category tabs */}
-              <div className="flex rounded-xl bg-slate-100 p-1 mb-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-                {categories.map(cat => (
-                  <button key={cat}
-                    onClick={() => setActiveCategory(prev => prev === cat ? null : cat)}
-                    className={`flex-1 min-w-0 px-3 py-2.5 rounded-lg text-[10px] font-black uppercase whitespace-nowrap transition-all ${
-                      (activeCategory === cat || (!activeCategory && categories.length === 1))
-                        ? "bg-[#062c24] text-white shadow-sm"
-                        : "text-slate-500 hover:text-[#062c24]"
-                    }`}>
-                    {cat}
-                  </button>
-                ))}
+              {/* Category tabs - Scrollable with fade hints */}
+              <div className="relative mb-3">
+                {/* Left fade */}
+                <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none rounded-l-xl" />
+                {/* Right fade */}
+                <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none rounded-r-xl" />
+                
+                <div className="flex gap-2 overflow-x-auto py-2 px-1 scrollbar-hide" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
+                  {categories.map(cat => (
+                    <button key={cat}
+                      onClick={() => setActiveCategory(cat)}
+                      className={`flex-shrink-0 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap transition-all ${
+                        activeCategory === cat
+                          ? "bg-[#062c24] text-white shadow-lg"
+                          : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-[#062c24]"
+                      }`}>
+                      {cat}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Gear grid */}
@@ -756,16 +845,42 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                   const inCart = cart.find(c => c.id === item.id)?.qty || 0;
                   const canAdd = avail > inCart;
                   const hasSetupOption = item.setup?.available;
+                  const hasMultipleImages = (item.images?.length || 0) > 1;
+                  const linkedItems = getLinkedItemsData(item);
                   
                   return (
                     <div key={item.id} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm stagger-in relative" style={{ animationDelay: `${idx * 50}ms` }}>
                       <div className="aspect-square relative cursor-pointer" onClick={() => { setSelectedItem(item); setShowItemModal(true); }}>
-                        <img src={item.img || "/placeholder.jpg"} className="w-full h-full object-cover" alt={item.name} />
-                        {hasSetupOption && (
-                          <span className="absolute top-2 left-2 bg-blue-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase">
-                            <i className="fas fa-tools mr-0.5"></i>Setup
-                          </span>
+                        <img src={item.images?.[0] || item.img || "/placeholder.jpg"} className="w-full h-full object-cover" alt={item.name} />
+                        
+                        {/* Multiple photos indicator dots */}
+                        {hasMultipleImages && (
+                          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+                            {item.images!.slice(0, 5).map((_, i) => (
+                              <span key={i} className={`w-1.5 h-1.5 rounded-full ${i === 0 ? "bg-white" : "bg-white/50"}`} />
+                            ))}
+                          </div>
                         )}
+                        
+                        {/* Badges */}
+                        <div className="absolute top-2 left-2 flex flex-col gap-1">
+                          {item.type === "package" && (
+                            <span className="bg-purple-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase">
+                              <i className="fas fa-box mr-0.5"></i>Package
+                            </span>
+                          )}
+                          {hasSetupOption && (
+                            <span className="bg-blue-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase">
+                              <i className="fas fa-tools mr-0.5"></i>Setup
+                            </span>
+                          )}
+                          {linkedItems.length > 0 && (
+                            <span className="bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase">
+                              <i className="fas fa-link mr-0.5"></i>{linkedItems.length} items
+                            </span>
+                          )}
+                        </div>
+                        
                         {inCart > 0 && (
                           <span className="absolute top-2 right-2 bg-emerald-500 text-white text-[9px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-lg">{inCart}</span>
                         )}
@@ -836,20 +951,34 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         </button>
       )}
 
-      {/* Item Modal */}
+      {/* Item Modal with Image Carousel */}
       {showItemModal && selectedItem && (
         <div className="fixed inset-0 bg-[#062c24]/95 backdrop-blur-md z-[300] flex items-center justify-center p-4">
           <div className="bg-white rounded-[2rem] w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="relative">
-              <img src={selectedItem.img || "/placeholder.jpg"} className="w-full aspect-square object-cover rounded-t-[2rem]" alt={selectedItem.name} />
-              <button onClick={() => setShowItemModal(false)} className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 shadow-lg">
+              {/* Image Carousel */}
+              {(selectedItem.images?.length || 0) > 1 ? (
+                <ImageCarousel images={selectedItem.images!} />
+              ) : (
+                <img src={selectedItem.images?.[0] || selectedItem.img || "/placeholder.jpg"} className="w-full aspect-square object-cover rounded-t-[2rem]" alt={selectedItem.name} />
+              )}
+              <button onClick={() => setShowItemModal(false)} className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 shadow-lg z-20">
                 <i className="fas fa-times"></i>
               </button>
-              {selectedItem.setup?.available && (
-                <span className="absolute top-4 left-4 bg-blue-500 text-white text-[9px] font-black px-2 py-1 rounded-lg uppercase shadow-lg">
-                  <i className="fas fa-tools mr-1"></i>Setup Available
-                </span>
-              )}
+              
+              {/* Badges */}
+              <div className="absolute top-4 left-4 flex flex-col gap-1.5 z-20">
+                {selectedItem.type === "package" && (
+                  <span className="bg-purple-500 text-white text-[9px] font-black px-2 py-1 rounded-lg uppercase shadow-lg">
+                    <i className="fas fa-box mr-1"></i>Package
+                  </span>
+                )}
+                {selectedItem.setup?.available && (
+                  <span className="bg-blue-500 text-white text-[9px] font-black px-2 py-1 rounded-lg uppercase shadow-lg">
+                    <i className="fas fa-tools mr-1"></i>Setup Available
+                  </span>
+                )}
+              </div>
             </div>
             <div className="p-6">
               <h3 className="text-lg font-black uppercase text-[#062c24] mb-1">{selectedItem.name}</h3>
@@ -867,6 +996,31 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                 </div>
               )}
               
+              {/* Linked Items (for packages) */}
+              {(() => {
+                const linkedItems = getLinkedItemsData(selectedItem);
+                if (linkedItems.length === 0) return null;
+                return (
+                  <div className="mb-4 p-3 bg-purple-50 rounded-xl border border-purple-100">
+                    <p className="text-[9px] font-black text-purple-600 uppercase mb-2">
+                      <i className="fas fa-link mr-1"></i>Package Includes:
+                    </p>
+                    <div className="space-y-2">
+                      {linkedItems.map(({ item: linkedItem, qty }) => (
+                        <div key={linkedItem.id} className="flex items-center gap-2 bg-white p-2 rounded-lg">
+                          <img src={linkedItem.images?.[0] || linkedItem.img || "/placeholder.jpg"} className="w-10 h-10 rounded-lg object-cover" alt={linkedItem.name} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-black text-purple-700 truncate">{linkedItem.name}</p>
+                            <p className="text-[9px] text-purple-500">Qty: {qty} • RM {linkedItem.price}/night</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+              
+              {/* Text Includes (legacy) */}
               {selectedItem.inc && selectedItem.inc.length > 0 && (
                 <div className="mb-6 p-3 bg-slate-50 rounded-xl">
                   <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Also Includes:</p>
@@ -1219,6 +1373,8 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       <style>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
         @keyframes toastIn { from { opacity: 0; transform: translate(-50%, -20px); } to { opacity: 1; transform: translate(-50%, 0); } }
         .animate-toastIn { animation: toastIn 0.3s ease-out; }
         @keyframes staggerIn { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
