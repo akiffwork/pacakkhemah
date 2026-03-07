@@ -9,7 +9,7 @@ type FloatingWhatsAppProps = {
 };
 
 export default function FloatingWhatsApp({ 
-  phoneNumber = "6011136904336", // Replace with actual admin number
+  phoneNumber = "601136904336", // Replace with actual admin number
   message = "Hi, I need help with my Pacak Khemah account.",
   position = "right"
 }: FloatingWhatsAppProps) {
