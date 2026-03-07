@@ -46,6 +46,11 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
     setTimeout(() => setCopyMsg(false), 2000);
   }
 
+  function shareViaWhatsApp() {
+    const message = `Sila lengkapkan pengesahan identiti untuk tempahan anda:\n\n${agreementLink}\n\n1. Masukkan nama penuh\n2. Muat naik gambar IC (depan & belakang)\n3. Tandatangan waiver\n\nTerima kasih! 🏕️`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
+  }
+
   async function viewSecureImage(path?: string) {
     if (!path) return alert("No image path found.");
     try {
@@ -64,7 +69,6 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
         getDownloadURL(ref(storage, agreement.icBackPath || "")),
       ]);
 
-      // Dynamically import html2pdf
       const html2pdf = (await import("html2pdf.js")).default;
 
       const rules = (vendorData.rules || []).map(r => `<p style="margin-bottom:5px;">• ${r}</p>`).join("");
@@ -125,67 +129,175 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
 
   return (
     <div className="space-y-6">
-      {/* Agreement Link Banner */}
-      <div className="bg-indigo-50 p-8 rounded-[2.5rem] border border-indigo-100 shadow-sm flex flex-col md:flex-row justify-between items-center gap-6">
-        <div>
-          <h3 className="text-xl font-black text-indigo-900 uppercase mb-2">Customer Verification Link</h3>
-          <p className="text-xs text-indigo-700 max-w-md">
-            Send this link to customers via WhatsApp after confirming availability. They will upload their IC and sign the waiver.
+      {/* Customer Verification Section - Improved */}
+      <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-6 text-white">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+              <i className="fas fa-user-check text-lg"></i>
+            </div>
+            <h2 className="text-lg font-black uppercase">Customer Verification</h2>
+          </div>
+          <p className="text-sm text-white/80">
+            Collect IC photos and waiver signatures from your customers
           </p>
         </div>
-        <div className="flex w-full md:w-auto gap-2">
-          <input type="text" readOnly value={agreementLink}
-            className="flex-1 md:w-64 bg-white border border-indigo-200 p-3 rounded-xl text-[10px] font-bold text-slate-500 outline-none select-all" />
-          <button onClick={copyLink}
-            className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase shadow-lg transition-all whitespace-nowrap ${copyMsg ? "bg-emerald-500 text-white" : "bg-indigo-600 text-white hover:bg-indigo-700"}`}>
-            {copyMsg ? "Copied!" : "Copy Link"}
-          </button>
+
+        {/* How It Works */}
+        <div className="p-6 border-b border-slate-100">
+          <h3 className="text-xs font-black text-slate-500 uppercase mb-4 flex items-center gap-2">
+            <i className="fas fa-info-circle text-blue-500"></i>
+            How It Works
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center text-sm font-black shrink-0">1</div>
+              <div>
+                <p className="text-xs font-bold text-slate-700">Customer Books</p>
+                <p className="text-[10px] text-slate-400">They contact you via WhatsApp to book gear</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center text-sm font-black shrink-0">2</div>
+              <div>
+                <p className="text-xs font-bold text-slate-700">Send Link</p>
+                <p className="text-[10px] text-slate-400">Share the verification link below</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center text-sm font-black shrink-0">3</div>
+              <div>
+                <p className="text-xs font-bold text-slate-700">Customer Submits</p>
+                <p className="text-[10px] text-slate-400">They upload IC & sign the waiver</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center text-sm font-black shrink-0">
+                <i className="fas fa-check text-xs"></i>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-700">You're Protected</p>
+                <p className="text-[10px] text-slate-400">Agreement appears here automatically</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Link Section */}
+        <div className="p-6 bg-slate-50">
+          <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">
+            Your Verification Link
+          </label>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input 
+              type="text" 
+              readOnly 
+              value={agreementLink}
+              className="flex-1 bg-white border border-slate-200 p-3.5 rounded-xl text-xs font-bold text-slate-600 outline-none select-all" 
+            />
+            <div className="flex gap-2">
+              <button 
+                onClick={copyLink}
+                className={`px-5 py-3 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${
+                  copyMsg 
+                    ? "bg-emerald-500 text-white" 
+                    : "bg-indigo-600 text-white hover:bg-indigo-700"
+                }`}
+              >
+                <i className={`fas ${copyMsg ? "fa-check" : "fa-copy"}`}></i>
+                {copyMsg ? "Copied!" : "Copy Link"}
+              </button>
+              <button 
+                onClick={shareViaWhatsApp}
+                className="px-5 py-3 rounded-xl text-[10px] font-black uppercase bg-emerald-500 text-white hover:bg-emerald-600 transition-all flex items-center gap-2"
+              >
+                <i className="fab fa-whatsapp"></i>
+                Share
+              </button>
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-3">
+            <i className="fas fa-lightbulb text-amber-500 mr-1"></i>
+            Tip: Send this link via WhatsApp after confirming availability and before pickup
+          </p>
         </div>
       </div>
 
       {/* Agreements List */}
-      <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-        <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-6">
-          Signed Agreements (Last 30 Days)
-        </h3>
-        <div className="space-y-3">
-          {loading ? (
-            <div className="text-center py-12 text-slate-400 text-xs">Loading documents...</div>
-          ) : agreements.length === 0 ? (
-            <div className="text-center py-12 text-slate-400 text-xs">No signed documents found.</div>
-          ) : agreements.map(a => (
-            <div key={a.id} className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-5 rounded-2xl border border-slate-100 hover:shadow-md transition-all gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
-                  <i className="fas fa-file-signature"></i>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase text-[#062c24]">{a.customerName}</p>
-                  <p className="text-[9px] text-slate-400 font-medium">
-                    {a.timestamp?.toDate().toLocaleString() || "Syncing..."}
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <button onClick={() => viewSecureImage(a.icFrontPath)}
-                  className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-[9px] font-bold hover:bg-indigo-50 hover:text-indigo-600 transition-all">
-                  ID Front
-                </button>
-                <button onClick={() => viewSecureImage(a.icBackPath)}
-                  className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-[9px] font-bold hover:bg-indigo-50 hover:text-indigo-600 transition-all">
-                  ID Back
-                </button>
-                <button onClick={() => downloadAgreementPDF(a)}
-                  disabled={pdfLoading === a.id}
-                  className="px-4 py-2 bg-[#062c24] text-white rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-emerald-800 flex items-center gap-2 transition-all">
-                  {pdfLoading === a.id
-                    ? <i className="fas fa-spinner fa-spin"></i>
-                    : <><i className="fas fa-file-pdf"></i> PDF</>}
-                </button>
-              </div>
-            </div>
-          ))}
+      <div className="bg-white p-6 rounded-2xl border border-slate-100">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-sm font-black text-[#062c24] uppercase">
+            Signed Agreements
+          </h3>
+          <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-3 py-1 rounded-full">
+            {agreements.length} documents
+          </span>
         </div>
+
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="bg-slate-50 rounded-xl p-4 animate-pulse">
+                <div className="h-4 bg-slate-200 rounded w-1/3 mb-2"></div>
+                <div className="h-3 bg-slate-100 rounded w-1/4"></div>
+              </div>
+            ))}
+          </div>
+        ) : agreements.length === 0 ? (
+          <div className="text-center py-12 bg-slate-50 rounded-xl">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <i className="fas fa-file-signature text-slate-300 text-2xl"></i>
+            </div>
+            <p className="text-sm font-bold text-slate-400">No signed agreements yet</p>
+            <p className="text-xs text-slate-300 mt-1">When customers complete verification, their documents will appear here</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {agreements.map(a => (
+              <div 
+                key={a.id} 
+                className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-50 p-4 rounded-xl border border-slate-100 hover:border-slate-200 transition-all gap-4"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center">
+                    <i className="fas fa-file-signature"></i>
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-[#062c24]">{a.customerName}</p>
+                    <p className="text-[10px] text-slate-400">
+                      {a.timestamp?.toDate().toLocaleString() || "Syncing..."}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <button 
+                    onClick={() => viewSecureImage(a.icFrontPath)}
+                    className="px-3 py-2 bg-white text-slate-600 rounded-lg text-[9px] font-bold border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 transition-all"
+                  >
+                    <i className="fas fa-id-card mr-1"></i> IC Front
+                  </button>
+                  <button 
+                    onClick={() => viewSecureImage(a.icBackPath)}
+                    className="px-3 py-2 bg-white text-slate-600 rounded-lg text-[9px] font-bold border border-slate-200 hover:border-indigo-300 hover:text-indigo-600 transition-all"
+                  >
+                    <i className="fas fa-id-card mr-1"></i> IC Back
+                  </button>
+                  <button 
+                    onClick={() => downloadAgreementPDF(a)}
+                    disabled={pdfLoading === a.id}
+                    className="px-4 py-2 bg-[#062c24] text-white rounded-lg text-[9px] font-black uppercase hover:bg-emerald-800 flex items-center gap-2 transition-all disabled:opacity-50"
+                  >
+                    {pdfLoading === a.id 
+                      ? <i className="fas fa-spinner fa-spin"></i>
+                      : <><i className="fas fa-file-pdf"></i> Download PDF</>
+                    }
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

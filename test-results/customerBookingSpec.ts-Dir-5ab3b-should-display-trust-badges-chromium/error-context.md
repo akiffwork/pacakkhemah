@@ -1,0 +1,225 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - generic [ref=e8] [cursor=pointer]:
+            - img "Pacak Khemah" [ref=e9]
+            - generic [ref=e10]:
+              - heading "pacakkhemah" [level=1] [ref=e11]
+              - paragraph [ref=e12]: Pacak. Rehat. Ulang.
+          - link " Vendor Login" [ref=e13] [cursor=pointer]:
+            - /url: /store
+            - generic [ref=e14]: 
+            - generic [ref=e15]: Vendor Login
+        - generic [ref=e16]:
+          - heading "Rent Camping Gear. Without Hassle." [level=2] [ref=e17]:
+            - text: Rent Camping Gear.
+            - text: Without Hassle.
+          - paragraph [ref=e18]: Rent quality camping gear from verified local vendors across Malaysia. Tents, sleeping bags, cooking equipment & more.
+          - generic [ref=e19]:
+            - button " Find Vendors" [ref=e20]:
+              - generic [ref=e21]: 
+              - text: Find Vendors
+            - link " Become a Vendor" [ref=e22] [cursor=pointer]:
+              - /url: /register-vendor
+              - generic [ref=e23]: 
+              - text: Become a Vendor
+    - generic [ref=e26]:
+      - generic [ref=e27]:
+        - generic [ref=e28]: 
+        - generic [ref=e29]: Verified Vendors
+      - generic [ref=e30]:
+        - generic [ref=e31]: 
+        - generic [ref=e32]: Secure Booking
+      - generic [ref=e33]:
+        - generic [ref=e34]: 
+        - generic [ref=e35]: Direct WhatsApp
+      - generic [ref=e36]:
+        - generic [ref=e37]: 
+        - generic [ref=e38]: No Hidden Fees
+    - generic [ref=e39]:
+      - heading "How It Works" [level=3] [ref=e40]
+      - generic [ref=e41]:
+        - generic [ref=e42]:
+          - generic [ref=e43]: "1"
+          - paragraph [ref=e44]: Find
+          - paragraph [ref=e45]: Browse vendors near you
+        - generic [ref=e46]:
+          - generic [ref=e47]: "2"
+          - paragraph [ref=e48]: Select
+          - paragraph [ref=e49]: Pick dates & gear
+        - generic [ref=e50]:
+          - generic [ref=e51]: "3"
+          - paragraph [ref=e52]: Book
+          - paragraph [ref=e53]: Confirm via WhatsApp
+    - main [ref=e54]:
+      - generic [ref=e55]:
+        - heading "Where to Pacak Khemah Today?" [level=2] [ref=e56]
+        - paragraph [ref=e57]: or your preferred pick up location
+        - generic [ref=e58]:
+          - generic [ref=e59]: 
+          - textbox "Search or pick a location..." [ref=e60]
+          - button "" [ref=e62]:
+            - generic [ref=e63]: 
+      - generic [ref=e64]:
+        - generic [ref=e65]:
+          - generic [ref=e66]:
+            - heading "What to Pacak Khemah Today?" [level=2] [ref=e67]
+            - paragraph [ref=e68]: select vendor near you
+          - generic [ref=e69]: 2 Hubs
+        - generic [ref=e70]:
+          - link "Camping Dengan Kita Camping Dengan Kita Pacak Sini, Adventure Sana! Based in the heart of Balok, Kuantan, we are more than just a rental vendor—we’re your partners in adventure. Whether you’re planning a sunrise chill at the local beach or gearing up for a cross-country road trip, we’ve got your back. We believe that high-quality camping gear should be accessible to everyone without the hassle of storage or high costs. Just swing by Balok, pick up your gear, and head out to your next destination. From Kuantan to the world, your journey starts right here!  Kuantan An Saan Package An Saan Package RM 160 Poon San Package Poon San Package RM 150 Vidalido Cabin XL Vidalido Cabin XL RM 150 View Shop → +19 more" [ref=e71] [cursor=pointer]:
+            - /url: /shop/campingdengankita
+            - generic [ref=e72]:
+              - generic [ref=e73]:
+                - img "Camping Dengan Kita" [ref=e75]
+                - generic [ref=e76]:
+                  - heading "Camping Dengan Kita" [level=3] [ref=e78]
+                  - paragraph [ref=e79]: Pacak Sini, Adventure Sana! Based in the heart of Balok, Kuantan, we are more than just a rental vendor—we’re your partners in adventure. Whether you’re planning a sunrise chill at the local beach or gearing up for a cross-country road trip, we’ve got your back. We believe that high-quality camping gear should be accessible to everyone without the hassle of storage or high costs. Just swing by Balok, pick up your gear, and head out to your next destination. From Kuantan to the world, your journey starts right here!
+              - generic [ref=e81]:
+                - generic [ref=e82]: 
+                - generic [ref=e83]: Kuantan
+            - generic [ref=e85]:
+              - generic [ref=e86]:
+                - img "An Saan Package" [ref=e88]
+                - paragraph [ref=e89]: An Saan Package
+                - paragraph [ref=e90]: RM 160
+              - generic [ref=e91]:
+                - img "Poon San Package" [ref=e93]
+                - paragraph [ref=e94]: Poon San Package
+                - paragraph [ref=e95]: RM 150
+              - generic [ref=e96]:
+                - img "Vidalido Cabin XL" [ref=e98]
+                - paragraph [ref=e99]: Vidalido Cabin XL
+                - paragraph [ref=e100]: RM 150
+            - generic [ref=e102]:
+              - generic [ref=e103]: View Shop →
+              - generic [ref=e104]: +19 more
+          - link "SAMPLE SHOP SAMPLE SHOP This page is a sample mockup created for demonstration purposes only. The listings, images, and information shown may not represent actual vendors, products, or services. This platform acts solely as a directory hub. All transactions and arrangements are made directly between users and vendors.  Klang Sample Picnic Sample Picnic RM 8000 Sample Package Sample Package RM 4000 Sample Tent Sample Tent RM 1000 View Shop → +3 more" [ref=e105] [cursor=pointer]:
+            - /url: /shop/sampleshop
+            - generic [ref=e106]:
+              - generic [ref=e107]:
+                - img "SAMPLE SHOP" [ref=e109]
+                - generic [ref=e110]:
+                  - heading "SAMPLE SHOP" [level=3] [ref=e112]
+                  - paragraph [ref=e113]: This page is a sample mockup created for demonstration purposes only. The listings, images, and information shown may not represent actual vendors, products, or services. This platform acts solely as a directory hub. All transactions and arrangements are made directly between users and vendors.
+              - generic [ref=e115]:
+                - generic [ref=e116]: 
+                - generic [ref=e117]: Klang
+            - generic [ref=e119]:
+              - generic [ref=e120]:
+                - img "Sample Picnic" [ref=e122]
+                - paragraph [ref=e123]: Sample Picnic
+                - paragraph [ref=e124]: RM 8000
+              - generic [ref=e125]:
+                - img "Sample Package" [ref=e127]
+                - paragraph [ref=e128]: Sample Package
+                - paragraph [ref=e129]: RM 4000
+              - generic [ref=e130]:
+                - img "Sample Tent" [ref=e132]
+                - paragraph [ref=e133]: Sample Tent
+                - paragraph [ref=e134]: RM 1000
+            - generic [ref=e136]:
+              - generic [ref=e137]: View Shop →
+              - generic [ref=e138]: +3 more
+      - generic [ref=e139]:
+        - heading "What's Up? Malaysia" [level=3] [ref=e142]
+        - link "Calender of Events Malaysia 2026 Calender of Events Malaysia 2026 Tourism Malaysia" [ref=e145] [cursor=pointer]:
+          - /url: https://www.malaysia.travel/storage/files/pdf/calendar-of-events-2026.pdf
+          - img "Calender of Events Malaysia 2026" [ref=e147]
+          - generic [ref=e148]:
+            - heading "Calender of Events Malaysia 2026" [level=4] [ref=e149]
+            - paragraph [ref=e150]: Tourism Malaysia
+    - generic [ref=e152]:
+      - heading "What Campers Say" [level=3] [ref=e153]
+      - generic [ref=e154]:
+        - generic [ref=e155]:
+          - generic [ref=e156]:
+            - generic [ref=e157]: 
+            - generic [ref=e158]: 
+            - generic [ref=e159]: 
+            - generic [ref=e160]: 
+            - generic [ref=e161]: 
+          - paragraph [ref=e162]: “First time camping and the vendor was super helpful! Gear was clean and ready.”
+          - generic [ref=e163]:
+            - generic [ref=e164]: A
+            - generic [ref=e165]:
+              - paragraph [ref=e166]: Ahmad
+              - paragraph [ref=e167]: Shah Alam
+        - generic [ref=e168]:
+          - generic [ref=e169]:
+            - generic [ref=e170]: 
+            - generic [ref=e171]: 
+            - generic [ref=e172]: 
+            - generic [ref=e173]: 
+            - generic [ref=e174]: 
+          - paragraph [ref=e175]: “So convenient! Found everything I needed in one place. Will use again.”
+          - generic [ref=e176]:
+            - generic [ref=e177]: S
+            - generic [ref=e178]:
+              - paragraph [ref=e179]: Siti
+              - paragraph [ref=e180]: Kuantan
+        - generic [ref=e181]:
+          - generic [ref=e182]:
+            - generic [ref=e183]: 
+            - generic [ref=e184]: 
+            - generic [ref=e185]: 
+            - generic [ref=e186]: 
+            - generic [ref=e187]: 
+          - paragraph [ref=e188]: “Great prices and booking via WhatsApp was easy. Highly recommend!”
+          - generic [ref=e189]:
+            - generic [ref=e190]: F
+            - generic [ref=e191]:
+              - paragraph [ref=e192]: Farid
+              - paragraph [ref=e193]: Johor Bahru
+    - generic [ref=e197]:
+      - generic [ref=e199]: 
+      - heading "Got Camping Gear?" [level=3] [ref=e200]
+      - paragraph [ref=e201]: Turn your equipment into income. Join 2+ verified vendors on Pacak Khemah.
+      - link " Start Earning" [ref=e202] [cursor=pointer]:
+        - /url: /register-vendor
+        - generic [ref=e203]: 
+        - text: Start Earning
+    - contentinfo [ref=e204]:
+      - heading "PACAK KHEMAH" [level=4] [ref=e205]
+      - paragraph [ref=e206]: Pacak. Rehat. Ulang.
+      - generic [ref=e207]:
+        - link " About" [ref=e208] [cursor=pointer]:
+          - /url: /about
+          - generic [ref=e209]: 
+          - text: About
+        - link " FAQ" [ref=e210] [cursor=pointer]:
+          - /url: /faq
+          - generic [ref=e211]: 
+          - text: FAQ
+        - link " Vendor Login" [ref=e212] [cursor=pointer]:
+          - /url: /store
+          - generic [ref=e213]: 
+          - text: Vendor Login
+      - generic [ref=e214]:
+        - link "" [ref=e215] [cursor=pointer]:
+          - /url: https://instagram.com/pacakkhemah
+          - generic [ref=e216]: 
+        - link [ref=e217] [cursor=pointer]:
+          - /url: https://threads.com/@pacakkhemah
+        - link "" [ref=e218] [cursor=pointer]:
+          - /url: https://wa.me/601136904336
+          - generic [ref=e219]: 
+      - paragraph [ref=e220]: © 2026 Pacak Khemah. All rights reserved.
+    - generic [ref=e224]:
+      - link " Explore" [ref=e225] [cursor=pointer]:
+        - /url: /directory
+        - generic [ref=e226]: 
+        - generic [ref=e227]: Explore
+      - link " Campsites" [ref=e228] [cursor=pointer]:
+        - /url: /campsites
+        - generic [ref=e229]: 
+        - generic [ref=e230]: Campsites
+  - button "Open Next.js Dev Tools" [ref=e236] [cursor=pointer]:
+    - img [ref=e237]
+  - alert [ref=e240]
+```
