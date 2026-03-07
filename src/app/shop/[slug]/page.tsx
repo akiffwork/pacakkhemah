@@ -286,7 +286,7 @@ function MockupBanner() {
 
 // Mock-up vendor ID constant
 const MOCKUP_VENDOR_ID = "UHdf5wMhsPbwi7qFGPSloXGdbu53";
-const ADMIN_WHATSAPP = "6011136904336";
+const ADMIN_WHATSAPP = "601136904336";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN SHOP PAGE
