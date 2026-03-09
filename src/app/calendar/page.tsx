@@ -53,6 +53,81 @@ const DEFAULT_COLOR = { bg: "bg-blue-50", border: "border-blue-200", text: "text
 
 const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+// Booking Summary Card Component - Expandable
+type BookingGroup = {
+  customer?: string;
+  phone?: string;
+  start: string;
+  end: string;
+  items: { id: string; name: string; qty: number; itemId?: string }[];
+};
+
+function BookingSummaryCard({ 
+  bookings, 
+  allGear,
+  onSelectBooking 
+}: { 
+  bookings: BookingGroup[]; 
+  allGear: GearItem[];
+  onSelectBooking: (booking: BookingGroup) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const totalItems = bookings.reduce((sum, b) => sum + b.items.length, 0);
+
+  if (bookings.length === 0) return null;
+
+  return (
+    <div className="bg-blue-50 border border-blue-100 rounded-xl overflow-hidden">
+      {/* Summary Header - Always visible */}
+      <button 
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between p-3 hover:bg-blue-100 transition-all"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+            <i className="fas fa-shopping-bag text-blue-500"></i>
+          </div>
+          <div className="text-left">
+            <p className="text-[10px] font-black text-blue-700 uppercase">
+              {bookings.length} {bookings.length === 1 ? "Booking" : "Bookings"}
+            </p>
+            <p className="text-[9px] text-blue-400">
+              {totalItems} {totalItems === 1 ? "item" : "items"} total
+            </p>
+          </div>
+        </div>
+        <i className={`fas fa-chevron-${expanded ? "up" : "down"} text-[10px] text-blue-400 transition-transform`}></i>
+      </button>
+
+      {/* Expanded List */}
+      {expanded && (
+        <div className="border-t border-blue-100 bg-white/50">
+          {bookings.map((booking, idx) => (
+            <div 
+              key={idx}
+              onClick={() => onSelectBooking(booking)}
+              className="flex items-center justify-between p-3 border-b border-blue-50 last:border-b-0 hover:bg-blue-50 cursor-pointer transition-all"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <i className="fas fa-user text-blue-500 text-xs"></i>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-blue-800 uppercase">{booking.customer || "Unknown"}</p>
+                  <p className="text-[8px] text-blue-400">
+                    {booking.items.length} {booking.items.length === 1 ? "item" : "items"} • {booking.start === booking.end ? booking.start : `${booking.start} → ${booking.end}`}
+                  </p>
+                </div>
+              </div>
+              <i className="fas fa-chevron-right text-[8px] text-blue-300"></i>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CalendarPage() {
   const [vendorId, setVendorId] = useState<string | null>(null);
   const [vendorName, setVendorName] = useState("");
@@ -303,34 +378,94 @@ export default function CalendarPage() {
     showToast("Calendar exported!");
   }
 
-  // FullCalendar events with category colors
-  const calendarEvents = bookings.map(b => {
-    const item = allGear.find(g => g.id === b.itemId);
-    const category = item ? getItemCategory(item) : "Add-ons";
-    const colors = getCategoryColor(category);
+  // FullCalendar events - grouped for cleaner display
+  const calendarEvents = (() => {
+    const events: any[] = [];
     
-    let endDate = b.end;
-    try {
-      const d = new Date(b.end);
-      if (!isNaN(d.getTime())) {
-        d.setDate(d.getDate() + 1);
-        endDate = d.toISOString().split("T")[0];
+    // Group bookings by customer + date range
+    const bookingGroups = bookings.filter(b => b.type !== "block").reduce((acc, b) => {
+      const key = `booking-${b.customer || "Unknown"}-${b.start}-${b.end}`;
+      if (!acc[key]) {
+        acc[key] = { customer: b.customer, start: b.start, end: b.end, items: [], phone: b.phone };
       }
-    } catch { return null; }
+      const item = allGear.find(g => g.id === b.itemId);
+      acc[key].items.push({ name: item?.name || "Unknown", qty: b.qty, id: b.id });
+      return acc;
+    }, {} as Record<string, any>);
 
-    const isBlock = b.type === "block";
-    
-    return {
-      id: b.id,
-      title: item ? `${item.name} (x${b.qty})` : "Item Deleted",
-      start: b.start, 
-      end: endDate,
-      backgroundColor: isBlock ? "#fee2e2" : colors.dot + "20",
-      borderColor: isBlock ? "#ef4444" : colors.dot,
-      textColor: isBlock ? "#ef4444" : colors.dot,
-      extendedProps: { ...b, itemName: item?.name || "Unknown", category },
-    };
-  }).filter(Boolean);
+    // Group blocks by reason + date range
+    const blockGroups = bookings.filter(b => b.type === "block").reduce((acc, b) => {
+      const key = `block-${b.reason || "Time Off"}-${b.start}-${b.end}`;
+      if (!acc[key]) {
+        acc[key] = { reason: b.reason || "Time Off", start: b.start, end: b.end, count: 0, ids: [] };
+      }
+      acc[key].count++;
+      acc[key].ids.push(b.id);
+      return acc;
+    }, {} as Record<string, any>);
+
+    // Add booking events
+    Object.values(bookingGroups).forEach((group: any) => {
+      let endDate = group.end;
+      try {
+        const d = new Date(group.end);
+        if (!isNaN(d.getTime())) {
+          d.setDate(d.getDate() + 1);
+          endDate = d.toISOString().split("T")[0];
+        }
+      } catch {}
+
+      events.push({
+        id: `booking-${group.customer}-${group.start}`,
+        title: `${group.customer || "Booking"} (${group.items.length} items)`,
+        start: group.start,
+        end: endDate,
+        backgroundColor: "#dbeafe",
+        borderColor: "#3b82f6",
+        textColor: "#1d4ed8",
+        extendedProps: { 
+          type: "booking",
+          customer: group.customer, 
+          phone: group.phone,
+          items: group.items,
+          start: group.start,
+          end: group.end,
+        },
+      });
+    });
+
+    // Add block events
+    Object.values(blockGroups).forEach((group: any) => {
+      let endDate = group.end;
+      try {
+        const d = new Date(group.end);
+        if (!isNaN(d.getTime())) {
+          d.setDate(d.getDate() + 1);
+          endDate = d.toISOString().split("T")[0];
+        }
+      } catch {}
+
+      events.push({
+        id: `block-${group.reason}-${group.start}`,
+        title: group.count === allGear.length ? `${group.reason} - All Items` : `${group.reason} (${group.count} items)`,
+        start: group.start,
+        end: endDate,
+        backgroundColor: "#fee2e2",
+        borderColor: "#ef4444",
+        textColor: "#dc2626",
+        extendedProps: { 
+          type: "block",
+          reason: group.reason,
+          count: group.count,
+          ids: group.ids,
+          start: group.start,
+          end: group.end,
+        },
+      });
+    });
+
+    return events;
+  })();
 
   // Week view - next 7 days
   const weekDays = Array.from({ length: 7 }, (_, i) => {
@@ -344,16 +479,29 @@ export default function CalendarPage() {
   // Handle calendar event click
   function handleEventClick(info: any) {
     const props = info.event.extendedProps;
-    setDetailData({
-      id: info.event.id,
-      itemName: props.itemName,
-      start: props.start,
-      end: props.end,
-      customer: props.customer,
-      phone: props.phone,
-      reason: props.reason,
-      qty: props.qty,
-    });
+    
+    if (props.type === "block") {
+      setDetailData({
+        id: props.ids?.[0] || info.event.id,
+        itemName: props.count === allGear.length ? "All Items" : `${props.count} items`,
+        start: props.start,
+        end: props.end,
+        reason: props.reason,
+        qty: props.count,
+      });
+    } else {
+      // Booking
+      const itemNames = props.items?.map((i: any) => `${i.name} (x${i.qty})`).join(", ") || "Unknown";
+      setDetailData({
+        id: props.items?.[0]?.id || info.event.id,
+        itemName: itemNames,
+        start: props.start,
+        end: props.end,
+        customer: props.customer,
+        phone: props.phone,
+        qty: props.items?.reduce((sum: number, i: any) => sum + (i.qty || 1), 0) || 1,
+      });
+    }
     setShowDetail(true);
   }
 
@@ -422,9 +570,40 @@ export default function CalendarPage() {
           ) : weekDays.map(d => {
             const dateStr = d.toISOString().split("T")[0];
             const dayOfWeek = d.getDay();
-            const active = bookings.filter(b => dateStr >= b.start && dateStr <= b.end);
+            const dayBookings = bookings.filter(b => dateStr >= b.start && dateStr <= b.end);
             const recurringBlock = recurringBlocks.find(r => r.enabled && r.dayOfWeek === dayOfWeek);
             const isToday = dateStr === todayStr;
+
+            // Group bookings by type
+            const customerBookings = dayBookings.filter(b => b.type !== "block");
+            const timeOffBlocks = dayBookings.filter(b => b.type === "block");
+            
+            // Group customer bookings by customer name + date range
+            const groupedBookings = customerBookings.reduce((acc, b) => {
+              const key = `${b.customer || "Unknown"}-${b.start}-${b.end}`;
+              if (!acc[key]) {
+                acc[key] = { customer: b.customer, phone: b.phone, start: b.start, end: b.end, items: [] };
+              }
+              const item = allGear.find(g => g.id === b.itemId);
+              acc[key].items.push({ id: b.id, name: item?.name || "Unknown", qty: b.qty || 1, itemId: b.itemId });
+              return acc;
+            }, {} as Record<string, { customer?: string; phone?: string; start: string; end: string; items: { id: string; name: string; qty: number; itemId?: string }[] }>);
+
+            // Group time-off blocks by reason + date range
+            const groupedBlocks = timeOffBlocks.reduce((acc, b) => {
+              const key = `${b.reason || "Time Off"}-${b.start}-${b.end}`;
+              if (!acc[key]) {
+                acc[key] = { reason: b.reason || "Time Off", start: b.start, end: b.end, items: [], ids: [] };
+              }
+              const item = allGear.find(g => g.id === b.itemId);
+              acc[key].items.push(item?.name || "Unknown");
+              acc[key].ids.push(b.id);
+              return acc;
+            }, {} as Record<string, { reason: string; start: string; end: string; items: string[]; ids: string[] }>);
+
+            const bookingGroups = Object.values(groupedBookings);
+            const blockGroups = Object.values(groupedBlocks);
+            const hasActivity = bookingGroups.length > 0 || blockGroups.length > 0 || recurringBlock;
 
             return (
               <div key={dateStr} className={`bg-white p-4 rounded-[1.5rem] border shadow-sm transition-all ${isToday ? "border-emerald-200 ring-2 ring-emerald-100" : "border-slate-100"}`}>
@@ -440,73 +619,70 @@ export default function CalendarPage() {
                         <i className="fas fa-repeat text-[7px]"></i> {recurringBlock.reason}
                       </span>
                     )}
-                    {active.length > 0 && (
-                      <span className="bg-emerald-50 text-emerald-600 px-2 py-1 rounded-lg text-[8px] font-black uppercase">{active.length} Activities</span>
+                    {hasActivity && (
+                      <span className="bg-slate-100 text-slate-500 px-2 py-1 rounded-lg text-[8px] font-black uppercase">
+                        {bookingGroups.length + blockGroups.length} {bookingGroups.length + blockGroups.length === 1 ? "Entry" : "Entries"}
+                      </span>
                     )}
                   </div>
                 </div>
 
-                {/* Stock availability row */}
-                <div className="flex gap-1 mb-3 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
-                  {allGear.slice(0, 6).map(g => {
-                    const remaining = getRemainingStock(g.id, dateStr);
-                    const category = getItemCategory(g);
-                    const colors = getCategoryColor(category);
-                    return (
-                      <div key={g.id} className={`shrink-0 px-2 py-1 rounded-lg ${colors.bg} border ${colors.border}`}>
-                        <p className={`text-[7px] font-bold ${colors.text} uppercase truncate max-w-[60px]`}>{g.name}</p>
-                        <p className={`text-[9px] font-black ${remaining === 0 ? "text-red-500" : colors.text}`}>
-                          {remaining}/{g.stock}
-                        </p>
-                      </div>
-                    );
-                  })}
-                  {allGear.length > 6 && (
-                    <div className="shrink-0 px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 flex items-center">
-                      <p className="text-[8px] font-bold text-slate-400">+{allGear.length - 6}</p>
-                    </div>
-                  )}
-                </div>
-
                 <div className="space-y-2">
-                  {active.length === 0 && !recurringBlock ? (
+                  {!hasActivity ? (
                     <p className="text-[10px] text-slate-300 italic pl-1">No bookings</p>
-                  ) : active.map(b => {
-                    const item = allGear.find(g => g.id === b.itemId);
-                    const isBlock = b.type === "block";
-                    const category = item ? getItemCategory(item) : "Add-ons";
-                    const colors = getCategoryColor(category);
-
-                    return (
-                      <div key={b.id} onClick={() => {
-                        setDetailData({
-                          id: b.id,
-                          itemName: item?.name || "Unknown",
-                          start: b.start,
-                          end: b.end,
-                          customer: b.customer,
-                          phone: b.phone,
-                          reason: b.reason,
-                          qty: b.qty,
-                        });
-                        setShowDetail(true);
-                      }}
-                        className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all hover:scale-[1.01] ${isBlock ? "bg-red-50 border border-red-100" : `${colors.bg} border ${colors.border}`}`}>
-                        <div className="flex items-center gap-3">
-                          <div className={`w-1 h-8 rounded-full ${isBlock ? "bg-red-400" : ""}`} style={{ backgroundColor: isBlock ? undefined : colors.dot }}></div>
-                          <div>
-                            <p className={`text-[9px] font-black uppercase ${isBlock ? "text-red-700" : colors.text}`}>
-                              {isBlock ? (b.reason || "Blocked") : (b.customer || "Unknown")}
-                            </p>
-                            <p className={`text-[8px] font-medium ${isBlock ? "text-red-400" : colors.text} opacity-70`}>
-                              {item?.name || "Item"} (x{b.qty})
-                            </p>
+                  ) : (
+                    <>
+                      {/* Time Off Blocks - Simple cards */}
+                      {blockGroups.map((block, idx) => (
+                        <div key={`block-${idx}`} 
+                          onClick={() => {
+                            setDetailData({
+                              id: block.ids[0],
+                              itemName: block.items.length === allGear.length ? "All Items" : `${block.items.length} items`,
+                              start: block.start,
+                              end: block.end,
+                              reason: block.reason,
+                              qty: block.items.length,
+                            });
+                            setShowDetail(true);
+                          }}
+                          className="flex items-center justify-between p-3 rounded-xl cursor-pointer bg-red-50 border border-red-100 hover:bg-red-100 transition-all">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
+                              <i className="fas fa-ban text-red-500"></i>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-black text-red-700 uppercase">{block.reason}</p>
+                              <p className="text-[9px] text-red-400">
+                                {block.items.length === allGear.length ? "All items blocked" : `${block.items.length} items blocked`}
+                              </p>
+                            </div>
                           </div>
+                          <i className="fas fa-chevron-right text-[8px] text-red-300"></i>
                         </div>
-                        <i className={`fas fa-chevron-right text-[8px] ${isBlock ? "text-red-300" : colors.text} opacity-50`}></i>
-                      </div>
-                    );
-                  })}
+                      ))}
+
+                      {/* Booking Groups - Summary cards */}
+                      {bookingGroups.length > 0 && (
+                        <BookingSummaryCard 
+                          bookings={bookingGroups} 
+                          allGear={allGear}
+                          onSelectBooking={(booking) => {
+                            setDetailData({
+                              id: booking.items[0].id,
+                              itemName: booking.items.map(i => `${i.name} (x${i.qty})`).join(", "),
+                              start: booking.start,
+                              end: booking.end,
+                              customer: booking.customer,
+                              phone: booking.phone,
+                              qty: booking.items.reduce((sum, i) => sum + i.qty, 0),
+                            });
+                            setShowDetail(true);
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             );
