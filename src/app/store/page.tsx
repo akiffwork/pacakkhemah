@@ -18,6 +18,8 @@ import OrdersTab from "@/components/OrdersTab";
 import UpdatesTab from "@/components/UpdatesTab";
 import ReferralsTab from "@/components/ReferralsTab";
 import WelcomeTour from "@/components/vendor/WelcomeTour";
+import FirstItemTour from "@/components/vendor/FirstItemTour";
+import FirstOrderTour from "@/components/vendor/FirstOrderTour";
 
 type VendorData = {
   name: string;
@@ -40,7 +42,15 @@ type VendorData = {
     welcome?: boolean;
     welcome_skipped?: boolean;
     welcome_completed_at?: string;
+    first_item?: boolean;
+    first_item_skipped?: boolean;
+    first_item_completed_at?: string;
+    first_order?: boolean;
+    first_order_skipped?: boolean;
+    first_order_completed_at?: string;
   };
+  gear_count?: number;
+  order_count?: number;
 };
 
 type Tab = "analytics" | "orders" | "updates" | "documents" | "inventory" | "storefront" | "referrals" | "settings";
@@ -123,14 +133,34 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
   const tabParam = searchParams.get("tab") as Tab | null;
   const adminOverride = searchParams.get("admin_override");
   const [activeTab, setActiveTab] = useState<Tab>(tabParam || "analytics");
-  const [showTour, setShowTour] = useState(false);
+  
+  // Tour states
+  const [showWelcomeTour, setShowWelcomeTour] = useState(false);
+  const [showFirstItemTour, setShowFirstItemTour] = useState(false);
+  const [showFirstOrderTour, setShowFirstOrderTour] = useState(false);
+  const [showAddGearModal, setShowAddGearModal] = useState(false);
 
-  // Check if welcome tour should be shown (skip for admin override)
+  // Check which tour should be shown (skip for admin override)
   useEffect(() => {
-    if (vendorData && !vendorData.tutorials_completed?.welcome && !isAdminOverride) {
-      const timer = setTimeout(() => setShowTour(true), 500);
+    if (isAdminOverride) return;
+    
+    const tutorials = vendorData?.tutorials_completed;
+    
+    // Priority 1: Welcome tour (if not completed)
+    if (!tutorials?.welcome) {
+      const timer = setTimeout(() => setShowWelcomeTour(true), 500);
       return () => clearTimeout(timer);
     }
+    
+    // Priority 2: First item tour (if welcome done, no gear, and not completed)
+    if (tutorials?.welcome && !tutorials?.first_item && (vendorData?.gear_count || 0) === 0) {
+      const timer = setTimeout(() => setShowFirstItemTour(true), 500);
+      return () => clearTimeout(timer);
+    }
+    
+    // Priority 3: First order tour (if first item done, has first order, and not completed)
+    // This would be triggered manually when first order comes in
+    
   }, [vendorData, isAdminOverride]);
 
   function handleTabChange(tab: Tab) {
@@ -156,6 +186,20 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
     params.set("tab", targetTab);
     if (adminOverride) params.set("admin_override", adminOverride);
     router.push(`/store?${params.toString()}`, { scroll: false });
+  }
+  
+  function handleFirstItemTourComplete() {
+    setShowFirstItemTour(false);
+    // Navigate to inventory tab and trigger add modal
+    setActiveTab("inventory");
+    const params = new URLSearchParams();
+    params.set("tab", "inventory");
+    if (adminOverride) params.set("admin_override", adminOverride);
+    router.push(`/store?${params.toString()}`, { scroll: false });
+  }
+  
+  function handleRestartWelcomeTour() {
+    setShowWelcomeTour(true);
   }
 
   useEffect(() => {
@@ -187,9 +231,24 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
       {/* Welcome Tour */}
       <WelcomeTour
         vendorId={vendorId}
-        isOpen={showTour}
-        onClose={() => setShowTour(false)}
+        isOpen={showWelcomeTour}
+        onClose={() => setShowWelcomeTour(false)}
         onNavigateTab={handleTourNavigate}
+      />
+      
+      {/* First Item Tour */}
+      <FirstItemTour
+        vendorId={vendorId}
+        isOpen={showFirstItemTour}
+        onClose={() => setShowFirstItemTour(false)}
+        onOpenAddModal={handleFirstItemTourComplete}
+      />
+      
+      {/* First Order Tour */}
+      <FirstOrderTour
+        vendorId={vendorId}
+        isOpen={showFirstOrderTour}
+        onClose={() => setShowFirstOrderTour(false)}
       />
 
       {/* Sticky Header */}
@@ -251,8 +310,7 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
         {activeTab === "inventory" && <InventoryTab vendorId={vendorId} />}
         {activeTab === "storefront" && <StorefrontTab vendorId={vendorId} vendorData={vendorData} />}
         {activeTab === "referrals" && <ReferralsTab vendorId={vendorId} vendorName={vendorData.name} />}
-        {/* @ts-ignore - onRestartTour prop added in new SettingsTab */}
-        {activeTab === "settings" && <SettingsTab vendorId={vendorId} vendorData={vendorData} onRestartTour={() => setShowTour(true)} />}
+        {activeTab === "settings" && <SettingsTab vendorId={vendorId} vendorData={vendorData} onRestartTour={handleRestartWelcomeTour} />}
       </div>
     </div>
   );
