@@ -3,8 +3,7 @@
 import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
 import { 
-  collection, getDocs, doc, addDoc, updateDoc, deleteDoc, 
-  query, orderBy, serverTimestamp 
+  collection, getDocs, doc, addDoc, updateDoc, deleteDoc, serverTimestamp 
 } from "firebase/firestore";
 
 type Campsite = {
@@ -19,8 +18,15 @@ type Campsite = {
 };
 
 const CATEGORIES = [
-  "river", "beach", "mountain", "lake", "forest", "waterfall", "island", "other"
+  "seaside", "river", "hilltop", "waterfall"
 ];
+
+const CATEGORY_CONFIG: Record<string, { emoji: string; color: string; icon: string }> = {
+  seaside: { emoji: "🌊", color: "bg-blue-50 text-blue-600 border-blue-200", icon: "fa-umbrella-beach" },
+  river: { emoji: "🛶", color: "bg-cyan-50 text-cyan-600 border-cyan-200", icon: "fa-water" },
+  hilltop: { emoji: "⛰️", color: "bg-emerald-50 text-emerald-600 border-emerald-200", icon: "fa-mountain" },
+  waterfall: { emoji: "💧", color: "bg-indigo-50 text-indigo-600 border-indigo-200", icon: "fa-tint" },
+};
 
 export default function CampsitesTab() {
   const [campsites, setCampsites] = useState<Campsite[]>([]);
@@ -35,7 +41,7 @@ export default function CampsitesTab() {
   const [form, setForm] = useState({
     name: "",
     location: "",
-    category: "river",
+    category: "seaside",
     direction: "",
     whatsapp: "",
     carousel: [""],
@@ -49,8 +55,7 @@ export default function CampsitesTab() {
   async function loadCampsites() {
     setLoading(true);
     try {
-      const q = query(collection(db, "campsites"), orderBy("createdAt", "desc"));
-      const snap = await getDocs(q);
+      const snap = await getDocs(collection(db, "campsites"));
       setCampsites(snap.docs.map(d => ({ id: d.id, ...d.data() } as Campsite)));
     } catch (e) {
       console.error(e);
@@ -64,7 +69,7 @@ export default function CampsitesTab() {
     setForm({
       name: "",
       location: "",
-      category: "river",
+      category: "seaside",
       direction: "",
       whatsapp: "",
       carousel: [""],
@@ -159,28 +164,6 @@ export default function CampsitesTab() {
     return matchSearch && matchCategory;
   });
 
-  const categoryColors: Record<string, string> = {
-    river: "bg-blue-50 text-blue-600 border-blue-200",
-    beach: "bg-amber-50 text-amber-600 border-amber-200",
-    mountain: "bg-emerald-50 text-emerald-600 border-emerald-200",
-    lake: "bg-cyan-50 text-cyan-600 border-cyan-200",
-    forest: "bg-green-50 text-green-600 border-green-200",
-    waterfall: "bg-indigo-50 text-indigo-600 border-indigo-200",
-    island: "bg-teal-50 text-teal-600 border-teal-200",
-    other: "bg-slate-50 text-slate-600 border-slate-200",
-  };
-
-  const categoryIcons: Record<string, string> = {
-    river: "fa-water",
-    beach: "fa-umbrella-beach",
-    mountain: "fa-mountain",
-    lake: "fa-water",
-    forest: "fa-tree",
-    waterfall: "fa-water",
-    island: "fa-island-tropical",
-    other: "fa-campground",
-  };
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -266,9 +249,8 @@ export default function CampsitesTab() {
                   </div>
                 )}
                 {/* Category badge */}
-                <span className={`absolute top-3 left-3 px-2 py-1 rounded-lg text-[8px] font-black uppercase border ${categoryColors[campsite.category || "other"]}`}>
-                  <i className={`fas ${categoryIcons[campsite.category || "other"]} mr-1`}></i>
-                  {campsite.category || "other"}
+                <span className={`absolute top-3 left-3 px-2 py-1 rounded-lg text-[8px] font-black uppercase border ${CATEGORY_CONFIG[campsite.category || ""]?.color || "bg-slate-50 text-slate-600 border-slate-200"}`}>
+                  {CATEGORY_CONFIG[campsite.category || ""]?.emoji || "🏕️"} {campsite.category || "campsite"}
                 </span>
                 {/* Image count */}
                 {(campsite.carousel?.length || 0) > 1 && (
@@ -407,7 +389,7 @@ export default function CampsitesTab() {
                           : "bg-slate-50 text-slate-500 border-slate-200 hover:border-emerald-300"
                       }`}
                     >
-                      <i className={`fas ${categoryIcons[cat]} block text-sm mb-1`}></i>
+                      <span className="block text-lg mb-1">{CATEGORY_CONFIG[cat]?.emoji || "🏕️"}</span>
                       {cat}
                     </button>
                   ))}
