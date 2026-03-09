@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
@@ -249,8 +249,8 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
   );
 }
 
-// --- ROOT PAGE ---
-export default function StorePage() {
+// --- ROOT PAGE CONTENT ---
+function StorePageContent() {
   const searchParams = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
   const [vendorData, setVendorData] = useState<VendorData | null>(null);
@@ -352,5 +352,21 @@ export default function StorePage() {
         <Dashboard user={user} vendorData={vendorData} vendorId={vendorId} />
       </div>
     </>
+  );
+}
+
+// --- ROOT PAGE WITH SUSPENSE ---
+export default function StorePage() {
+  return (
+    <Suspense fallback={
+      <div className="fixed inset-0 bg-[#062c24] flex flex-col items-center justify-center gap-4">
+        <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center">
+          <i className="fas fa-store text-emerald-400 text-2xl animate-pulse"></i>
+        </div>
+        <p className="text-white/60 font-black uppercase text-[10px] tracking-widest animate-pulse">Loading Vendor Studio...</p>
+      </div>
+    }>
+      <StorePageContent />
+    </Suspense>
   );
 }
