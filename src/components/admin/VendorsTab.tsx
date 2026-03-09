@@ -35,17 +35,19 @@ const MANUAL_BADGES: Badge[] = ["id_verified", "premium"];
 export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
   const [search, setSearch] = useState("");
   const [badgeModalVendor, setBadgeModalVendor] = useState<Vendor | null>(null);
-  const [filter, setFilter] = useState<"all" | "premium" | "mockup">("all");
+  const [filter, setFilter] = useState<"all" | "pending" | "premium" | "mockup">("all");
 
-  const active = allVendors.filter(v => v.status === "approved");
-  const filtered = active.filter(v => {
-    // Search filter
+  // Count pending for badge
+  const pendingCount = allVendors.filter(v => v.status === "pending").length;
+
+  // Filter vendors (now shows ALL vendors, not just approved)
+  const filtered = allVendors.filter(v => {
     const matchSearch = !search ||
       v.name?.toLowerCase().includes(search.toLowerCase()) ||
       v.email?.toLowerCase().includes(search.toLowerCase()) ||
       v.phone?.includes(search);
     
-    // Type filter
+    if (filter === "pending") return matchSearch && v.status === "pending";
     if (filter === "premium") return matchSearch && v.badges?.includes("premium");
     if (filter === "mockup") return matchSearch && v.is_mockup === true;
     return matchSearch;
@@ -61,6 +63,11 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
   async function suspendVendor(id: string) {
     if (confirm("Suspend this vendor?"))
       await updateDoc(doc(db, "vendors", id), { status: "pending" });
+  }
+
+  async function approveVendor(id: string) {
+    if (confirm("Approve this vendor?"))
+      await updateDoc(doc(db, "vendors", id), { status: "approved" });
   }
 
   async function toggleBadge(vendorId: string, badge: Badge, currentlyHas: boolean) {
@@ -103,13 +110,27 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
           <div className="flex bg-slate-100 rounded-lg p-1">
             {([
               { id: "all" as const, label: "All" },
+              { id: "pending" as const, label: "Pending", icon: "fa-clock", count: pendingCount },
               { id: "premium" as const, label: "Premium", icon: "fa-trophy" },
-              { id: "mockup" as const, label: "Mock-up", icon: "fa-store" },
+              { id: "mockup" as const, label: "Mock-up", icon: "fa-flask" },
             ]).map(f => (
               <button key={f.id} onClick={() => setFilter(f.id)}
-                className={`px-3 py-1.5 rounded-md text-[9px] font-black uppercase transition-all flex items-center gap-1.5 ${filter === f.id ? "bg-white text-[#062c24] shadow-sm" : "text-slate-400 hover:text-slate-600"}`}>
+                className={`px-3 py-1.5 rounded-md text-[9px] font-black uppercase transition-all flex items-center gap-1.5 ${
+                  filter === f.id 
+                    ? f.id === "pending" && f.count && f.count > 0
+                      ? "bg-amber-500 text-white shadow-sm" 
+                      : "bg-white text-[#062c24] shadow-sm" 
+                    : f.id === "pending" && f.count && f.count > 0
+                      ? "text-amber-600 bg-amber-50"
+                      : "text-slate-400 hover:text-slate-600"
+                }`}>
                 {f.icon && <i className={`fas ${f.icon} text-[8px]`}></i>}
                 {f.label}
+                {f.count !== undefined && f.count > 0 && (
+                  <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[8px] ${filter === f.id ? "bg-white/30" : "bg-amber-500 text-white"}`}>
+                    {f.count}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -127,7 +148,7 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
             <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 tracking-wider">
               <tr>
                 <th className="p-5 pl-8">Vendor</th>
-                <th className="p-5">Badges</th>
+                <th className="p-5">Status / Badges</th>
                 <th className="p-5">Contact</th>
                 <th className="p-5">Credits</th>
                 <th className="p-5">Shop</th>
@@ -139,11 +160,12 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                 <tr><td colSpan={6} className="p-10 text-center text-slate-300 text-[10px] uppercase font-black">No vendors found</td></tr>
               ) : filtered.map(v => {
                 const allBadges = getAllBadges(v);
+                const isPending = v.status === "pending";
                 return (
-                  <tr key={v.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={v.id} className={`hover:bg-slate-50 transition-colors ${isPending ? "bg-amber-50/30" : ""}`}>
                     <td className="p-5 pl-8">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 bg-[#062c24] text-white rounded-xl flex items-center justify-center font-black text-sm shrink-0 relative">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 relative ${isPending ? "bg-amber-500 text-white" : "bg-[#062c24] text-white"}`}>
                           {v.name?.[0]?.toUpperCase()}
                           {v.is_mockup && (
                             <span className="absolute -top-1 -right-1 w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center">
@@ -162,7 +184,15 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                     </td>
                     <td className="p-5">
                       <div className="flex items-center gap-1 flex-wrap">
-                        {allBadges.length > 0 ? (
+                        {/* Show Pending badge prominently */}
+                        {isPending && (
+                          <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full text-[8px] font-black border border-amber-200">
+                            <i className="fas fa-clock"></i>
+                            Pending Approval
+                          </span>
+                        )}
+                        {/* Show other badges */}
+                        {!isPending && allBadges.length > 0 ? (
                           allBadges.map(badge => {
                             const config = BADGE_CONFIG[badge];
                             return (
@@ -172,7 +202,7 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                               </span>
                             );
                           })
-                        ) : (
+                        ) : !isPending && (
                           <span className="text-[9px] text-slate-300">No badges</span>
                         )}
                       </div>
@@ -198,6 +228,13 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                     </td>
                     <td className="p-5 text-right pr-8">
                       <div className="flex justify-end gap-2">
+                        {/* Approve Button (for pending vendors) */}
+                        {isPending && (
+                          <button onClick={() => approveVendor(v.id)}
+                            className="w-8 h-8 rounded-lg bg-emerald-500 text-white flex items-center justify-center hover:bg-emerald-600 transition-all shadow-sm" title="Approve Vendor">
+                            <i className="fas fa-check text-[10px]"></i>
+                          </button>
+                        )}
                         {/* Badge Manager Button */}
                         <button onClick={() => setBadgeModalVendor(v)}
                           className="w-8 h-8 rounded-lg bg-amber-50 text-amber-500 flex items-center justify-center hover:bg-amber-500 hover:text-white transition-all" title="Manage Badges">
@@ -211,10 +248,17 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                           className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-500 flex items-center justify-center hover:bg-emerald-500 hover:text-white transition-all" title="Add Credits">
                           <i className="fas fa-plus text-[10px]"></i>
                         </button>
-                        <button onClick={() => suspendVendor(v.id)}
-                          className="w-8 h-8 rounded-lg bg-red-50 text-red-400 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all" title="Suspend">
-                          <i className="fas fa-ban text-[10px]"></i>
-                        </button>
+                        {!isPending ? (
+                          <button onClick={() => suspendVendor(v.id)}
+                            className="w-8 h-8 rounded-lg bg-red-50 text-red-400 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all" title="Suspend">
+                            <i className="fas fa-ban text-[10px]"></i>
+                          </button>
+                        ) : (
+                          <button onClick={() => { if(confirm("Reject and delete this vendor?")) { /* delete logic */ } }}
+                            className="w-8 h-8 rounded-lg bg-red-50 text-red-400 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all" title="Reject">
+                            <i className="fas fa-times text-[10px]"></i>
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
