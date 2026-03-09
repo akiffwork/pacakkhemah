@@ -117,24 +117,29 @@ function LoginScreen() {
 }
 
 // --- MAIN DASHBOARD SHELL ---
-function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: VendorData; vendorId: string }) {
+function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User; vendorData: VendorData; vendorId: string; isAdminOverride?: boolean }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const tabParam = searchParams.get("tab") as Tab | null;
+  const adminOverride = searchParams.get("admin_override");
   const [activeTab, setActiveTab] = useState<Tab>(tabParam || "analytics");
   const [showTour, setShowTour] = useState(false);
 
-  // Check if welcome tour should be shown
+  // Check if welcome tour should be shown (skip for admin override)
   useEffect(() => {
-    if (vendorData && !vendorData.tutorials_completed?.welcome) {
+    if (vendorData && !vendorData.tutorials_completed?.welcome && !isAdminOverride) {
       const timer = setTimeout(() => setShowTour(true), 500);
       return () => clearTimeout(timer);
     }
-  }, [vendorData]);
+  }, [vendorData, isAdminOverride]);
 
   function handleTabChange(tab: Tab) {
     setActiveTab(tab);
-    router.push(`/store?tab=${tab}`, { scroll: false });
+    // Preserve admin_override parameter if present
+    const params = new URLSearchParams();
+    params.set("tab", tab);
+    if (adminOverride) params.set("admin_override", adminOverride);
+    router.push(`/store?${params.toString()}`, { scroll: false });
   }
 
   function handleTourNavigate(tab: string) {
@@ -146,7 +151,11 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
     };
     const targetTab = tabMap[tab] || "analytics";
     setActiveTab(targetTab);
-    router.push(`/store?tab=${targetTab}`, { scroll: false });
+    // Preserve admin_override parameter if present
+    const params = new URLSearchParams();
+    params.set("tab", targetTab);
+    if (adminOverride) params.set("admin_override", adminOverride);
+    router.push(`/store?${params.toString()}`, { scroll: false });
   }
 
   useEffect(() => {
@@ -349,7 +358,7 @@ function StorePageContent() {
         </div>
       )}
       <div className={isAdminOverride ? "pt-8" : ""}>
-        <Dashboard user={user} vendorData={vendorData} vendorId={vendorId} />
+        <Dashboard user={user} vendorData={vendorData} vendorId={vendorId} isAdminOverride={isAdminOverride} />
       </div>
     </>
   );
