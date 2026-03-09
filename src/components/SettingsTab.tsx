@@ -43,6 +43,7 @@ type SettingsTabProps = {
     is_vacation?: boolean; allow_stacking?: boolean; rules?: string[];
     services?: ServicesConfig;
   };
+  onRestartTour?: () => void;
 };
 
 const inputCls = "w-full bg-slate-50 border border-slate-200 p-3.5 rounded-[0.85rem] text-sm font-semibold outline-none focus:border-emerald-500 focus:bg-white transition-all";
@@ -77,7 +78,7 @@ const DEFAULT_SERVICES: ServicesConfig = {
   },
 };
 
-export default function SettingsTab({ vendorId, vendorData }: SettingsTabProps) {
+export default function SettingsTab({ vendorId, vendorData, onRestartTour }: SettingsTabProps) {
   // Account fields
   const [name, setName] = useState(vendorData.name || "");
   const [phone, setPhone] = useState(vendorData.phone || "");
@@ -104,7 +105,7 @@ export default function SettingsTab({ vendorId, vendorData }: SettingsTabProps) 
   const [resetSent, setResetSent] = useState(false);
 
   // Active section for mobile
-  const [activeSection, setActiveSection] = useState<"account" | "logistics" | "services">("account");
+  const [activeSection, setActiveSection] = useState<"account" | "logistics" | "services" | "help">("account");
 
   async function saveAccount() {
     if (!name || !phone) return alert("Shop Name and Phone are required.");
@@ -210,6 +211,7 @@ export default function SettingsTab({ vendorId, vendorData }: SettingsTabProps) 
     { id: "account", label: "Account", icon: "fa-user" },
     { id: "logistics", label: "Logistics", icon: "fa-truck" },
     { id: "services", label: "Delivery & Setup", icon: "fa-concierge-bell" },
+    { id: "help", label: "Help", icon: "fa-life-ring" },
   ] as const;
 
   return (
@@ -580,6 +582,103 @@ export default function SettingsTab({ vendorId, vendorData }: SettingsTabProps) 
             className={`w-full py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg transition-all ${savedServices ? "bg-emerald-500 text-white" : "bg-[#062c24] text-white hover:bg-emerald-900"}`}>
             {savedServices ? "✓ Services Saved!" : "Save Services Settings"}
           </button>
+        </div>
+      )}
+
+      {/* Help & Support */}
+      {activeSection === "help" && (
+        <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+          <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-6">Help & Support</h3>
+          
+          <div className="space-y-3">
+            {/* Restart Welcome Tour */}
+            {onRestartTour && (
+              <button
+                onClick={onRestartTour}
+                className="w-full flex items-center gap-4 p-4 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-100 hover:border-emerald-200 transition-all group text-left"
+              >
+                <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-all shrink-0">
+                  <i className="fas fa-graduation-cap text-lg"></i>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-black text-[#062c24]">Restart Welcome Tour</p>
+                  <p className="text-[11px] text-slate-400">Learn how to set up your shop step by step</p>
+                </div>
+                <i className="fas fa-chevron-right text-slate-300 group-hover:text-emerald-500 transition-colors"></i>
+              </button>
+            )}
+
+            {/* Contact Support */}
+            <a
+              href="https://wa.me/6011136904336?text=Hi%20Pacak%20Khemah,%20I%20need%20help%20with%20my%20vendor%20account"
+              target="_blank"
+              rel="noreferrer"
+              className="w-full flex items-center gap-4 p-4 rounded-xl bg-slate-50 hover:bg-green-50 border border-slate-100 hover:border-green-200 transition-all group text-left"
+            >
+              <div className="w-12 h-12 bg-green-100 text-green-600 rounded-xl flex items-center justify-center group-hover:bg-green-500 group-hover:text-white transition-all shrink-0">
+                <i className="fab fa-whatsapp text-xl"></i>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-black text-[#062c24]">Contact Support</p>
+                <p className="text-[11px] text-slate-400">Chat with us on WhatsApp for quick help</p>
+              </div>
+              <i className="fas fa-chevron-right text-slate-300 group-hover:text-green-500 transition-colors"></i>
+            </a>
+
+            {/* FAQ */}
+            <a
+              href="/faq"
+              target="_blank"
+              className="w-full flex items-center gap-4 p-4 rounded-xl bg-slate-50 hover:bg-amber-50 border border-slate-100 hover:border-amber-200 transition-all group text-left"
+            >
+              <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center group-hover:bg-amber-500 group-hover:text-white transition-all shrink-0">
+                <i className="fas fa-question-circle text-lg"></i>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-black text-[#062c24]">FAQ & Help Articles</p>
+                <p className="text-[11px] text-slate-400">Find answers to common questions</p>
+              </div>
+              <i className="fas fa-chevron-right text-slate-300 group-hover:text-amber-500 transition-colors"></i>
+            </a>
+
+            {/* Video Tutorials (Coming Soon) */}
+            <div className="w-full flex items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100 opacity-60 cursor-not-allowed">
+              <div className="w-12 h-12 bg-purple-100 text-purple-400 rounded-xl flex items-center justify-center shrink-0">
+                <i className="fas fa-play-circle text-lg"></i>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-black text-slate-400">Video Tutorials</p>
+                <p className="text-[11px] text-slate-300">Coming soon!</p>
+              </div>
+              <span className="text-[8px] font-bold text-purple-400 bg-purple-50 px-2 py-1 rounded-full uppercase">Soon</span>
+            </div>
+          </div>
+
+          {/* Quick Tips */}
+          <div className="mt-6 p-4 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100">
+            <div className="flex items-center gap-2 mb-3">
+              <i className="fas fa-lightbulb text-blue-500"></i>
+              <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Quick Tips</span>
+            </div>
+            <ul className="space-y-2 text-[11px] text-slate-600">
+              <li className="flex items-start gap-2">
+                <i className="fas fa-check text-emerald-500 mt-0.5 text-[9px]"></i>
+                <span>Add clear photos to increase bookings by up to 3x</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <i className="fas fa-check text-emerald-500 mt-0.5 text-[9px]"></i>
+                <span>Respond to inquiries within 2 hours for best results</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <i className="fas fa-check text-emerald-500 mt-0.5 text-[9px]"></i>
+                <span>Keep your calendar updated to avoid double bookings</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <i className="fas fa-check text-emerald-500 mt-0.5 text-[9px]"></i>
+                <span>Ask satisfied customers for reviews to build trust</span>
+              </li>
+            </ul>
+          </div>
         </div>
       )}
 
