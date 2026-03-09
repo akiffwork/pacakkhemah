@@ -251,16 +251,44 @@ function Dashboard({ user, vendorData, vendorId }: { user: User; vendorData: Ven
 
 // --- ROOT PAGE ---
 export default function StorePage() {
+  const searchParams = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
   const [vendorData, setVendorData] = useState<VendorData | null>(null);
   const [vendorId, setVendorId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [noVendor, setNoVendor] = useState(false);
+  const [isAdminOverride, setIsAdminOverride] = useState(false);
+
+  const ADMIN_EMAIL = "akiff.work@gmail.com";
+  const adminOverrideId = searchParams.get("admin_override");
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
+      setLoading(true);
+      setNoVendor(false);
+      setIsAdminOverride(false);
+      
       if (u) {
+        const isAdmin = u.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+
+        // If admin is using override parameter
+        if (adminOverrideId && isAdmin) {
+          try {
+            const vendorDoc = await getDoc(doc(db, "vendors", adminOverrideId));
+            if (vendorDoc.exists()) {
+              setVendorId(adminOverrideId);
+              setVendorData(vendorDoc.data() as VendorData);
+              setIsAdminOverride(true);
+              setLoading(false);
+              return;
+            }
+          } catch (e) {
+            console.error("Admin override error:", e);
+          }
+        }
+        
+        // Normal vendor login
         const { collection, query, where, getDocs } = await import("firebase/firestore");
         const q = query(collection(db, "vendors"), where("owner_uid", "==", u.uid));
         const snap = await getDocs(q);
@@ -268,13 +296,16 @@ export default function StorePage() {
           setVendorId(snap.docs[0].id);
           setVendorData(snap.docs[0].data() as VendorData);
         } else {
-          setNoVendor(true);
+          // Only show "no vendor" if NOT admin with override
+          if (!(adminOverrideId && isAdmin)) {
+            setNoVendor(true);
+          }
         }
       }
       setLoading(false);
     });
     return () => unsub();
-  }, []);
+  }, [adminOverrideId]);
 
   if (loading) return (
     <div className="fixed inset-0 bg-[#062c24] flex flex-col items-center justify-center gap-4">
@@ -305,5 +336,21 @@ export default function StorePage() {
 
   if (!vendorData || !vendorId) return null;
 
-  return <Dashboard user={user} vendorData={vendorData} vendorId={vendorId} />;
+  return (
+    <>
+      {/* Admin Override Banner */}
+      {isAdminOverride && (
+        <div className="fixed top-0 left-0 right-0 z-[100] bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-2 px-4 text-center">
+          <p className="text-[10px] font-black uppercase tracking-widest">
+            <i className="fas fa-user-shield mr-2"></i>
+            Admin Mode: Viewing as {vendorData.name}
+            <Link href="/admin" className="ml-4 underline hover:no-underline">← Back to Admin</Link>
+          </p>
+        </div>
+      )}
+      <div className={isAdminOverride ? "pt-8" : ""}>
+        <Dashboard user={user} vendorData={vendorData} vendorId={vendorId} />
+      </div>
+    </>
+  );
 }
