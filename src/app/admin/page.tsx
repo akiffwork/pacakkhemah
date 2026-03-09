@@ -10,21 +10,27 @@ import VendorsTab from "@/components/admin/VendorsTab";
 import FinanceTab from "@/components/admin/FinanceTab";
 import ContentTab from "@/components/admin/ContentTab";
 import AdminSettingsTab from "@/components/admin/SettingsTab";
+import CampsitesTab from "@/components/admin/CampsitesTab";
 
 const ADMIN_EMAIL = "akiff.work@gmail.com";
-type View = "dashboard" | "vendors" | "finance" | "content" | "settings";
+type View = "dashboard" | "vendors" | "finance" | "content" | "campsites" | "settings";
 
 const NAV_ITEMS: { id: View; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "fa-chart-pie" },
   { id: "vendors", label: "Vendors", icon: "fa-store" },
   { id: "finance", label: "Finance", icon: "fa-wallet" },
   { id: "content", label: "Content", icon: "fa-layer-group" },
+  { id: "campsites", label: "Campsites", icon: "fa-campground" },
   { id: "settings", label: "Settings", icon: "fa-cog" },
 ];
 
 const PAGE_TITLES: Record<View, string> = {
-  dashboard: "Overview", vendors: "Vendor Management",
-  finance: "Financials", content: "Content Manager", settings: "System Settings",
+  dashboard: "Overview", 
+  vendors: "Vendor Management",
+  finance: "Financials", 
+  content: "Content Manager", 
+  campsites: "Campsite Directory",
+  settings: "System Settings",
 };
 
 function AdminGate({ onError }: { onError: boolean }) {
@@ -118,6 +124,7 @@ function AdminShell({ user, allVendors }: { user: User; allVendors: any[] }) {
           {activeView === "vendors" && <VendorsTab allVendors={allVendors} />}
           {activeView === "finance" && <FinanceTab />}
           {activeView === "content" && <ContentTab />}
+          {activeView === "campsites" && <CampsitesTab />}
           {activeView === "settings" && <AdminSettingsTab />}
         </div>
       </main>
