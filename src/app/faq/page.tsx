@@ -208,10 +208,10 @@ export default function FAQPage() {
           <h3 className="text-sm font-black uppercase mb-1">{lang === "en" ? "Still Have Questions?" : "Masih Ada Soalan?"}</h3>
           <p className="text-xs opacity-80 mb-4">{lang === "en" ? "We're here to help!" : "Kami sedia membantu!"}</p>
           <div className="flex gap-2 justify-center">
-            <a href="mailto:hello@pacakkhemah.com" className="bg-white/20 hover:bg-white/30 px-4 py-2.5 rounded-xl text-[10px] font-bold transition-colors">
+            <a href="mailto:support.pacakkhemah@gmail.com" className="bg-white/20 hover:bg-white/30 px-4 py-2.5 rounded-xl text-[10px] font-bold transition-colors">
               <i className="fas fa-envelope mr-2"></i>Email
             </a>
-            <a href="https://wa.me/60123456789" className="bg-emerald-500 hover:bg-emerald-400 px-4 py-2.5 rounded-xl text-[10px] font-bold transition-colors">
+            <a href="https://wa.me/601136904336" className="bg-emerald-500 hover:bg-emerald-400 px-4 py-2.5 rounded-xl text-[10px] font-bold transition-colors">
               <i className="fab fa-whatsapp mr-2"></i>WhatsApp
             </a>
           </div>
@@ -225,7 +225,7 @@ export default function FAQPage() {
             </div>
             <p className="text-[10px] font-black text-[#062c24] uppercase">{lang === "en" ? "Find Vendors" : "Cari Vendor"}</p>
           </Link>
-          <Link href="/register" className="bg-white rounded-2xl border border-slate-100 p-4 text-center hover:border-emerald-300 hover:shadow-md transition-all group">
+          <Link href="/register-vendor" className="bg-white rounded-2xl border border-slate-100 p-4 text-center hover:border-emerald-300 hover:shadow-md transition-all group">
             <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:bg-amber-500 group-hover:text-white transition-colors">
               <i className="fas fa-store"></i>
             </div>

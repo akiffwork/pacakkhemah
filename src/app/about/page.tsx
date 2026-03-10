@@ -38,8 +38,8 @@ const DEFAULT_ABOUT: AboutContent = {
   ],
   mission: "To become the ultimate companion for every outdoor enthusiast in Malaysia. Whether you are a first-time camper or a seasoned trekker, Pacak Khemah ensures you have the right gear for your next adventure.",
   mission_my: "Menjadi teman utama bagi setiap peminat aktiviti luar di Malaysia.",
-  contactEmail: "hello@pacakkhemah.com",
-  contactWhatsApp: "60123456789",
+  contactEmail: "support.pacakkhemah@gmail.com",
+  contactWhatsApp: "601136904336",
 };
 
 export default function AboutPage() {
@@ -185,7 +185,7 @@ export default function AboutPage() {
             </div>
             <p className="text-[10px] font-black text-[#062c24] uppercase">{lang === "en" ? "Find Vendors" : "Cari Vendor"}</p>
           </Link>
-          <Link href="/register" className="bg-white rounded-2xl border border-slate-100 p-4 text-center hover:border-emerald-300 hover:shadow-md transition-all group">
+          <Link href="/register-vendor" className="bg-white rounded-2xl border border-slate-100 p-4 text-center hover:border-emerald-300 hover:shadow-md transition-all group">
             <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:bg-amber-500 group-hover:text-white transition-colors">
               <i className="fas fa-store"></i>
             </div>

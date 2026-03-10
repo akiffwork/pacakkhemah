@@ -610,7 +610,7 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
 
             {/* Contact Support */}
             <a
-              href="https://wa.me/6011136904336?text=Hi%20Pacak%20Khemah,%20I%20need%20help%20with%20my%20vendor%20account"
+              href="https://wa.me/601136904336?text=Hi%20Pacak%20Khemah,%20I%20need%20help%20with%20my%20vendor%20account"
               target="_blank"
               rel="noreferrer"
               className="w-full flex items-center gap-4 p-4 rounded-xl bg-slate-50 hover:bg-green-50 border border-slate-100 hover:border-green-200 transition-all group text-left"
