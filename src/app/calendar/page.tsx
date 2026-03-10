@@ -1,44 +1,52 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import Link from "next/link";
 import { db, auth } from "@/lib/firebase";
 import {
   collection, query, where, getDocs,
-  doc, deleteDoc, writeBatch, updateDoc, addDoc,
+  doc, deleteDoc, writeBatch, addDoc,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
-import flatpickr from "flatpickr";
-import "flatpickr/dist/flatpickr.min.css";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
+import flatpickr from "flatpickr";
+import "flatpickr/dist/flatpickr.min.css";
 
+// --- Types ---
 type GearItem = {
-  id: string; name: string; stock: number;
-  img?: string; category?: string; type?: string; deleted?: boolean;
+  id: string; name: string; stock: number; category?: string; img?: string; type?: string;
 };
 
 type Booking = {
-  id: string; itemId?: string; qty?: number;
-  start: string; end: string; type?: string;
-  customer?: string; phone?: string; reason?: string;
-};
-
-type RecurringBlock = {
   id: string;
-  dayOfWeek: number; // 0 = Sunday, 6 = Saturday
-  reason: string;
-  itemIds: string[]; // "all" or specific item IDs
-  enabled: boolean;
+  itemId?: string;
+  qty?: number;
+  start: string;
+  end: string;
+  type: "booking" | "block";
+  customer?: string;
+  phone?: string;
+  reason?: string;
+  isRecurring?: boolean;
+  dayOfWeek?: number;
 };
 
-type DetailData = {
-  id: string; itemName: string; start: string; end: string;
-  customer?: string; phone?: string; reason?: string; qty?: number;
+type BookingGroup = {
+  id: string;
+  type: "booking" | "block";
+  customer?: string;
+  phone?: string;
+  reason?: string;
+  start: string;
+  end: string;
+  itemCount: number;
+  items: { id: string; name: string; qty: number; category: string }[];
+  isRecurring?: boolean;
 };
 
-// Category colors for visual distinction
+// Category colors for the booking form
 const CATEGORY_COLORS: Record<string, { bg: string; border: string; text: string; dot: string }> = {
   "Tents": { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", dot: "#10b981" },
   "Furniture": { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700", dot: "#f59e0b" },
@@ -48,206 +56,140 @@ const CATEGORY_COLORS: Record<string, { bg: string; border: string; text: string
   "Packages": { bg: "bg-purple-50", border: "border-purple-200", text: "text-purple-700", dot: "#a855f7" },
   "Add-ons": { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-700", dot: "#64748b" },
 };
-
 const DEFAULT_COLOR = { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700", dot: "#3b82f6" };
 
-const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+// --- Custom Swipeable Card Component ---
+function SwipeableCard({ children, onDelete, onEdit, onClick }: any) {
+  const [translateX, setTranslateX] = useState(0);
+  const touchStartX = useRef(0);
 
-// Booking Summary Card Component - Expandable
-type BookingGroup = {
-  customer?: string;
-  phone?: string;
-  start: string;
-  end: string;
-  items: { id: string; name: string; qty: number; itemId?: string }[];
-};
-
-function BookingSummaryCard({ 
-  bookings, 
-  allGear,
-  onSelectBooking 
-}: { 
-  bookings: BookingGroup[]; 
-  allGear: GearItem[];
-  onSelectBooking: (booking: BookingGroup) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const totalItems = bookings.reduce((sum, b) => sum + b.items.length, 0);
-
-  if (bookings.length === 0) return null;
+  const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientX; };
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const diff = e.touches[0].clientX - touchStartX.current;
+    if (diff > 80) setTranslateX(80);
+    else if (diff < -80) setTranslateX(-80);
+    else setTranslateX(diff);
+  };
+  const handleTouchEnd = () => {
+    if (translateX < -50) onDelete();
+    else if (translateX > 50) onEdit();
+    setTranslateX(0);
+  };
 
   return (
-    <div className="bg-blue-50 border border-blue-100 rounded-xl overflow-hidden">
-      {/* Summary Header - Always visible */}
-      <button 
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between p-3 hover:bg-blue-100 transition-all"
+    <div className="relative overflow-hidden rounded-2xl mb-3 border border-slate-100 bg-slate-50">
+      <div className="absolute inset-0 flex justify-between items-center px-6">
+        <div className="text-blue-500 flex flex-col items-center">
+          <i className="fas fa-edit"></i><span className="text-[9px] font-black uppercase mt-1">Edit</span>
+        </div>
+        <div className="text-red-500 flex flex-col items-center">
+          <i className="fas fa-trash"></i><span className="text-[9px] font-black uppercase mt-1">Delete</span>
+        </div>
+      </div>
+      <div 
+        className="relative bg-white p-4 flex justify-between items-center transition-transform duration-200 ease-out active:bg-slate-50"
+        style={{ transform: `translateX(${translateX}px)` }}
+        onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} onClick={onClick}
       >
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-            <i className="fas fa-shopping-bag text-blue-500"></i>
-          </div>
-          <div className="text-left">
-            <p className="text-[10px] font-black text-blue-700 uppercase">
-              {bookings.length} {bookings.length === 1 ? "Booking" : "Bookings"}
-            </p>
-            <p className="text-[9px] text-blue-400">
-              {totalItems} {totalItems === 1 ? "item" : "items"} total
-            </p>
-          </div>
-        </div>
-        <i className={`fas fa-chevron-${expanded ? "up" : "down"} text-[10px] text-blue-400 transition-transform`}></i>
-      </button>
-
-      {/* Expanded List */}
-      {expanded && (
-        <div className="border-t border-blue-100 bg-white/50">
-          {bookings.map((booking, idx) => (
-            <div 
-              key={idx}
-              onClick={() => onSelectBooking(booking)}
-              className="flex items-center justify-between p-3 border-b border-blue-50 last:border-b-0 hover:bg-blue-50 cursor-pointer transition-all"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <i className="fas fa-user text-blue-500 text-xs"></i>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-blue-800 uppercase">{booking.customer || "Unknown"}</p>
-                  <p className="text-[8px] text-blue-400">
-                    {booking.items.length} {booking.items.length === 1 ? "item" : "items"} • {booking.start === booking.end ? booking.start : `${booking.start} → ${booking.end}`}
-                  </p>
-                </div>
-              </div>
-              <i className="fas fa-chevron-right text-[8px] text-blue-300"></i>
-            </div>
-          ))}
-        </div>
-      )}
+        {children}
+      </div>
     </div>
   );
 }
 
-export default function CalendarPage() {
+// --- Main Page Component ---
+export default function CleanCalendar() {
   const [vendorId, setVendorId] = useState<string | null>(null);
-  const [vendorName, setVendorName] = useState("");
-  const [pickupLocs, setPickupLocs] = useState<string[]>([]);
   const [allGear, setAllGear] = useState<GearItem[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [recurringBlocks, setRecurringBlocks] = useState<RecurringBlock[]>([]);
-  const [view, setView] = useState<"week" | "month" | "recurring">("week");
-  const [entryType, setEntryType] = useState<"booking" | "block">("booking");
-  const [showSheet, setShowSheet] = useState(false);
+  const todayStr = new Date().toISOString().split("T")[0];
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [loading, setLoading] = useState(true);
+
+  // Modals
+  const [showAddSheet, setShowAddSheet] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
-  const [detailData, setDetailData] = useState<DetailData | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState("");
-  const [editPhone, setEditPhone] = useState("");
-  const [editReason, setEditReason] = useState("");
+  const [activeDetail, setActiveDetail] = useState<BookingGroup | null>(null);
+  const [entryType, setEntryType] = useState<"booking" | "block">("booking");
+
+  // Form States - Shared
+  const [formDate, setFormDate] = useState("");
+  const dateInputRef = useRef<HTMLInputElement>(null);
+
+  // Form States - Time Off
+  const [formReason, setFormReason] = useState("");
+  const [isRecurring, setIsRecurring] = useState(false);
+
+  // Form States - Booking
   const [custName, setCustName] = useState("");
   const [custPhone, setCustPhone] = useState("");
-  const [pickupHub, setPickupHub] = useState("");
-  const [blockReason, setBlockReason] = useState("");
   const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(true);
-  const [toast, setToast] = useState<string | null>(null);
-  const [showRecurringModal, setShowRecurringModal] = useState(false);
-  const [newRecurring, setNewRecurring] = useState({ dayOfWeek: 0, reason: "", allItems: true });
-  const dateRangeRef = useRef<HTMLInputElement>(null);
-  const fpRef = useRef<flatpickr.Instance | null>(null);
 
-  // Auth + load
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      if (!u) { window.location.href = "/store"; return; }
-      const snap = await getDocs(query(collection(db, "vendors"), where("owner_uid", "==", u.uid)));
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
+      const snap = await getDocs(query(collection(db, "vendors"), where("owner_uid", "==", user.uid)));
       if (!snap.empty) {
-        const vid = snap.docs[0].id;
-        const vData = snap.docs[0].data();
-        setVendorId(vid);
-        setVendorName(vData.name || "");
-        setPickupLocs(vData.pickup || []);
-        setPickupHub(vData.pickup?.[0] || "");
-        await loadData(vid);
+        setVendorId(snap.docs[0].id);
+        loadData(snap.docs[0].id);
       }
     });
     return () => unsub();
   }, []);
 
+  // Re-initialize Flatpickr when modal opens or tab changes
+  useEffect(() => {
+    if (showAddSheet && dateInputRef.current) {
+      flatpickr(dateInputRef.current, {
+        mode: "range",
+        minDate: "today",
+        onChange: (selectedDates, dateStr) => setFormDate(dateStr)
+      });
+    }
+  }, [showAddSheet, entryType]);
+
   async function loadData(vid: string) {
-    const gSnap = await getDocs(query(collection(db, "gear"), where("vendorId", "==", vid)));
-    const gear = gSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted);
+    const gSnap = await getDocs(collection(db, "gear"));
+    const gear = gSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem));
     setAllGear(gear);
 
     const aSnap = await getDocs(collection(db, "vendors", vid, "availability"));
-    const bks = aSnap.docs.map(d => ({ id: d.id, ...d.data() } as Booking)).filter(b => b.start && b.end);
+    const bks = aSnap.docs.map(d => ({ id: d.id, ...d.data() } as Booking));
     setBookings(bks);
-
-    // Load recurring blocks
-    const rSnap = await getDocs(collection(db, "vendors", vid, "recurringBlocks"));
-    const rBlocks = rSnap.docs.map(d => ({ id: d.id, ...d.data() } as RecurringBlock));
-    setRecurringBlocks(rBlocks);
-
     setLoading(false);
   }
 
-  // Flatpickr date range
-  useEffect(() => {
-    if (!dateRangeRef.current || !showSheet) return;
-    fpRef.current = flatpickr(dateRangeRef.current, {
-      mode: "range", minDate: "today", dateFormat: "Y-m-d",
-    });
-    return () => fpRef.current?.destroy();
-  }, [showSheet]);
-
-  // Categories
-  const categories = Array.from(new Set(allGear.map(g => g.category || (g.type === "package" ? "Packages" : "Add-ons")))).sort();
-
-  function getItemCategory(item: GearItem): string {
-    return item.category || (item.type === "package" ? "Packages" : "Add-ons");
+  // --- Logic Helpers ---
+  function getCategoryColor(category?: string) {
+    return category && CATEGORY_COLORS[category] ? CATEGORY_COLORS[category] : DEFAULT_COLOR;
   }
 
-  function getCategoryColor(category: string) {
-    return CATEGORY_COLORS[category] || DEFAULT_COLOR;
-  }
+  const categories = Array.from(new Set(allGear.map(g => g.category || "Add-ons"))).sort();
 
-  // Calculate remaining stock for a specific date
-  function getRemainingStock(itemId: string, dateStr: string): number {
+  function getRemainingStock(itemId: string, targetDateStr: string): number {
     const item = allGear.find(g => g.id === itemId);
     if (!item) return 0;
 
-    const bookedQty = bookings
-      .filter(b => b.itemId === itemId && dateStr >= b.start && dateStr <= b.end)
-      .reduce((sum, b) => sum + (b.qty || 0), 0);
-
-    // Check recurring blocks
-    const date = new Date(dateStr);
+    const date = new Date(targetDateStr);
     const dayOfWeek = date.getDay();
-    const recurringBlock = recurringBlocks.find(r => 
-      r.enabled && r.dayOfWeek === dayOfWeek && 
-      (r.itemIds.includes("all") || r.itemIds.includes(itemId))
-    );
-    
-    if (recurringBlock) return 0;
+
+    // Check if entire day is blocked
+    const isBlocked = bookings.some(b => {
+      if (b.type !== 'block') return false;
+      const inRange = targetDateStr >= b.start && targetDateStr <= b.end;
+      const isRecurringBlock = b.isRecurring && b.dayOfWeek === dayOfWeek;
+      return inRange || isRecurringBlock;
+    });
+
+    if (isBlocked) return 0;
+
+    // Check individual item bookings
+    const bookedQty = bookings
+      .filter(b => b.type === 'booking' && b.itemId === itemId && targetDateStr >= b.start && targetDateStr <= b.end)
+      .reduce((sum, b) => sum + (b.qty || 0), 0);
 
     return Math.max(0, item.stock - bookedQty);
   }
-
-  // Stats calculations
-  const today = new Date();
-  const todayStr = today.toISOString().split("T")[0];
-  const thisWeekEnd = new Date(today);
-  thisWeekEnd.setDate(today.getDate() + 7);
-  const thisWeekEndStr = thisWeekEnd.toISOString().split("T")[0];
-
-  const stats = {
-    todayBookings: bookings.filter(b => b.type !== "block" && todayStr >= b.start && todayStr <= b.end).length,
-    todayBlocks: bookings.filter(b => b.type === "block" && todayStr >= b.start && todayStr <= b.end).length,
-    weekBookings: bookings.filter(b => b.type !== "block" && b.start <= thisWeekEndStr && b.end >= todayStr).length,
-    weekBlocks: bookings.filter(b => b.type === "block" && b.start <= thisWeekEndStr && b.end >= todayStr).length,
-    totalItems: allGear.reduce((sum, g) => sum + g.stock, 0),
-    availableToday: allGear.reduce((sum, g) => sum + getRemainingStock(g.id, todayStr), 0),
-  };
 
   function adjQty(id: string, delta: number, max = 999) {
     setQuantities(prev => ({
@@ -256,822 +198,342 @@ export default function CalendarPage() {
     }));
   }
 
-  function blockAllStock() {
-    const newQtys: Record<string, number> = {};
-    allGear.forEach(g => { newQtys[g.id] = g.stock; });
-    setQuantities(newQtys);
-  }
+  // --- Data Transformations ---
+  const dailySummary = useMemo(() => {
+    const targetDate = new Date(selectedDate);
+    const dayOfWeek = targetDate.getDay();
 
+    const filtered = bookings.filter(b => {
+      const isDateInRange = selectedDate >= b.start && selectedDate <= b.end;
+      const isRecurringDay = b.isRecurring && b.type === "block" && b.dayOfWeek === dayOfWeek;
+      return isDateInRange || isRecurringDay;
+    });
+    
+    const groups: Record<string, BookingGroup> = {};
+    filtered.forEach(b => {
+      const key = b.type === 'block' ? `block-${b.id}` : `booking-${b.customer}-${b.start}`;
+      if (!groups[key]) {
+        groups[key] = {
+          id: b.type === 'block' ? b.id : key,
+          type: b.type,
+          customer: b.customer,
+          phone: b.phone,
+          reason: b.reason,
+          start: b.start,
+          end: b.end,
+          itemCount: 0,
+          items: [],
+          isRecurring: b.isRecurring
+        };
+      }
+      if (b.type === 'booking' && b.itemId) {
+        const gear = allGear.find(g => g.id === b.itemId);
+        groups[key].items.push({ id: b.itemId, name: gear?.name || "Unknown", qty: b.qty || 1, category: gear?.category || "Other" });
+        groups[key].itemCount += (b.qty || 1);
+      }
+    });
+    return Object.values(groups);
+  }, [bookings, selectedDate, allGear]);
+
+  const calendarEvents = useMemo(() => {
+    return bookings.map(b => ({
+      id: b.id,
+      start: b.start,
+      end: new Date(new Date(b.end).setDate(new Date(b.end).getDate() + 1)).toISOString().split('T')[0],
+      className: b.type === 'block' ? 'fc-dot-red' : 'fc-dot-blue',
+      title: b.type === 'block' ? 'Block' : 'Booking',
+      allDay: true,
+    }));
+  }, [bookings]);
+
+  // --- Actions ---
   async function saveEntry() {
-    const dateVal = dateRangeRef.current?.value || "";
-    const dates = dateVal.split(" to ");
-    if (!dates[0]) return alert("Please select a date range.");
-
-    const batch = writeBatch(db);
-    let hasData = false;
-
-    Object.entries(quantities).forEach(([itemId, qty]) => {
-      if (qty > 0) {
-        const ref = doc(collection(db, "vendors", vendorId!, "availability"));
-        batch.set(ref, {
-          itemId, qty,
-          start: dates[0], end: dates[1] || dates[0],
-          type: entryType,
-          customer: entryType === "booking" ? custName : null,
-          phone: entryType === "booking" ? custPhone : null,
-          reason: entryType === "block" ? blockReason : null,
-          createdAt: new Date().toISOString(),
-        });
-        hasData = true;
-      }
-    });
-
-    if (!hasData) return alert("Select at least 1 item.");
-    await batch.commit();
-    setShowSheet(false);
-    setQuantities({});
-    setCustName(""); setCustPhone(""); setBlockReason("");
-    await loadData(vendorId!);
-    showToast("Schedule saved!");
-  }
-
-  async function deleteEntry(id: string) {
-    if (!confirm("Delete this entry? Stock will be restored.")) return;
-    await deleteDoc(doc(db, "vendors", vendorId!, "availability", id));
-    setShowDetail(false);
-    await loadData(vendorId!);
-    showToast("Entry deleted");
-  }
-
-  async function updateEntry() {
-    if (!detailData || !vendorId) return;
-    const isBlock = !detailData.customer && !!detailData.reason;
-    await updateDoc(doc(db, "vendors", vendorId, "availability", detailData.id), {
-      ...(isBlock ? { reason: editReason } : { customer: editName, phone: editPhone }),
-    });
-    setDetailData(prev => prev ? {
-      ...prev,
-      ...(isBlock ? { reason: editReason } : { customer: editName, phone: editPhone }),
-    } : null);
-    setIsEditing(false);
-    await loadData(vendorId);
-    showToast("Entry updated");
-  }
-
-  // Recurring blocks
-  async function addRecurringBlock() {
-    if (!vendorId || !newRecurring.reason) return alert("Please enter a reason");
-    await addDoc(collection(db, "vendors", vendorId, "recurringBlocks"), {
-      dayOfWeek: newRecurring.dayOfWeek,
-      reason: newRecurring.reason,
-      itemIds: newRecurring.allItems ? ["all"] : [],
-      enabled: true,
-    });
-    setShowRecurringModal(false);
-    setNewRecurring({ dayOfWeek: 0, reason: "", allItems: true });
-    await loadData(vendorId);
-    showToast("Recurring block added");
-  }
-
-  async function toggleRecurringBlock(id: string, enabled: boolean) {
     if (!vendorId) return;
-    await updateDoc(doc(db, "vendors", vendorId, "recurringBlocks", id), { enabled });
-    await loadData(vendorId);
-  }
-
-  async function deleteRecurringBlock(id: string) {
-    if (!vendorId || !confirm("Delete this recurring block?")) return;
-    await deleteDoc(doc(db, "vendors", vendorId, "recurringBlocks", id));
-    await loadData(vendorId);
-    showToast("Recurring block deleted");
-  }
-
-  function showToast(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2500);
-  }
-
-  // Export calendar as CSV
-  function exportCalendar() {
-    const headers = ["Type", "Customer/Reason", "Phone", "Item", "Qty", "Start", "End"];
-    const rows = bookings.map(b => {
-      const item = allGear.find(g => g.id === b.itemId);
-      return [
-        b.type === "block" ? "Block" : "Booking",
-        b.customer || b.reason || "",
-        b.phone || "",
-        item?.name || "Unknown",
-        b.qty || 0,
-        b.start,
-        b.end,
-      ];
-    });
-
-    const csv = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `calendar-${vendorName || "export"}-${todayStr}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast("Calendar exported!");
-  }
-
-  // FullCalendar events - grouped for cleaner display
-  const calendarEvents = (() => {
-    const events: any[] = [];
+    const dateVal = formDate || "";
+    const dates = dateVal.split(" to ");
+    if (!dates[0]) return alert("Please select dates.");
     
-    // Group bookings by customer + date range
-    const bookingGroups = bookings.filter(b => b.type !== "block").reduce((acc, b) => {
-      const key = `booking-${b.customer || "Unknown"}-${b.start}-${b.end}`;
-      if (!acc[key]) {
-        acc[key] = { customer: b.customer, start: b.start, end: b.end, items: [], phone: b.phone };
-      }
-      const item = allGear.find(g => g.id === b.itemId);
-      acc[key].items.push({ name: item?.name || "Unknown", qty: b.qty, id: b.id });
-      return acc;
-    }, {} as Record<string, any>);
+    const finalStart = dates[0];
+    const finalEnd = dates[1] || dates[0];
 
-    // Group blocks by reason + date range
-    const blockGroups = bookings.filter(b => b.type === "block").reduce((acc, b) => {
-      const key = `block-${b.reason || "Time Off"}-${b.start}-${b.end}`;
-      if (!acc[key]) {
-        acc[key] = { reason: b.reason || "Time Off", start: b.start, end: b.end, count: 0, ids: [] };
-      }
-      acc[key].count++;
-      acc[key].ids.push(b.id);
-      return acc;
-    }, {} as Record<string, any>);
-
-    // Add booking events
-    Object.values(bookingGroups).forEach((group: any) => {
-      let endDate = group.end;
-      try {
-        const d = new Date(group.end);
-        if (!isNaN(d.getTime())) {
-          d.setDate(d.getDate() + 1);
-          endDate = d.toISOString().split("T")[0];
-        }
-      } catch {}
-
-      events.push({
-        id: `booking-${group.customer}-${group.start}`,
-        title: `${group.customer || "Booking"} (${group.items.length} items)`,
-        start: group.start,
-        end: endDate,
-        backgroundColor: "#dbeafe",
-        borderColor: "#3b82f6",
-        textColor: "#1d4ed8",
-        extendedProps: { 
-          type: "booking",
-          customer: group.customer, 
-          phone: group.phone,
-          items: group.items,
-          start: group.start,
-          end: group.end,
-        },
-      });
-    });
-
-    // Add block events
-    Object.values(blockGroups).forEach((group: any) => {
-      let endDate = group.end;
-      try {
-        const d = new Date(group.end);
-        if (!isNaN(d.getTime())) {
-          d.setDate(d.getDate() + 1);
-          endDate = d.toISOString().split("T")[0];
-        }
-      } catch {}
-
-      events.push({
-        id: `block-${group.reason}-${group.start}`,
-        title: group.count === allGear.length ? `${group.reason} - All Items` : `${group.reason} (${group.count} items)`,
-        start: group.start,
-        end: endDate,
-        backgroundColor: "#fee2e2",
-        borderColor: "#ef4444",
-        textColor: "#dc2626",
-        extendedProps: { 
-          type: "block",
-          reason: group.reason,
-          count: group.count,
-          ids: group.ids,
-          start: group.start,
-          end: group.end,
-        },
-      });
-    });
-
-    return events;
-  })();
-
-  // Week view - next 7 days
-  const weekDays = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(today.getDate() + i);
-    return d;
-  });
-
-  const monthDisplay = today.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-
-  // Handle calendar event click
-  function handleEventClick(info: any) {
-    const props = info.event.extendedProps;
-    
-    if (props.type === "block") {
-      setDetailData({
-        id: props.ids?.[0] || info.event.id,
-        itemName: props.count === allGear.length ? "All Items" : `${props.count} items`,
-        start: props.start,
-        end: props.end,
-        reason: props.reason,
-        qty: props.count,
+    if (entryType === "block") {
+      if (!formReason) return alert("Please provide a reason.");
+      const dayOfWeek = new Date(finalStart).getDay();
+      await addDoc(collection(db, "vendors", vendorId, "availability"), {
+        type: "block", reason: formReason, start: finalStart, end: finalEnd,
+        isRecurring, dayOfWeek: isRecurring ? dayOfWeek : null, createdAt: new Date().toISOString()
       });
     } else {
-      // Booking
-      const itemNames = props.items?.map((i: any) => `${i.name} (x${i.qty})`).join(", ") || "Unknown";
-      setDetailData({
-        id: props.items?.[0]?.id || info.event.id,
-        itemName: itemNames,
-        start: props.start,
-        end: props.end,
-        customer: props.customer,
-        phone: props.phone,
-        qty: props.items?.reduce((sum: number, i: any) => sum + (i.qty || 1), 0) || 1,
+      // Booking Logic
+      if (!custName) return alert("Please enter a customer name.");
+      const batch = writeBatch(db);
+      let hasData = false;
+
+      Object.entries(quantities).forEach(([itemId, qty]) => {
+        if (qty > 0) {
+          const ref = doc(collection(db, "vendors", vendorId, "availability"));
+          batch.set(ref, {
+            type: "booking", itemId, qty, start: finalStart, end: finalEnd,
+            customer: custName, phone: custPhone, createdAt: new Date().toISOString()
+          });
+          hasData = true;
+        }
       });
+
+      if (!hasData) return alert("Select at least 1 item.");
+      await batch.commit();
     }
-    setShowDetail(true);
+
+    // Reset and Close
+    setShowAddSheet(false);
+    setFormDate(""); setFormReason(""); setIsRecurring(false);
+    setCustName(""); setCustPhone(""); setQuantities({});
+    loadData(vendorId);
+  }
+
+  async function deleteEntry(id: string, type: "booking" | "block") {
+    if (!confirm(`Delete this ${type}?`)) return;
+    if (type === "block") {
+      await deleteDoc(doc(db, "vendors", vendorId!, "availability", id));
+    } else {
+      const bksToDelete = bookings.filter(b => `booking-${b.customer}-${b.start}` === id);
+      const batch = writeBatch(db);
+      bksToDelete.forEach(b => batch.delete(doc(db, "vendors", vendorId!, "availability", b.id)));
+      await batch.commit();
+    }
+    setShowDetail(false);
+    loadData(vendorId!);
   }
 
   return (
-    <div className="pb-24 min-h-screen" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f8fafc" }}>
+    <div className="min-h-screen bg-slate-50 pb-24" style={{ fontFamily: "'Inter', sans-serif" }}>
+      {/* CSS overrides for FullCalendar Dots */}
+      <style>{`
+        .fc-h-event { background: transparent; border: none; }
+        .fc-daygrid-event-harness { display: inline-block; margin: 1px; }
+        .fc-dot-blue .fc-event-title, .fc-dot-red .fc-event-title { display: none; }
+        .fc-dot-blue { width: 6px; height: 6px; background-color: #3b82f6 !important; border-radius: 50%; display: inline-block; }
+        .fc-dot-red { width: 6px; height: 6px; background-color: #ef4444 !important; border-radius: 50%; display: inline-block; }
+        .fc-day-today .fc-daygrid-day-number { background: #062c24; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; margin: 4px auto; }
+        .fc-daygrid-day-number { width: 100%; text-align: center; text-decoration: none !important; font-size: 12px; font-weight: 700; color: #334155; }
+        .fc-col-header-cell-cushion { font-size: 10px; text-transform: uppercase; color: #94a3b8; font-weight: 900; }
+        .fc-toolbar-title { font-size: 1.25rem !important; font-weight: 900; color: #062c24; text-transform: uppercase; }
+      `}</style>
 
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-100 px-4 py-3 shadow-sm">
-        <div className="max-w-3xl mx-auto">
-          <div className="flex justify-between items-center mb-3">
-            <div className="flex items-center gap-3">
-              <Link href="/store" className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 hover:text-[#062c24] transition-colors">
-                <i className="fas fa-arrow-left"></i>
-              </Link>
-              <div>
-                <h1 className="text-lg font-black text-[#062c24] leading-none">Schedule</h1>
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{monthDisplay}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={exportCalendar} className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all" title="Export CSV">
-                <i className="fas fa-download text-sm"></i>
-              </button>
-              <div className="flex bg-slate-100 p-1 rounded-lg">
-                {(["week", "month", "recurring"] as const).map(v => (
-                  <button key={v} onClick={() => setView(v)}
-                    className={`px-2.5 py-1.5 rounded-md text-[8px] font-black uppercase transition-all ${view === v ? "bg-white text-[#062c24] shadow-sm" : "text-slate-400 hover:text-slate-600"}`}>
-                    {v === "recurring" ? <i className="fas fa-repeat"></i> : v}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Stats */}
-          <div className="grid grid-cols-4 gap-2">
-            <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-xl p-2.5 border border-blue-100">
-              <p className="text-[8px] font-bold text-blue-400 uppercase">Today</p>
-              <p className="text-lg font-black text-blue-600 leading-none">{stats.todayBookings}</p>
-              <p className="text-[8px] text-blue-400">bookings</p>
-            </div>
-            <div className="bg-gradient-to-br from-red-50 to-red-100/50 rounded-xl p-2.5 border border-red-100">
-              <p className="text-[8px] font-bold text-red-400 uppercase">Blocked</p>
-              <p className="text-lg font-black text-red-500 leading-none">{stats.todayBlocks}</p>
-              <p className="text-[8px] text-red-400">today</p>
-            </div>
-            <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-xl p-2.5 border border-emerald-100">
-              <p className="text-[8px] font-bold text-emerald-400 uppercase">This Week</p>
-              <p className="text-lg font-black text-emerald-600 leading-none">{stats.weekBookings}</p>
-              <p className="text-[8px] text-emerald-400">bookings</p>
-            </div>
-            <div className="bg-gradient-to-br from-purple-50 to-purple-100/50 rounded-xl p-2.5 border border-purple-100">
-              <p className="text-[8px] font-bold text-purple-400 uppercase">Available</p>
-              <p className="text-lg font-black text-purple-600 leading-none">{stats.availableToday}</p>
-              <p className="text-[8px] text-purple-400">of {stats.totalItems}</p>
-            </div>
-          </div>
+      <header className="bg-white p-5 border-b border-slate-100 sticky top-0 z-30 flex items-center gap-3">
+        <Link href="/store" className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 hover:text-[#062c24]">
+          <i className="fas fa-arrow-left"></i>
+        </Link>
+        <div>
+          <h1 className="text-xl font-black text-[#062c24] leading-none uppercase tracking-tight">Schedule</h1>
+          <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Manage Availability</p>
         </div>
       </header>
 
-      {/* Week View */}
-      {view === "week" && (
-        <div className="max-w-3xl mx-auto p-4 space-y-3">
+      {/* Calendar View */}
+      <div className="p-4">
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-4 pb-2">
           {loading ? (
-            <div className="text-center py-12"><i className="fas fa-spinner fa-spin text-slate-300 text-2xl"></i></div>
-          ) : weekDays.map(d => {
-            const dateStr = d.toISOString().split("T")[0];
-            const dayOfWeek = d.getDay();
-            const dayBookings = bookings.filter(b => dateStr >= b.start && dateStr <= b.end);
-            const recurringBlock = recurringBlocks.find(r => r.enabled && r.dayOfWeek === dayOfWeek);
-            const isToday = dateStr === todayStr;
-
-            // Group bookings by type
-            const customerBookings = dayBookings.filter(b => b.type !== "block");
-            const timeOffBlocks = dayBookings.filter(b => b.type === "block");
-            
-            // Group customer bookings by customer name + date range
-            const groupedBookings = customerBookings.reduce((acc, b) => {
-              const key = `${b.customer || "Unknown"}-${b.start}-${b.end}`;
-              if (!acc[key]) {
-                acc[key] = { customer: b.customer, phone: b.phone, start: b.start, end: b.end, items: [] };
-              }
-              const item = allGear.find(g => g.id === b.itemId);
-              acc[key].items.push({ id: b.id, name: item?.name || "Unknown", qty: b.qty || 1, itemId: b.itemId });
-              return acc;
-            }, {} as Record<string, { customer?: string; phone?: string; start: string; end: string; items: { id: string; name: string; qty: number; itemId?: string }[] }>);
-
-            // Group time-off blocks by reason + date range
-            const groupedBlocks = timeOffBlocks.reduce((acc, b) => {
-              const key = `${b.reason || "Time Off"}-${b.start}-${b.end}`;
-              if (!acc[key]) {
-                acc[key] = { reason: b.reason || "Time Off", start: b.start, end: b.end, items: [], ids: [] };
-              }
-              const item = allGear.find(g => g.id === b.itemId);
-              acc[key].items.push(item?.name || "Unknown");
-              acc[key].ids.push(b.id);
-              return acc;
-            }, {} as Record<string, { reason: string; start: string; end: string; items: string[]; ids: string[] }>);
-
-            const bookingGroups = Object.values(groupedBookings);
-            const blockGroups = Object.values(groupedBlocks);
-            const hasActivity = bookingGroups.length > 0 || blockGroups.length > 0 || recurringBlock;
-
-            return (
-              <div key={dateStr} className={`bg-white p-4 rounded-[1.5rem] border shadow-sm transition-all ${isToday ? "border-emerald-200 ring-2 ring-emerald-100" : "border-slate-100"}`}>
-                <div className="flex justify-between items-center mb-3">
-                  <div className="flex items-baseline gap-2">
-                    <h3 className={`text-lg font-black ${isToday ? "text-emerald-600" : "text-[#062c24]"}`}>{d.getDate()}</h3>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">{d.toLocaleDateString("en-US", { weekday: "short" })}</span>
-                    {isToday && <span className="text-[8px] font-black text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full uppercase">Today</span>}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {recurringBlock && (
-                      <span className="bg-amber-50 text-amber-600 px-2 py-1 rounded-lg text-[8px] font-black uppercase flex items-center gap-1">
-                        <i className="fas fa-repeat text-[7px]"></i> {recurringBlock.reason}
-                      </span>
-                    )}
-                    {hasActivity && (
-                      <span className="bg-slate-100 text-slate-500 px-2 py-1 rounded-lg text-[8px] font-black uppercase">
-                        {bookingGroups.length + blockGroups.length} {bookingGroups.length + blockGroups.length === 1 ? "Entry" : "Entries"}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  {!hasActivity ? (
-                    <p className="text-[10px] text-slate-300 italic pl-1">No bookings</p>
-                  ) : (
-                    <>
-                      {/* Time Off Blocks - Simple cards */}
-                      {blockGroups.map((block, idx) => (
-                        <div key={`block-${idx}`} 
-                          onClick={() => {
-                            setDetailData({
-                              id: block.ids[0],
-                              itemName: block.items.length === allGear.length ? "All Items" : `${block.items.length} items`,
-                              start: block.start,
-                              end: block.end,
-                              reason: block.reason,
-                              qty: block.items.length,
-                            });
-                            setShowDetail(true);
-                          }}
-                          className="flex items-center justify-between p-3 rounded-xl cursor-pointer bg-red-50 border border-red-100 hover:bg-red-100 transition-all">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
-                              <i className="fas fa-ban text-red-500"></i>
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-black text-red-700 uppercase">{block.reason}</p>
-                              <p className="text-[9px] text-red-400">
-                                {block.items.length === allGear.length ? "All items blocked" : `${block.items.length} items blocked`}
-                              </p>
-                            </div>
-                          </div>
-                          <i className="fas fa-chevron-right text-[8px] text-red-300"></i>
-                        </div>
-                      ))}
-
-                      {/* Booking Groups - Summary cards */}
-                      {bookingGroups.length > 0 && (
-                        <BookingSummaryCard 
-                          bookings={bookingGroups} 
-                          allGear={allGear}
-                          onSelectBooking={(booking) => {
-                            setDetailData({
-                              id: booking.items[0].id,
-                              itemName: booking.items.map(i => `${i.name} (x${i.qty})`).join(", "),
-                              start: booking.start,
-                              end: booking.end,
-                              customer: booking.customer,
-                              phone: booking.phone,
-                              qty: booking.items.reduce((sum, i) => sum + i.qty, 0),
-                            });
-                            setShowDetail(true);
-                          }}
-                        />
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Month View */}
-      {view === "month" && (
-        <div className="max-w-3xl mx-auto p-4">
-          <div className="bg-white rounded-[2rem] p-4 shadow-xl border border-slate-100 overflow-hidden">
+            <div className="h-64 flex items-center justify-center"><i className="fas fa-spinner fa-spin text-emerald-500 text-2xl"></i></div>
+          ) : (
             <FullCalendar
               plugins={[dayGridPlugin, interactionPlugin]}
               initialView="dayGridMonth"
-              headerToolbar={{ left: "prev", center: "title", right: "next" }}
+              events={calendarEvents}
+              dateClick={(info) => setSelectedDate(info.dateStr)}
+              headerToolbar={{ left: 'prev', center: 'title', right: 'next' }}
               height="auto"
-              events={calendarEvents as any}
-              eventClick={handleEventClick}
-              dateClick={info => {
-                if (fpRef.current) {
-                  fpRef.current.setDate([info.dateStr, info.dateStr]);
-                }
-                setShowSheet(true);
-              }}
-              eventContent={(arg) => (
-                <div className="px-1 py-0.5 text-[8px] font-bold truncate">
-                  {arg.event.title}
-                </div>
-              )}
             />
+          )}
+        </div>
+      </div>
+
+      {/* Summary List */}
+      <div className="px-5 space-y-3 mt-2">
+        <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-2">
+          {new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' })}
+        </h2>
+        {dailySummary.length === 0 ? (
+          <div className="bg-white border-2 border-dashed border-slate-200 rounded-[2rem] py-12 text-center">
+            <i className="fas fa-calendar-check text-3xl text-slate-200 mb-3"></i>
+            <p className="text-xs font-bold text-slate-400 uppercase">Clear Schedule</p>
           </div>
-          
-          {/* Legend */}
-          <div className="mt-4 flex flex-wrap justify-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-red-500"></div>
-              <span className="text-[9px] font-bold text-slate-500 uppercase">Blocked</span>
-            </div>
-            {categories.slice(0, 5).map(cat => {
-              const colors = getCategoryColor(cat);
-              return (
-                <div key={cat} className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.dot }}></div>
-                  <span className="text-[9px] font-bold text-slate-500 uppercase">{cat}</span>
+        ) : (
+          dailySummary.map((item) => (
+            <SwipeableCard key={item.id} onDelete={() => deleteEntry(item.id, item.type)} onEdit={() => alert("Edit logic goes here")} onClick={() => { setActiveDetail(item); setShowDetail(true); }}>
+              <div className="flex items-center gap-4 w-full">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${item.type === 'block' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
+                  <i className={`fas text-lg ${item.type === 'block' ? 'fa-ban' : 'fa-user'}`}></i>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Recurring Blocks View */}
-      {view === "recurring" && (
-        <div className="max-w-3xl mx-auto p-4 space-y-4">
-          <div className="bg-white rounded-[2rem] p-6 border border-slate-100 shadow-sm">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-lg font-black text-[#062c24] uppercase">Weekly Off Days</h2>
-                <p className="text-[10px] text-slate-400">Automatically block items on specific days</p>
-              </div>
-              <button onClick={() => setShowRecurringModal(true)}
-                className="px-4 py-2.5 bg-[#062c24] text-white rounded-xl text-[10px] font-black uppercase hover:bg-emerald-800 transition-all shadow-lg">
-                <i className="fas fa-plus mr-2"></i>Add Day
-              </button>
-            </div>
-
-            {recurringBlocks.length === 0 ? (
-              <div className="text-center py-8 bg-slate-50 rounded-2xl">
-                <i className="fas fa-calendar-xmark text-slate-300 text-3xl mb-3"></i>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">No recurring blocks set</p>
-                <p className="text-[9px] text-slate-300 mt-1">Add weekly off days to automatically block your inventory</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {recurringBlocks.map(r => (
-                  <div key={r.id} className={`flex items-center justify-between p-4 rounded-xl border transition-all ${r.enabled ? "bg-amber-50 border-amber-200" : "bg-slate-50 border-slate-200 opacity-60"}`}>
-                    <div className="flex items-center gap-4">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${r.enabled ? "bg-amber-100 text-amber-600" : "bg-slate-200 text-slate-400"}`}>
-                        <i className="fas fa-repeat text-lg"></i>
-                      </div>
-                      <div>
-                        <p className={`text-sm font-black uppercase ${r.enabled ? "text-amber-700" : "text-slate-500"}`}>{DAYS_OF_WEEK[r.dayOfWeek]}</p>
-                        <p className={`text-[10px] ${r.enabled ? "text-amber-500" : "text-slate-400"}`}>{r.reason}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => toggleRecurringBlock(r.id, !r.enabled)}
-                        className={`w-12 h-7 rounded-full p-1 transition-all ${r.enabled ? "bg-amber-500" : "bg-slate-300"}`}>
-                        <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${r.enabled ? "translate-x-5" : ""}`}></div>
-                      </button>
-                      <button onClick={() => deleteRecurringBlock(r.id)}
-                        className="w-10 h-10 rounded-xl bg-red-50 text-red-400 hover:bg-red-500 hover:text-white transition-all">
-                        <i className="fas fa-trash text-sm"></i>
-                      </button>
-                    </div>
+                <div className="flex-1 text-left">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-black text-[#062c24] uppercase truncate">{item.type === 'block' ? "Time Off" : item.customer}</p>
+                    {item.isRecurring && <span className="bg-amber-100 text-amber-700 text-[8px] px-2 py-0.5 rounded-md font-bold uppercase">Weekly</span>}
                   </div>
-                ))}
+                  <p className="text-[10px] text-slate-400 font-bold mt-0.5">
+                    {item.type === 'block' ? <><span className="text-red-400">{item.reason}</span> • All items</> : `${item.phone} • ${item.itemCount} items`}
+                  </p>
+                </div>
+                <i className="fas fa-chevron-right text-[10px] text-slate-300"></i>
               </div>
-            )}
-          </div>
-        </div>
-      )}
+            </SwipeableCard>
+          ))
+        )}
+      </div>
 
       {/* FAB */}
-      <button onClick={() => setShowSheet(true)}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-[#062c24] text-white rounded-full flex items-center justify-center text-2xl shadow-2xl z-40 hover:scale-110 transition-transform">
+      <button onClick={() => setShowAddSheet(true)} className="fixed bottom-6 right-6 w-14 h-14 bg-[#062c24] text-emerald-400 rounded-full shadow-2xl flex items-center justify-center text-xl z-40 hover:scale-110 transition-all border border-emerald-900/50">
         <i className="fas fa-plus"></i>
       </button>
 
-      {/* Action Sheet */}
-      {showSheet && (
-        <>
-          <div className="fixed inset-0 bg-[#062c24]/80 backdrop-blur-sm z-[100]" onClick={() => setShowSheet(false)} />
-          <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[2.5rem] z-[101] max-h-[90vh] flex flex-col shadow-2xl">
-            <div className="w-full flex justify-center pt-3 pb-1" onClick={() => setShowSheet(false)}>
-              <div className="w-12 h-1.5 bg-slate-200 rounded-full"></div>
-            </div>
-
-            {/* Sheet Header */}
-            <div className="px-6 pb-4 flex-none border-b border-slate-50">
-              <div className="flex justify-between items-end mb-4">
-                <h3 className="text-2xl font-black text-[#062c24] uppercase">New Entry</h3>
-                <div className="flex bg-slate-100 p-1 rounded-xl">
-                  {(["booking", "block"] as const).map(t => (
-                    <button key={t} onClick={() => setEntryType(t)}
-                      className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${entryType === t ? `bg-white shadow-sm ${t === "booking" ? "text-emerald-600" : "text-red-500"}` : "text-slate-400"}`}>
-                      {t === "booking" ? "Booking" : "Time Off"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="bg-slate-50 p-3 rounded-2xl flex items-center gap-3 border border-slate-100">
-                <i className="fas fa-calendar-alt text-emerald-500 text-lg ml-2"></i>
-                <input ref={dateRangeRef} className="w-full bg-transparent text-sm font-bold text-slate-700 outline-none" placeholder="Select Dates" />
-              </div>
-            </div>
-
-            {/* Sheet Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6" style={{ scrollbarWidth: "none" }}>
-              {entryType === "booking" && (
-                <div className="space-y-3">
-                  <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Customer Details</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <input value={custName} onChange={e => setCustName(e.target.value)} placeholder="Name"
-                      className="bg-slate-50 p-3 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-100 border border-slate-100" />
-                    <input value={custPhone} onChange={e => setCustPhone(e.target.value)} placeholder="Phone"
-                      className="bg-slate-50 p-3 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-100 border border-slate-100" />
-                  </div>
-                  <div className="relative">
-                    <select value={pickupHub} onChange={e => setPickupHub(e.target.value)}
-                      className="w-full bg-emerald-50 text-emerald-800 p-3 rounded-xl text-[10px] font-bold outline-none appearance-none border border-emerald-100">
-                      <option value="">Select Hub...</option>
-                      {pickupLocs.map(l => <option key={l} value={l}>{l}</option>)}
-                    </select>
-                    <i className="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-[8px] text-emerald-600"></i>
-                  </div>
-                </div>
-              )}
-
-              {entryType === "block" && (
-                <div className="space-y-3">
-                  <p className="text-[9px] font-black text-red-300 uppercase tracking-widest">Reason for Block</p>
-                  <input value={blockReason} onChange={e => setBlockReason(e.target.value)}
-                    placeholder="e.g. Maintenance, Holiday"
-                    className="w-full bg-red-50 text-red-600 p-3 rounded-xl text-xs font-bold outline-none placeholder:text-red-300 border border-red-100" />
-                  <button onClick={blockAllStock}
-                    className="w-full py-3 bg-red-100 text-red-500 rounded-xl text-[10px] font-black uppercase hover:bg-red-500 hover:text-white transition-all">
-                    Block All Items for These Dates
-                  </button>
-                </div>
-              )}
-
-              {/* Inventory Accordion with remaining stock */}
-              <div className="space-y-3">
-                <div className="flex justify-between items-end">
-                  <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Select Gear to Book</p>
-                  <p className="text-[8px] text-slate-400 italic">Shows remaining stock</p>
-                </div>
-                {allGear.length === 0 ? (
-                  <div className="text-center py-6 bg-slate-50 rounded-2xl">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">No Inventory Found</p>
-                    <Link href="/store" className="mt-2 inline-block text-[9px] font-black text-emerald-600 underline">Add Items in Store</Link>
-                  </div>
-                ) : categories.map(cat => {
-                  const items = allGear.filter(g => getItemCategory(g) === cat);
-                  const colors = getCategoryColor(cat);
-                  return (
-                    <details key={cat} className={`${colors.bg} border ${colors.border} rounded-2xl overflow-hidden`} open>
-                      <summary className="flex justify-between items-center p-4 cursor-pointer select-none">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.dot }}></div>
-                          <span className={`text-[10px] font-black ${colors.text} uppercase tracking-widest`}>{cat}</span>
-                        </div>
-                        <i className={`fas fa-chevron-down ${colors.text} opacity-50 text-xs`}></i>
-                      </summary>
-                      <div className="p-2 space-y-2 bg-white/50">
-                        {items.map(g => {
-                          const dateVal = dateRangeRef.current?.value || "";
-                          const startDate = dateVal.split(" to ")[0] || todayStr;
-                          const remaining = getRemainingStock(g.id, startDate);
-                          
-                          return (
-                            <div key={g.id} className="flex items-center justify-between p-2 rounded-xl hover:bg-white transition-colors">
-                              <div className="flex items-center gap-3">
-                                <img src={g.img || "/pacak-khemah.png"} className="w-8 h-8 rounded-lg object-cover bg-slate-100" alt={g.name} />
-                                <div>
-                                  <p className="text-[10px] font-bold text-slate-700 uppercase leading-tight">{g.name}</p>
-                                  <p className={`text-[8px] uppercase ${remaining === 0 ? "text-red-500 font-bold" : "text-slate-400"}`}>
-                                    {remaining === 0 ? "Fully booked" : `${remaining} of ${g.stock} available`}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1">
-                                <button onClick={() => adjQty(g.id, -1)}
-                                  className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-red-500 bg-white rounded-lg shadow-sm font-black">−</button>
-                                <span className="w-8 text-center text-xs font-bold text-slate-700">{quantities[g.id] || 0}</span>
-                                <button onClick={() => adjQty(g.id, 1, remaining)}
-                                  disabled={remaining === 0}
-                                  className={`w-9 h-9 flex items-center justify-center bg-white rounded-lg shadow-sm font-black ${remaining === 0 ? "text-slate-200 cursor-not-allowed" : "text-slate-400 hover:text-emerald-500"}`}>+</button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </details>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="p-6 border-t border-slate-50 bg-white">
-              <button onClick={saveEntry}
-                className="w-full bg-[#062c24] text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-emerald-900 transition-all">
-                Confirm Schedule
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-
       {/* Detail Modal */}
-      {showDetail && detailData && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
-          <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 shadow-2xl relative">
-            <button onClick={() => { setShowDetail(false); setIsEditing(false); }}
-              className="absolute top-4 right-4 w-11 h-11 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors">
-              <i className="fas fa-times"></i>
-            </button>
-
-            <h3 className="text-xl font-black text-[#062c24] uppercase mb-1">
-              {detailData.customer ? "Booking Detail" : "Block Detail"}
-            </h3>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">
-              {detailData.start} → {detailData.end}
-            </p>
-
-            {/* View mode */}
-            {!isEditing ? (
-              <>
-                <div className="bg-slate-50 rounded-xl p-4 mb-4">
-                  <p className="text-sm font-black text-[#062c24] uppercase">{detailData.customer || "Blocked"}</p>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">{detailData.phone || detailData.reason || "-"}</p>
+      {showDetail && activeDetail && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowDetail(false)} />
+          <div className="relative w-full max-w-sm bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div className={`p-6 border-b ${activeDetail.type === 'block' ? 'bg-red-50 border-red-100' : 'bg-blue-50 border-blue-100'}`}>
+              <div className="flex justify-between items-start mb-4">
+                <button onClick={() => setShowDetail(false)} className="w-8 h-8 bg-white rounded-full flex items-center justify-center text-slate-400 shadow-sm"><i className="fas fa-arrow-left text-[10px]"></i></button>
+              </div>
+              <div className="flex items-center gap-3 mb-2">
+                <i className={`fas text-xl ${activeDetail.type === 'block' ? 'fa-ban text-red-500' : 'fa-user text-blue-500'}`}></i>
+                <h3 className="text-xl font-black text-[#062c24] uppercase">{activeDetail.type === 'block' ? "Time Off" : activeDetail.customer}</h3>
+              </div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest"><i className="far fa-calendar text-slate-400 mr-2"></i>{activeDetail.start}</p>
+            </div>
+            <div className="p-6 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
+              {activeDetail.type === "block" ? (
+                <div className="bg-red-50 rounded-2xl p-6 text-center border border-red-100">
+                  <i className="fas fa-lock text-red-400 text-3xl mb-3"></i>
+                  <p className="text-sm font-black text-red-800 uppercase mb-1">{activeDetail.reason}</p>
                 </div>
-                <div className="flex justify-between p-3 bg-slate-50 rounded-xl mb-6">
-                  <span className="text-xs font-bold text-slate-600">{detailData.itemName}</span>
-                  <span className="text-xs font-black text-[#062c24]">x{detailData.qty}</span>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => {
-                    setEditName(detailData.customer || "");
-                    setEditPhone(detailData.phone || "");
-                    setEditReason(detailData.reason || "");
-                    setIsEditing(true);
-                  }}
-                    className="flex-1 py-3 bg-blue-50 text-blue-600 rounded-xl text-[10px] font-black uppercase hover:bg-blue-100 transition-all">
-                    <i className="fas fa-pen mr-1"></i> Edit
-                  </button>
-                  <button onClick={() => deleteEntry(detailData.id)}
-                    className="flex-1 py-3 bg-red-50 text-red-500 rounded-xl text-[10px] font-black uppercase hover:bg-red-100 transition-all">
-                    <i className="fas fa-trash mr-1"></i> Delete
-                  </button>
-                </div>
-
-                {/* WhatsApp button for bookings */}
-                {detailData.phone && (
-                  <a href={`https://wa.me/${detailData.phone.replace(/\D/g, "")}?text=Hi ${detailData.customer}, this is regarding your booking for ${detailData.itemName} (${detailData.start} - ${detailData.end}).`}
-                    target="_blank" rel="noreferrer"
-                    className="mt-3 w-full py-3 bg-green-500 text-white rounded-xl text-[10px] font-black uppercase flex items-center justify-center gap-2 hover:bg-green-600 transition-all">
-                    <i className="fab fa-whatsapp"></i> Message Customer
-                  </a>
-                )}
-              </>
-            ) : (
-              /* Edit mode */
-              <>
-                <div className="space-y-3 mb-6">
-                  {detailData.customer !== undefined ? (
-                    <>
-                      <input value={editName} onChange={e => setEditName(e.target.value)}
-                        placeholder="Customer Name"
-                        className="w-full bg-slate-50 p-3 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-300 border border-slate-100" />
-                      <input value={editPhone} onChange={e => setEditPhone(e.target.value)}
-                        placeholder="Phone Number"
-                        className="w-full bg-slate-50 p-3 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-300 border border-slate-100" />
-                    </>
-                  ) : (
-                    <input value={editReason} onChange={e => setEditReason(e.target.value)}
-                      placeholder="Reason for block"
-                      className="w-full bg-red-50 text-red-600 p-3 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-red-200 border border-red-100" />
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => setIsEditing(false)}
-                    className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl text-[10px] font-black uppercase hover:bg-slate-200 transition-all">
-                    Cancel
-                  </button>
-                  <button onClick={updateEntry}
-                    className="flex-1 py-3 bg-[#062c24] text-white rounded-xl text-[10px] font-black uppercase hover:bg-emerald-900 transition-all shadow-lg">
-                    <i className="fas fa-check mr-1"></i> Save
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Add Recurring Block Modal */}
-      {showRecurringModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-6">
-          <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 shadow-2xl">
-            <h3 className="text-xl font-black text-[#062c24] uppercase mb-4">Add Weekly Off Day</h3>
-            
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase block mb-2">Day of Week</label>
-                <div className="grid grid-cols-7 gap-1">
-                  {DAYS_OF_WEEK.map((day, idx) => (
-                    <button key={day} onClick={() => setNewRecurring(prev => ({ ...prev, dayOfWeek: idx }))}
-                      className={`py-2 rounded-lg text-[8px] font-black uppercase transition-all ${newRecurring.dayOfWeek === idx ? "bg-amber-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
-                      {day.slice(0, 2)}
-                    </button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-3">Booked Gear</p>
+                  {/* Simplistic detail items renderer here for brevity */}
+                  {activeDetail.items.map((item, idx) => (
+                    <div key={idx} className="flex justify-between text-[11px] font-medium text-slate-600 py-1 border-b border-slate-50 last:border-0">
+                      <span>• {item.name}</span><span className="font-bold text-[#062c24]">× {item.qty}</span>
+                    </div>
                   ))}
                 </div>
-              </div>
-              
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase block mb-2">Reason</label>
-                <input value={newRecurring.reason} onChange={e => setNewRecurring(prev => ({ ...prev, reason: e.target.value }))}
-                  placeholder="e.g. Weekly maintenance, Rest day"
-                  className="w-full bg-slate-50 p-3 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-amber-200 border border-slate-100" />
-              </div>
-
-              <label className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl border border-amber-100 cursor-pointer">
-                <input type="checkbox" checked={newRecurring.allItems} onChange={e => setNewRecurring(prev => ({ ...prev, allItems: e.target.checked }))}
-                  className="w-5 h-5 rounded accent-amber-500" />
-                <span className="text-xs font-bold text-amber-700">Block all items on this day</span>
-              </label>
-            </div>
-
-            <div className="flex gap-2">
-              <button onClick={() => setShowRecurringModal(false)}
-                className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl text-[10px] font-black uppercase hover:bg-slate-200 transition-all">
-                Cancel
-              </button>
-              <button onClick={addRecurringBlock}
-                className="flex-1 py-3 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-amber-600 transition-all shadow-lg">
-                <i className="fas fa-plus mr-1"></i> Add
-              </button>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[500] bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3"
-          style={{ animation: "toastIn 0.3s ease-out" }}>
-          <i className="fas fa-check-circle"></i>
-          <span className="text-[10px] font-black uppercase tracking-widest">{toast}</span>
+      {/* Add Sheet */}
+      {showAddSheet && (
+        <div className="fixed inset-0 z-[100] flex items-end">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowAddSheet(false)} />
+          <div className="relative w-full max-h-[90vh] flex flex-col bg-white rounded-t-[2.5rem] shadow-2xl">
+            <div className="flex-none p-6 pb-2 border-b border-slate-50">
+              <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6" />
+              <div className="flex bg-slate-100 p-1 rounded-xl mb-4">
+                 <button onClick={() => setEntryType('booking')} className={`flex-1 py-3 rounded-lg text-[10px] font-black uppercase transition-all ${entryType === 'booking' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>New Booking</button>
+                 <button onClick={() => setEntryType('block')} className={`flex-1 py-3 rounded-lg text-[10px] font-black uppercase transition-all ${entryType === 'block' ? 'bg-white text-red-500 shadow-sm' : 'text-slate-400'}`}>Time Off</button>
+              </div>
+
+              {/* Shared Date Input */}
+              <div className="bg-slate-50 p-3 rounded-xl flex items-center gap-3 border border-slate-100">
+                <i className="fas fa-calendar-alt text-slate-400 text-lg ml-2"></i>
+                <input ref={dateInputRef} value={formDate} placeholder="Select Dates..." className="w-full bg-transparent text-sm font-bold text-[#062c24] outline-none" readOnly />
+              </div>
+            </div>
+
+            {/* Scrollable Form Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6" style={{ scrollbarWidth: 'none' }}>
+              {entryType === 'block' ? (
+                <div className="space-y-4">
+                  <input value={formReason} onChange={(e) => setFormReason(e.target.value)} placeholder="Reason (Maintenance, Holiday...)" className="w-full bg-red-50 p-4 rounded-xl border border-red-100 font-bold text-sm text-red-700 placeholder:text-red-300 outline-none focus:ring-2 focus:ring-red-200" />
+                  <label className="flex items-center gap-3 p-4 bg-amber-50 rounded-xl cursor-pointer border border-amber-100">
+                    <input type="checkbox" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} className="w-5 h-5 rounded text-amber-500 focus:ring-amber-500 border-amber-300" />
+                    <div>
+                      <span className="block text-xs font-black text-amber-800 uppercase">Repeat Weekly</span>
+                      <span className="block text-[9px] font-bold text-amber-600/70 mt-0.5">Automatically blocks this day every week</span>
+                    </div>
+                  </label>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Customer Info */}
+                  <div className="space-y-3">
+                    <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Customer Details</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <input value={custName} onChange={e => setCustName(e.target.value)} placeholder="Name" className="bg-slate-50 p-3 rounded-xl text-xs font-bold outline-none border border-slate-100 focus:ring-2 focus:ring-blue-100" />
+                      <input value={custPhone} onChange={e => setCustPhone(e.target.value)} placeholder="Phone" className="bg-slate-50 p-3 rounded-xl text-xs font-bold outline-none border border-slate-100 focus:ring-2 focus:ring-blue-100" />
+                    </div>
+                  </div>
+
+                  {/* Gear Selection Accordion */}
+                  <div className="space-y-3">
+                    <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest flex justify-between">
+                      <span>Select Gear to Book</span>
+                      <span className="italic text-slate-400 font-medium lowercase">Checking availability for {formDate ? formDate.split(' ')[0] : 'selected date'}</span>
+                    </p>
+                    
+                    {categories.map(cat => {
+                      const items = allGear.filter(g => (g.category || "Add-ons") === cat);
+                      const colors = getCategoryColor(cat);
+                      
+                      return (
+                        <details key={cat} className={`${colors.bg} border ${colors.border} rounded-2xl overflow-hidden mb-2`} open>
+                          <summary className="flex justify-between items-center p-4 cursor-pointer select-none">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: colors.dot }}></div>
+                              <span className={`text-[10px] font-black ${colors.text} uppercase tracking-widest`}>{cat}</span>
+                            </div>
+                            <i className={`fas fa-chevron-down ${colors.text} opacity-50 text-xs`}></i>
+                          </summary>
+                          <div className="p-2 space-y-2 bg-white/50 border-t border-white/50">
+                            {items.map(g => {
+                              const checkDate = formDate ? formDate.split(' to ')[0] : todayStr;
+                              const remaining = getRemainingStock(g.id, checkDate);
+                              
+                              return (
+                                <div key={g.id} className="flex items-center justify-between p-2 rounded-xl hover:bg-white transition-colors">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden">
+                                      {g.img ? <img src={g.img} alt={g.name} className="w-full h-full object-cover" /> : <i className="fas fa-campground text-slate-300 text-xs"></i>}
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] font-bold text-slate-700 uppercase leading-tight">{g.name}</p>
+                                      <p className={`text-[8px] uppercase font-bold mt-0.5 ${remaining === 0 ? "text-red-500" : "text-emerald-500"}`}>
+                                        {remaining === 0 ? "Fully booked" : `${remaining} left`}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* QTY Controls */}
+                                  <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1">
+                                    <button onClick={() => adjQty(g.id, -1)} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-red-500 bg-white rounded-lg shadow-sm font-black">−</button>
+                                    <span className="w-6 text-center text-xs font-bold text-slate-700">{quantities[g.id] || 0}</span>
+                                    <button onClick={() => adjQty(g.id, 1, remaining)} disabled={remaining === 0} className={`w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm font-black ${remaining === 0 ? "text-slate-200 cursor-not-allowed" : "text-slate-400 hover:text-emerald-500"}`}>+</button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </details>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Save Button */}
+            <div className="flex-none p-6 border-t border-slate-50 bg-white pb-8">
+               <button onClick={saveEntry} className={`w-full py-4 rounded-xl font-black uppercase tracking-widest text-xs shadow-lg text-white ${entryType === 'block' ? 'bg-red-500 hover:bg-red-600 shadow-red-500/30' : 'bg-[#062c24] hover:bg-emerald-900 shadow-emerald-900/30'}`}>
+                 {entryType === 'block' ? 'Block Inventory' : 'Confirm Booking'}
+               </button>
+            </div>
+
+          </div>
         </div>
       )}
-
-      <style jsx>{`
-        @keyframes toastIn {
-          from { opacity: 0; transform: translate(-50%, -20px); }
-          to { opacity: 1; transform: translate(-50%, 0); }
-        }
-      `}</style>
     </div>
   );
 }
