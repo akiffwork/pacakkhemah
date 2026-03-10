@@ -459,20 +459,65 @@ export default function DirectoryPage() {
               value={locationSearch}
               onChange={e => { setLocationSearch(e.target.value); setShowLocDropdown(true); setCustomLocation(""); }}
               onFocus={() => setShowLocDropdown(true)}
+              onKeyDown={e => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const exactMatch = locations.find(l => l.toLowerCase() === locationSearch.toLowerCase());
+                  if (exactMatch) {
+                    filterBy(exactMatch);
+                    setLocationSearch(exactMatch);
+                  } else if (locationSearch) {
+                    const partialMatch = locations.find(l => l.toLowerCase().includes(locationSearch.toLowerCase()));
+                    if (partialMatch) {
+                      filterBy(partialMatch);
+                      setLocationSearch(partialMatch);
+                    } else {
+                      setCustomLocation(locationSearch);
+                      setFilteredVendors([]);
+                    }
+                  }
+                  setShowLocDropdown(false);
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
               placeholder="Search or pick a location..."
-              className="w-full bg-white text-[#062c24] py-4 pl-11 pr-20 rounded-xl shadow-sm border border-slate-200 outline-none font-bold text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500 transition-all"
+              className="w-full bg-white text-[#062c24] py-4 pl-11 pr-24 rounded-xl shadow-sm border border-slate-200 outline-none font-bold text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500 transition-all"
             />
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
               {locationSearch && (
                 <button onClick={() => { setLocationSearch(""); setCustomLocation(""); filterBy("all"); setShowLocDropdown(false); }}
                   className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-red-500 transition-colors">
                   <i className="fas fa-times text-xs"></i>
                 </button>
               )}
-              <button onClick={() => setShowLocDropdown(!showLocDropdown)}
-                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-emerald-600 transition-colors">
-                <i className={`fas fa-chevron-down text-xs transition-transform ${showLocDropdown ? "rotate-180" : ""}`}></i>
-              </button>
+              {locationSearch ? (
+                <button 
+                  onClick={() => {
+                    const exactMatch = locations.find(l => l.toLowerCase() === locationSearch.toLowerCase());
+                    if (exactMatch) {
+                      filterBy(exactMatch);
+                      setLocationSearch(exactMatch);
+                    } else {
+                      const partialMatch = locations.find(l => l.toLowerCase().includes(locationSearch.toLowerCase()));
+                      if (partialMatch) {
+                        filterBy(partialMatch);
+                        setLocationSearch(partialMatch);
+                      } else {
+                        setCustomLocation(locationSearch);
+                        setFilteredVendors([]);
+                      }
+                    }
+                    setShowLocDropdown(false);
+                  }}
+                  className="w-8 h-8 flex items-center justify-center bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors shadow-sm">
+                  <i className="fas fa-search text-xs"></i>
+                </button>
+              ) : (
+                <button onClick={() => setShowLocDropdown(!showLocDropdown)}
+                  className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-emerald-600 transition-colors">
+                  <i className={`fas fa-chevron-down text-xs transition-transform ${showLocDropdown ? "rotate-180" : ""}`}></i>
+                </button>
+              )}
             </div>
 
             {showLocDropdown && (
@@ -537,22 +582,78 @@ export default function DirectoryPage() {
                 </button>
               </div>
             ) : displayList.length === 0 ? (
-              <div className="col-span-full text-center py-16">
+              <div className="col-span-full text-center py-12">
                 {customLocation ? (
-                  <>
-                    <div className="text-5xl mb-4">🏕️</div>
-                    <p className="text-sm font-black text-[#062c24] mb-2">No vendors in {customLocation} yet!</p>
-                    <p className="text-xs text-slate-500 font-medium max-w-xs mx-auto mb-4">We&apos;re on the lookout for vendors here. Check back soon!</p>
+                  <div className="max-w-md mx-auto">
+                    {/* Fun illustration */}
+                    <div className="relative inline-block mb-6">
+                      <div className="text-6xl animate-bounce">🏕️</div>
+                      <div className="absolute -right-2 -top-2 text-2xl animate-pulse">🔍</div>
+                    </div>
+                    
+                    <h3 className="text-lg font-black text-[#062c24] mb-2">
+                      Oops! No vendors in {customLocation}... yet! 😅
+                    </h3>
+                    
+                    <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+                      We&apos;re on a mission to bring camping gear rentals everywhere! 
+                      Our scouts are actively searching this area. 🕵️‍♂️
+                    </p>
+
+                    {/* CTA Cards */}
+                    <div className="space-y-3 text-left">
+                      {/* Know a vendor? */}
+                      <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
+                            <span className="text-lg">🤝</span>
+                          </div>
+                          <div>
+                            <p className="text-sm font-black text-amber-800 mb-1">Know a camping gear vendor?</p>
+                            <p className="text-xs text-amber-600 mb-2">Help us connect! Ask them to join Pacak Khemah and serve campers in your area.</p>
+                            <a href="https://wa.me/6011136904336?text=Hi!%20I%20know%20a%20camping%20gear%20vendor%20who%20might%20want%20to%20join%20Pacak%20Khemah!" 
+                              target="_blank" rel="noreferrer"
+                              className="inline-flex items-center gap-2 text-[10px] font-black text-amber-700 hover:text-amber-900 uppercase">
+                              <i className="fab fa-whatsapp"></i> Tell Us About Them
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Got extra gear? */}
+                      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center shrink-0">
+                            <span className="text-lg">⛺</span>
+                          </div>
+                          <div>
+                            <p className="text-sm font-black text-emerald-800 mb-1">Got camping gear collecting dust?</p>
+                            <p className="text-xs text-emerald-600 mb-2">Turn your extra tents and gear into extra income! Join as a vendor and start earning. 💰</p>
+                            <Link href="/register"
+                              className="inline-flex items-center gap-2 text-[10px] font-black text-emerald-700 hover:text-emerald-900 uppercase">
+                              <i className="fas fa-rocket"></i> Become a Vendor
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Browse all button */}
                     <button onClick={() => { setLocationSearch(""); setCustomLocation(""); filterBy("all"); }}
-                      className="px-5 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-100">
-                      <i className="fas fa-globe mr-2"></i> Browse All
+                      className="mt-6 px-6 py-3 bg-[#062c24] text-white rounded-xl text-[10px] font-black uppercase hover:bg-emerald-800 transition-all shadow-lg">
+                      <i className="fas fa-globe mr-2"></i> Browse All Locations
                     </button>
-                  </>
+                  </div>
                 ) : (
-                  <>
-                    <i className="fas fa-store text-4xl text-slate-200 mb-4 block"></i>
-                    <p className="text-xs font-black text-slate-400 uppercase mb-2">No active hubs yet</p>
-                  </>
+                  <div className="max-w-sm mx-auto">
+                    <div className="text-5xl mb-4">🏕️</div>
+                    <p className="text-sm font-black text-slate-500 mb-2">No active hubs yet</p>
+                    <p className="text-xs text-slate-400 mb-4">Be the first vendor in your area!</p>
+                    <Link href="/register"
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-emerald-600 shadow-lg">
+                      <i className="fas fa-plus"></i> Join as Vendor
+                    </Link>
+                  </div>
                 )}
               </div>
             ) : (

@@ -274,7 +274,7 @@ function MockupBanner() {
               <p className="text-sm font-black">This could be YOUR store!</p>
             </div>
           </div>
-          <Link href="/register-vendor" className="bg-white text-indigo-600 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-all shadow-lg flex items-center gap-2">
+          <Link href="/register" className="bg-white text-indigo-600 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-all shadow-lg flex items-center gap-2">
             <i className="fas fa-rocket"></i>
             Register Now
           </Link>
@@ -286,7 +286,7 @@ function MockupBanner() {
 
 // Mock-up vendor ID constant
 const MOCKUP_VENDOR_ID = "UHdf5wMhsPbwi7qFGPSloXGdbu53";
-const ADMIN_WHATSAPP = "601136904336";
+const ADMIN_WHATSAPP = "6011136904336";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN SHOP PAGE
@@ -345,17 +345,43 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
 
   useEffect(() => {
     const v = searchParams.get("v");
-    if (v) { setVendorId(v); }
-    else if (slug) { lookupSlug(slug); }
-    else { window.location.href = "/directory"; }
+    if (v) { 
+      // Direct vendor ID from query param
+      setVendorId(v); 
+    } else if (slug === "_") {
+      // Special route /shop/_/vendorId - get vendorId from next path segment
+      // This is handled by the redirect page, but just in case
+      window.location.href = "/directory";
+    } else if (slug) { 
+      // Check if slug is actually a vendorId (for /shop/_/[vendorId] route)
+      // Or lookup by slug name
+      lookupSlugOrId(slug); 
+    } else { 
+      window.location.href = "/directory"; 
+    }
   }, [slug, searchParams]);
 
-  async function lookupSlug(slug: string) {
+  async function lookupSlugOrId(slugOrId: string) {
     try {
-      const snap = await getDocs(query(collection(db, "vendors"), where("slug", "==", slug)));
-      if (!snap.empty) setVendorId(snap.docs[0].id);
-      else window.location.href = "/directory";
-    } catch { window.location.href = "/directory"; }
+      // First try to find by slug
+      const snap = await getDocs(query(collection(db, "vendors"), where("slug", "==", slugOrId)));
+      if (!snap.empty) {
+        setVendorId(snap.docs[0].id);
+        return;
+      }
+      
+      // If not found by slug, check if it's a direct vendor ID
+      const directSnap = await getDoc(doc(db, "vendors", slugOrId));
+      if (directSnap.exists()) {
+        setVendorId(slugOrId);
+        return;
+      }
+      
+      // Not found at all
+      window.location.href = "/directory";
+    } catch { 
+      window.location.href = "/directory"; 
+    }
   }
 
   useEffect(() => {
