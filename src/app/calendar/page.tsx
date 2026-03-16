@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { db, auth } from "@/lib/firebase";
 import {
@@ -22,7 +22,7 @@ type Booking = {
   id: string; itemId?: string; qty?: number;
   start: string; end: string; type?: string;
   customer?: string; phone?: string; reason?: string;
-  blockId?: string; // Groups time-off entries together
+  blockId?: string;
 };
 
 type GroupedEntry = {
@@ -38,25 +38,26 @@ type GroupedEntry = {
   blockId?: string;
 };
 
-type WeeklyOff = {
-  [key: number]: boolean; // 0-6 for Sun-Sat
-};
+type WeeklyOff = { [key: number]: boolean };
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════
 
 const DAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HELPER FUNCTIONS
+// HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
 
 function calculateNights(start: string, end: string): number {
-  const s = new Date(start);
-  const e = new Date(end);
-  const diff = Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
+  const diff = Math.round(
+    (new Date(end).getTime() - new Date(start).getTime()) / 86400000
+  );
   return Math.max(1, diff + 1);
 }
 
@@ -69,76 +70,70 @@ function generateId(): string {
   return Math.random().toString(36).substr(2, 9);
 }
 
+function getToday(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
-// SWIPEABLE CARD COMPONENT
+// SWIPEABLE CARD
 // ═══════════════════════════════════════════════════════════════════════════
 
-function SwipeableCard({ 
-  children, 
-  onEdit, 
+function SwipeableCard({
+  children,
+  onEdit,
   onDelete,
   onClick,
-}: { 
+}: {
   children: React.ReactNode;
   onEdit: () => void;
   onDelete: () => void;
   onClick: () => void;
 }) {
   const [translateX, setTranslateX] = useState(0);
-  const [startX, setStartX] = useState(0);
-  const [swiping, setSwiping] = useState(false);
+  const startXRef = useRef(0);
+  const swipingRef = useRef(false);
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    setStartX(e.touches[0].clientX);
-    setSwiping(true);
+    startXRef.current = e.touches[0].clientX;
+    swipingRef.current = true;
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!swiping) return;
-    const diff = e.touches[0].clientX - startX;
-    const limited = Math.max(-80, Math.min(80, diff));
-    setTranslateX(limited);
+    if (!swipingRef.current) return;
+    const diff = e.touches[0].clientX - startXRef.current;
+    setTranslateX(Math.max(-80, Math.min(80, diff)));
   };
 
   const handleTouchEnd = () => {
-    setSwiping(false);
-    if (translateX > 60) {
-      onEdit();
-      setTranslateX(0);
-    } else if (translateX < -60) {
-      onDelete();
-      setTranslateX(0);
-    } else {
-      setTranslateX(0);
-    }
-  };
-
-  const handleClick = () => {
-    if (Math.abs(translateX) < 10) {
-      onClick();
-    }
+    swipingRef.current = false;
+    if (translateX > 60) { onEdit(); }
+    else if (translateX < -60) { onDelete(); }
+    setTranslateX(0);
   };
 
   return (
     <div className="relative overflow-hidden rounded-2xl mb-2">
-      {/* Background actions */}
+      {/* Swipe action backgrounds */}
       <div className="absolute inset-0 flex">
-        <div className="flex-1 bg-blue-500 flex items-center pl-4">
-          <i className="fas fa-pen text-white"></i>
+        <div className="flex-1 bg-blue-500 flex items-center px-4">
+          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
         </div>
-        <div className="flex-1 bg-red-500 flex items-center justify-end pr-4">
-          <i className="fas fa-trash text-white"></i>
+        <div className="flex-1 bg-red-500 flex items-center justify-end px-4">
+          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
         </div>
       </div>
-      
-      {/* Card content */}
-      <div 
-        className="relative bg-white transition-transform duration-200 ease-out"
+      {/* Card */}
+      <div
+        className="relative bg-white transition-transform duration-150 ease-out"
         style={{ transform: `translateX(${translateX}px)` }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        onClick={handleClick}
+        onClick={() => { if (Math.abs(translateX) < 10) onClick(); }}
       >
         {children}
       </div>
@@ -147,52 +142,57 @@ function SwipeableCard({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MAIN CALENDAR COMPONENT
+// MAIN PAGE
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function CalendarPage() {
-  // Auth & data state
+  // ── Auth & Data ──
   const [vendorId, setVendorId] = useState<string | null>(null);
   const [allGear, setAllGear] = useState<GearItem[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [weeklyOff, setWeeklyOff] = useState<WeeklyOff>({});
   const [loading, setLoading] = useState(true);
 
-  // Calendar state
+  // ── Calendar ──
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const datePanelRef = useRef<HTMLDivElement>(null);
 
-  // Modal states
+  // ── Modals ──
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<GroupedEntry | null>(null);
   const [isEditing, setIsEditing] = useState(false);
 
-  // Add form state
+  // ── Add Wizard ──
   const [addType, setAddType] = useState<"booking" | "block">("booking");
   const [addStep, setAddStep] = useState(1);
   const [dateRange, setDateRange] = useState<[string, string]>(["", ""]);
   const [custName, setCustName] = useState("");
   const [custPhone, setCustPhone] = useState("");
   const [blockReason, setBlockReason] = useState("");
-  const [isRecurring, setIsRecurring] = useState(false);
-  const [recurringDays, setRecurringDays] = useState<number[]>([]);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
 
-  // Toast
+  // ── Toast ──
   const [toast, setToast] = useState<string | null>(null);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // AUTH & DATA LOADING
+  // AUTH & DATA
   // ═══════════════════════════════════════════════════════════════════════════
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const overrideVid = params.get("v");
+
     const unsub = onAuthStateChanged(auth, async (u) => {
-      if (!u) {
-        window.location.href = "/store";
-        return;
-      }
+      if (!u) { window.location.href = "/store"; return; }
       try {
+        // Admin override mode — vendorId passed as query param
+        if (overrideVid) {
+          setVendorId(overrideVid);
+          await loadData(overrideVid);
+          return;
+        }
         const snap = await getDocs(query(collection(db, "vendors"), where("owner_uid", "==", u.uid)));
         if (!snap.empty) {
           const vid = snap.docs[0].id;
@@ -211,22 +211,15 @@ export default function CalendarPage() {
 
   async function loadData(vid: string) {
     try {
-      // Load gear
       const gSnap = await getDocs(query(collection(db, "gear"), where("vendorId", "==", vid)));
-      const gear = gSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted);
-      setAllGear(gear);
+      setAllGear(gSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted));
 
-      // Load bookings/availability
       const aSnap = await getDocs(collection(db, "vendors", vid, "availability"));
-      const bks = aSnap.docs.map(d => ({ id: d.id, ...d.data() } as Booking)).filter(b => b.start && b.end);
-      setBookings(bks);
+      setBookings(aSnap.docs.map(d => ({ id: d.id, ...d.data() } as Booking)).filter(b => b.start && b.end));
 
-      // Load weekly off days
       try {
         const wSnap = await getDoc(doc(db, "vendors", vid, "settings", "weeklyOff"));
-        if (wSnap.exists()) {
-          setWeeklyOff(wSnap.data() as WeeklyOff);
-        }
+        setWeeklyOff(wSnap.exists() ? (wSnap.data() as WeeklyOff) : {});
       } catch {
         setWeeklyOff({});
       }
@@ -245,34 +238,26 @@ export default function CalendarPage() {
   const month = currentDate.getMonth();
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const today = new Date().toISOString().split("T")[0];
-
-  function prevMonth() {
-    setCurrentDate(new Date(year, month - 1, 1));
-    setSelectedDate(null);
-  }
-
-  function nextMonth() {
-    setCurrentDate(new Date(year, month + 1, 1));
-    setSelectedDate(null);
-  }
+  const today = getToday();
 
   function getDateStr(day: number): string {
     return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   }
 
+  function isWeeklyOffDay(dateStr: string): boolean {
+    return weeklyOff[new Date(dateStr).getDay()] === true;
+  }
+
   function getEntriesForDate(dateStr: string): GroupedEntry[] {
     const dayBookings = bookings.filter(b => dateStr >= b.start && dateStr <= b.end);
-    
-    // Group by customer/blockId
     const groups: Record<string, GroupedEntry> = {};
-    
+
     dayBookings.forEach(b => {
       const isBlock = b.type === "block";
-      const key = isBlock 
+      const key = isBlock
         ? `block-${b.blockId || b.id}-${b.start}-${b.end}`
         : `booking-${b.customer || "unknown"}-${b.start}-${b.end}`;
-      
+
       if (!groups[key]) {
         groups[key] = {
           id: b.blockId || b.id,
@@ -287,7 +272,6 @@ export default function CalendarPage() {
           blockId: b.blockId,
         };
       }
-      
       const item = allGear.find(g => g.id === b.itemId);
       if (item) {
         groups[key].items.push({
@@ -298,91 +282,52 @@ export default function CalendarPage() {
         });
       }
     });
-    
+
     return Object.values(groups);
   }
 
-  function hasEntriesOnDate(dateStr: string): { hasBooking: boolean; hasBlock: boolean } {
+  function hasMarksOnDate(dateStr: string): { hasBooking: boolean; hasBlock: boolean } {
     const entries = bookings.filter(b => dateStr >= b.start && dateStr <= b.end);
     return {
       hasBooking: entries.some(b => b.type !== "block"),
-      hasBlock: entries.some(b => b.type === "block"),
+      hasBlock: entries.some(b => b.type === "block") || isWeeklyOffDay(dateStr),
     };
   }
 
-  function isWeeklyOffDay(dateStr: string): boolean {
-    const d = new Date(dateStr);
-    return weeklyOff[d.getDay()] === true;
-  }
-
   // ═══════════════════════════════════════════════════════════════════════════
-  // CRUD OPERATIONS
+  // CRUD
   // ═══════════════════════════════════════════════════════════════════════════
 
   async function saveEntry() {
     if (!vendorId) return;
-    if (!dateRange[0]) {
-      showToast("Please select dates");
-      return;
-    }
+    if (!dateRange[0]) { showToast("Please select dates"); return; }
 
-    const batch = writeBatch(db);
     const start = dateRange[0];
     const end = dateRange[1] || dateRange[0];
+    const batch = writeBatch(db);
 
     if (addType === "block") {
-      // Time Off - block ALL items with single blockId
       const blockId = generateId();
-      
-      if (isRecurring && recurringDays.length > 0) {
-        // Save recurring days
-        await setDoc(doc(db, "vendors", vendorId, "settings", "weeklyOff"), {
-          ...weeklyOff,
-          ...Object.fromEntries(recurringDays.map(d => [d, true])),
+      allGear.forEach(gear => {
+        const ref = doc(collection(db, "vendors", vendorId, "availability"));
+        batch.set(ref, {
+          itemId: gear.id, qty: gear.stock,
+          start, end, type: "block",
+          reason: blockReason || "Time Off",
+          blockId, createdAt: new Date().toISOString(),
         });
-        setWeeklyOff(prev => ({
-          ...prev,
-          ...Object.fromEntries(recurringDays.map(d => [d, true])),
-        }));
-      } else {
-        // One-time block for all items
-        allGear.forEach(gear => {
-          const ref = doc(collection(db, "vendors", vendorId, "availability"));
-          batch.set(ref, {
-            itemId: gear.id,
-            qty: gear.stock,
-            start,
-            end,
-            type: "block",
-            reason: blockReason || "Time Off",
-            blockId,
-            createdAt: new Date().toISOString(),
-          });
-        });
-      }
+      });
     } else {
-      // Booking - specific items
       const hasItems = Object.values(quantities).some(q => q > 0);
-      if (!hasItems) {
-        showToast("Please select at least 1 item");
-        return;
-      }
-      if (!custName) {
-        showToast("Please enter customer name");
-        return;
-      }
+      if (!hasItems) { showToast("Please select at least 1 item"); return; }
+      if (!custName.trim()) { showToast("Please enter customer name"); return; }
 
       Object.entries(quantities).forEach(([itemId, qty]) => {
         if (qty > 0) {
           const ref = doc(collection(db, "vendors", vendorId, "availability"));
           batch.set(ref, {
-            itemId,
-            qty,
-            start,
-            end,
-            type: "booking",
-            customer: custName,
-            phone: custPhone,
+            itemId, qty, start, end, type: "booking",
+            customer: custName.trim(), phone: custPhone.trim(),
             createdAt: new Date().toISOString(),
           });
         }
@@ -394,97 +339,78 @@ export default function CalendarPage() {
       await loadData(vendorId);
       resetForm();
       setShowAddModal(false);
-      showToast(addType === "block" ? "Time off saved!" : "Booking saved!");
+      showToast(addType === "block" ? "Dates blocked!" : "Booking saved!");
     } catch (e) {
-      console.error("Error saving:", e);
-      showToast("Error saving entry");
+      console.error("Save error:", e);
+      showToast("Error saving — please try again");
     }
   }
 
   async function deleteEntry(entry: GroupedEntry) {
     if (!vendorId) return;
     if (!confirm("Delete this entry?")) return;
-
     try {
       if (entry.type === "block" && entry.blockId) {
-        // Delete all items with same blockId
         const toDelete = bookings.filter(b => b.blockId === entry.blockId);
-        for (const b of toDelete) {
-          await deleteDoc(doc(db, "vendors", vendorId, "availability", b.id));
-        }
+        for (const b of toDelete) await deleteDoc(doc(db, "vendors", vendorId, "availability", b.id));
       } else {
-        // Delete individual booking items
-        for (const item of entry.items) {
-          await deleteDoc(doc(db, "vendors", vendorId, "availability", item.bookingId));
-        }
+        for (const item of entry.items) await deleteDoc(doc(db, "vendors", vendorId, "availability", item.bookingId));
       }
-      
       await loadData(vendorId);
       setShowDetailModal(false);
       setSelectedEntry(null);
       showToast("Entry deleted");
     } catch (e) {
-      console.error("Error deleting:", e);
+      console.error("Delete error:", e);
       showToast("Error deleting entry");
     }
   }
 
   async function updateEntry() {
     if (!vendorId || !selectedEntry) return;
-
     try {
       if (selectedEntry.type === "block") {
-        // Update all items with same blockId
         const toUpdate = bookings.filter(b => b.blockId === selectedEntry.blockId);
         for (const b of toUpdate) {
-          await updateDoc(doc(db, "vendors", vendorId, "availability", b.id), {
-            reason: blockReason,
-          });
+          await updateDoc(doc(db, "vendors", vendorId, "availability", b.id), { reason: blockReason });
         }
       } else {
-        // Update customer info on all booking items
         for (const item of selectedEntry.items) {
           await updateDoc(doc(db, "vendors", vendorId, "availability", item.bookingId), {
-            customer: custName,
-            phone: custPhone,
+            customer: custName.trim(), phone: custPhone.trim(),
           });
         }
       }
-
       await loadData(vendorId);
       setIsEditing(false);
       setShowDetailModal(false);
       showToast("Entry updated");
     } catch (e) {
-      console.error("Error updating:", e);
+      console.error("Update error:", e);
       showToast("Error updating entry");
     }
   }
 
   async function toggleWeeklyOff(day: number) {
     if (!vendorId) return;
-    
-    const newWeeklyOff = { ...weeklyOff, [day]: !weeklyOff[day] };
-    
+    const updated = { ...weeklyOff, [day]: !weeklyOff[day] };
     try {
-      await setDoc(doc(db, "vendors", vendorId, "settings", "weeklyOff"), newWeeklyOff);
-      setWeeklyOff(newWeeklyOff);
-      showToast(newWeeklyOff[day] ? `${DAYS_SHORT[day]} marked as off` : `${DAYS_SHORT[day]} is now available`);
+      await setDoc(doc(db, "vendors", vendorId, "settings", "weeklyOff"), updated);
+      setWeeklyOff(updated);
+      showToast(updated[day] ? `${DAYS_SHORT[day]} set as rest day` : `${DAYS_SHORT[day]} now available`);
     } catch (e) {
-      console.error("Error updating weekly off:", e);
+      console.error("Weekly off error:", e);
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FORM HELPERS
+  // ═══════════════════════════════════════════════════════════════════════════
+
   function resetForm() {
-    setAddStep(1);
-    setAddType("booking");
-    setDateRange(["", ""]);
-    setCustName("");
-    setCustPhone("");
-    setBlockReason("");
-    setIsRecurring(false);
-    setRecurringDays([]);
-    setQuantities({});
+    setAddStep(1); setAddType("booking");
+    setDateRange(["", ""]); setCustName(""); setCustPhone("");
+    setBlockReason(""); setQuantities({});
   }
 
   function showToast(msg: string) {
@@ -494,534 +420,595 @@ export default function CalendarPage() {
 
   function openEditMode(entry: GroupedEntry) {
     setSelectedEntry(entry);
-    if (entry.type === "block") {
-      setBlockReason(entry.reason || "");
-    } else {
-      setCustName(entry.customer || "");
-      setCustPhone(entry.phone || "");
-    }
+    if (entry.type === "block") setBlockReason(entry.reason || "");
+    else { setCustName(entry.customer || ""); setCustPhone(entry.phone || ""); }
     setIsEditing(true);
+    setShowDetailModal(true);
   }
 
-  // Selected date entries
+  function handleSelectDate(dateStr: string) {
+    setSelectedDate(prev => prev === dateStr ? null : dateStr);
+    setTimeout(() => datePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 60);
+  }
+
+  // ── Derived ──
   const selectedEntries = selectedDate ? getEntriesForDate(selectedDate) : [];
   const categories = Array.from(new Set(allGear.map(g => g.category || (g.type === "package" ? "Packages" : "Add-ons")))).sort();
+  const totalAddSteps = addType === "booking" ? 3 : 2;
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // RENDER
+  // LOADING
   // ═══════════════════════════════════════════════════════════════════════════
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-[#f5f4f1] flex items-center justify-center">
         <div className="text-center">
-          <i className="fas fa-spinner fa-spin text-emerald-500 text-3xl mb-3"></i>
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Calendar...</p>
+          <svg className="w-8 h-8 text-emerald-500 mx-auto mb-3 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Loading Calendar...</p>
         </div>
       </div>
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════════════════════════
+
   return (
-    <div className="min-h-screen bg-slate-50 pb-24" style={{ fontFamily: "'Inter', sans-serif" }}>
-      
-      {/* Header */}
-      <header className="bg-white border-b border-slate-100 px-4 py-4 sticky top-0 z-30">
-        <div className="max-w-lg mx-auto flex items-center justify-between">
-          <Link href="/store" className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 hover:text-[#062c24] transition-colors">
-            <i className="fas fa-arrow-left"></i>
-          </Link>
-          <div className="text-center">
-            <h1 className="text-lg font-black text-[#062c24]">{MONTHS[month]} {year}</h1>
-          </div>
-          <div className="w-10"></div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#f5f4f1]" style={{ fontFamily: "'DM Sans', 'Inter', sans-serif" }}>
+      <div className="w-full max-w-lg mx-auto min-h-screen flex flex-col">
 
-      <div className="max-w-lg mx-auto px-4 py-4">
-        
-        {/* Weekly Off Days */}
-        <div className="bg-white rounded-2xl border border-slate-100 p-4 mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Weekly Off Days</p>
-            <p className="text-[9px] text-slate-300">Tap to toggle</p>
-          </div>
-          <div className="flex justify-between">
-            {DAYS_SHORT.map((day, idx) => (
+        {/* ── HEADER ── */}
+        <header className="bg-[#062c24] px-4 py-3 sticky top-0 z-30 flex-shrink-0">
+          <div className="flex items-center justify-between gap-2">
+            <Link
+              href="/store"
+              className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors flex-shrink-0"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </Link>
+
+            <div className="flex items-center gap-2 flex-shrink-0">
               <button
-                key={day}
-                onClick={() => toggleWeeklyOff(idx)}
-                className={`w-10 h-10 rounded-xl text-[10px] font-black uppercase transition-all ${
-                  weeklyOff[idx]
-                    ? "bg-red-500 text-white shadow-lg shadow-red-500/30"
-                    : "bg-slate-50 text-slate-400 hover:bg-slate-100"
-                }`}
+                onClick={() => { setCurrentDate(new Date(year, month - 1, 1)); setSelectedDate(null); }}
+                className="w-8 h-8 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors flex items-center justify-center"
               >
-                {day}
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
               </button>
-            ))}
+              <span className="text-white font-bold text-[15px] tracking-tight min-w-[120px] text-center truncate">
+                {MONTHS[month]} {year}
+              </span>
+              <button
+                onClick={() => { setCurrentDate(new Date(year, month + 1, 1)); setSelectedDate(null); }}
+                className="w-8 h-8 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors flex items-center justify-center"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="w-9 flex-shrink-0" />
           </div>
-        </div>
+        </header>
 
-        {/* Calendar Grid */}
-        <div className="bg-white rounded-2xl border border-slate-100 p-4 mb-4">
-          {/* Month Navigation */}
-          <div className="flex items-center justify-between mb-4">
-            <button onClick={prevMonth} className="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition-all">
-              <i className="fas fa-chevron-left"></i>
-            </button>
-            <h2 className="text-sm font-black text-[#062c24] uppercase tracking-widest">
-              {MONTHS[month]} {year}
-            </h2>
-            <button onClick={nextMonth} className="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition-all">
-              <i className="fas fa-chevron-right"></i>
-            </button>
-          </div>
+        {/* ── SCROLLABLE CONTENT ── */}
+        <div className="flex-1 overflow-y-auto pb-24 px-3 pt-3 flex flex-col gap-3">
 
-          {/* Day Headers */}
-          <div className="grid grid-cols-7 mb-2">
-            {DAYS_SHORT.map(day => (
-              <div key={day} className="text-center text-[9px] font-bold text-slate-300 uppercase py-2">
-                {day}
-              </div>
-            ))}
-          </div>
-
-          {/* Calendar Days */}
-          <div className="grid grid-cols-7 gap-1">
-            {/* Empty cells for first week */}
-            {Array.from({ length: firstDay }).map((_, i) => (
-              <div key={`empty-${i}`} className="aspect-square"></div>
-            ))}
-            
-            {/* Day cells */}
-            {Array.from({ length: daysInMonth }).map((_, i) => {
-              const day = i + 1;
-              const dateStr = getDateStr(day);
-              const { hasBooking, hasBlock } = hasEntriesOnDate(dateStr);
-              const isOff = isWeeklyOffDay(dateStr);
-              const isToday = dateStr === today;
-              const isSelected = dateStr === selectedDate;
-              const isPast = dateStr < today;
-
-              return (
+          {/* ── WEEKLY REST DAYS ── */}
+          <div className="bg-white rounded-2xl border border-black/[0.07] p-4">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">🌙 Weekly Rest Days</p>
+            <p className="text-[10px] text-slate-300 mb-3">Tap to toggle — active days block all inventory</p>
+            <div className="grid grid-cols-7 gap-1">
+              {DAYS_SHORT.map((day, idx) => (
                 <button
                   key={day}
-                  onClick={() => setSelectedDate(dateStr)}
-                  disabled={isPast}
-                  className={`aspect-square rounded-xl flex flex-col items-center justify-center relative transition-all ${
-                    isSelected
-                      ? "bg-[#062c24] text-white shadow-lg"
-                      : isToday
-                      ? "bg-emerald-50 text-emerald-600 ring-2 ring-emerald-500"
-                      : isOff
-                      ? "bg-red-50 text-red-400"
-                      : isPast
-                      ? "text-slate-200"
-                      : "hover:bg-slate-50 text-slate-600"
+                  onClick={() => toggleWeeklyOff(idx)}
+                  className={`flex flex-col items-center justify-center rounded-xl py-2 px-0 gap-1 transition-all active:scale-95 ${
+                    weeklyOff[idx]
+                      ? "bg-red-500 text-white"
+                      : "bg-slate-50 text-slate-400 hover:bg-slate-100"
                   }`}
                 >
-                  <span className={`text-sm font-bold ${isSelected ? "text-white" : ""}`}>{day}</span>
-                  
-                  {/* Indicators */}
-                  {(hasBooking || hasBlock || isOff) && !isSelected && (
-                    <div className="flex gap-0.5 mt-0.5">
-                      {hasBooking && <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>}
-                      {(hasBlock || isOff) && <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>}
-                    </div>
-                  )}
+                  <span className="text-[10px] font-bold uppercase leading-none">{day.slice(0, 1)}</span>
+                  <span className={`text-[10px] leading-none transition-opacity ${weeklyOff[idx] ? "opacity-100" : "opacity-0"}`}>
+                    💤
+                  </span>
                 </button>
-              );
-            })}
-          </div>
-
-          {/* Legend */}
-          <div className="flex justify-center gap-4 mt-4 pt-4 border-t border-slate-50">
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-              <span className="text-[9px] font-bold text-slate-400 uppercase">Booking</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-red-500"></div>
-              <span className="text-[9px] font-bold text-slate-400 uppercase">Time Off</span>
+              ))}
             </div>
           </div>
-        </div>
 
-        {/* Selected Date Entries */}
-        {selectedDate && (
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-black text-[#062c24]">
-                {formatDate(selectedDate)}
-                {selectedDate === today && <span className="ml-2 text-[9px] font-bold text-emerald-500 uppercase">Today</span>}
-              </h3>
-              <span className="text-[9px] font-bold text-slate-300 uppercase">
-                {selectedEntries.length} {selectedEntries.length === 1 ? "Entry" : "Entries"}
-              </span>
+          {/* ── CALENDAR GRID ── */}
+          <div className="bg-white rounded-2xl border border-black/[0.07] p-4">
+            {/* Day headers */}
+            <div className="grid grid-cols-7 mb-1">
+              {DAYS_SHORT.map(d => (
+                <div key={d} className="text-center text-[9px] font-bold text-slate-300 uppercase py-1 truncate">
+                  {d.slice(0, 1)}
+                </div>
+              ))}
             </div>
 
-            {selectedEntries.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-slate-100 p-6 text-center">
-                <i className="fas fa-calendar-check text-slate-200 text-2xl mb-2"></i>
-                <p className="text-xs font-bold text-slate-400">No entries for this date</p>
-              </div>
-            ) : (
-              <div className="space-y-0">
-                {selectedEntries.map(entry => (
-                  <SwipeableCard
-                    key={entry.id}
-                    onEdit={() => openEditMode(entry)}
-                    onDelete={() => deleteEntry(entry)}
-                    onClick={() => {
-                      setSelectedEntry(entry);
-                      setShowDetailModal(true);
-                    }}
+            {/* Day cells */}
+            <div className="grid grid-cols-7 gap-[3px]">
+              {Array.from({ length: firstDay }).map((_, i) => (
+                <div key={`e-${i}`} />
+              ))}
+              {Array.from({ length: daysInMonth }).map((_, i) => {
+                const day = i + 1;
+                const dateStr = getDateStr(day);
+                const isPast = dateStr < today;
+                const isToday = dateStr === today;
+                const isSel = dateStr === selectedDate;
+                const isOff = isWeeklyOffDay(dateStr);
+                const { hasBooking, hasBlock } = hasMarksOnDate(dateStr);
+
+                return (
+                  <button
+                    key={day}
+                    onClick={() => handleSelectDate(dateStr)}
+                    className={[
+                      "aspect-square rounded-[9px] flex flex-col items-center justify-center transition-all active:scale-90 min-w-0 overflow-hidden",
+                      isSel ? "bg-[#062c24]" :
+                      isToday ? "bg-emerald-100 ring-1 ring-emerald-400" :
+                      isOff ? "bg-red-50" :
+                      isPast ? "" :
+                      "hover:bg-slate-50",
+                    ].filter(Boolean).join(" ")}
                   >
-                    <div className={`p-4 border rounded-2xl ${
-                      entry.type === "block" 
-                        ? "bg-red-50 border-red-100" 
-                        : "bg-white border-slate-100"
-                    }`}>
-                      <div className="flex items-start gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                          entry.type === "block"
-                            ? "bg-red-100 text-red-500"
-                            : "bg-blue-100 text-blue-500"
-                        }`}>
-                          <i className={`fas ${entry.type === "block" ? "fa-ban" : "fa-user"}`}></i>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-black uppercase truncate ${
-                            entry.type === "block" ? "text-red-700" : "text-[#062c24]"
-                          }`}>
-                            {entry.type === "block" ? (entry.reason || "Time Off") : entry.customer}
-                          </p>
-                          <p className={`text-[10px] ${entry.type === "block" ? "text-red-400" : "text-slate-400"}`}>
-                            {entry.type === "block" 
-                              ? `All items • ${entry.nights} ${entry.nights === 1 ? "day" : "days"}`
-                              : `${entry.phone || "No phone"} • ${entry.items.length} items • ${entry.nights} ${entry.nights === 1 ? "night" : "nights"}`
-                            }
-                          </p>
-                        </div>
-                        <i className="fas fa-chevron-right text-[10px] text-slate-300 mt-3"></i>
+                    <span className={[
+                      "text-[11px] sm:text-[13px] font-medium leading-none",
+                      isSel ? "text-white font-bold" :
+                      isToday ? "text-emerald-700 font-bold" :
+                      isOff ? "text-red-500" :
+                      isPast ? "text-slate-200" :
+                      "text-slate-700",
+                    ].filter(Boolean).join(" ")}>
+                      {day}
+                    </span>
+
+                    {/* Bar indicators */}
+                    {(hasBooking || hasBlock) && !isSel && (
+                      <div className="flex gap-[2px] mt-[3px]">
+                        {hasBooking && <div className="w-[10px] sm:w-[12px] h-[3px] rounded-full bg-blue-500" />}
+                        {hasBlock && <div className="w-[10px] sm:w-[12px] h-[3px] rounded-full bg-red-500" />}
+                      </div>
+                    )}
+
+                    {/* Zzz for off days */}
+                    {isOff && !isSel && (
+                      <span className="text-[8px] leading-none mt-[2px]">💤</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Legend */}
+            <div className="flex justify-center gap-4 mt-3 pt-3 border-t border-slate-50">
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-[3px] rounded-full bg-blue-500" />
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Booking</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-[3px] rounded-full bg-red-500" />
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Time off / Rest</span>
+              </div>
+            </div>
+          </div>
+
+          {/* ── SELECTED DATE PANEL ── */}
+          <div ref={datePanelRef}>
+            {selectedDate && (
+              <div className="animate-[slideUp_0.18s_ease-out]">
+                {/* Panel header */}
+                <div className="flex items-center justify-between mb-2 gap-2 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+                    <span className="text-[15px] font-bold text-[#062c24] truncate">
+                      {formatDate(selectedDate)}
+                    </span>
+                    {selectedDate === today && (
+                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-md uppercase tracking-wide whitespace-nowrap flex-shrink-0">
+                        Today
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-400 bg-black/5 px-2 py-1 rounded-md whitespace-nowrap flex-shrink-0">
+                    {selectedEntries.length + (isWeeklyOffDay(selectedDate) ? 1 : 0)} {
+                      (selectedEntries.length + (isWeeklyOffDay(selectedDate) ? 1 : 0)) === 1 ? "entry" : "entries"
+                    }
+                  </span>
+                </div>
+
+                {/* Rest day card */}
+                {isWeeklyOffDay(selectedDate) && (
+                  <div className="bg-white rounded-2xl border border-black/[0.07] mb-2 overflow-hidden flex">
+                    <div className="w-1 bg-amber-400 flex-shrink-0" />
+                    <div className="flex items-center gap-3 p-3 flex-1 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center text-base flex-shrink-0">
+                        💤
+                      </div>
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <p className="text-[13px] font-bold text-amber-800 truncate">Rest Day — All Blocked</p>
+                        <p className="text-[11px] text-amber-600 truncate">Toggle in Weekly Rest Days above to remove</p>
                       </div>
                     </div>
-                  </SwipeableCard>
-                ))}
-                
-                <p className="text-center text-[9px] text-slate-300 mt-2">
-                  <i className="fas fa-hand-pointer mr-1"></i> Swipe left to delete, right to edit
-                </p>
+                  </div>
+                )}
+
+                {/* Entries */}
+                {selectedEntries.length === 0 && !isWeeklyOffDay(selectedDate) ? (
+                  <div className="bg-white rounded-2xl border border-black/[0.07] p-6 text-center">
+                    <div className="w-11 h-11 bg-slate-50 rounded-xl flex items-center justify-center mx-auto mb-2 text-xl">
+                      📅
+                    </div>
+                    <p className="text-[13px] font-bold text-slate-400">All clear!</p>
+                    <p className="text-[11px] text-slate-300 mt-1">No bookings or blocks on this date</p>
+                  </div>
+                ) : (
+                  <>
+                    {selectedEntries.map(entry => (
+                      <SwipeableCard
+                        key={entry.id}
+                        onEdit={() => openEditMode(entry)}
+                        onDelete={() => deleteEntry(entry)}
+                        onClick={() => { setSelectedEntry(entry); setIsEditing(false); setShowDetailModal(true); }}
+                      >
+                        <div className={`flex overflow-hidden ${entry.type === "block" ? "bg-red-50/60" : "bg-white"}`}>
+                          {/* Left accent bar */}
+                          <div className={`w-1 flex-shrink-0 ${entry.type === "block" ? "bg-red-500" : "bg-blue-500"}`} />
+                          <div className="flex items-center gap-3 p-3 flex-1 min-w-0 overflow-hidden">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm flex-shrink-0 ${
+                              entry.type === "block" ? "bg-red-100" : "bg-blue-100"
+                            }`}>
+                              {entry.type === "block" ? "🚫" : "👤"}
+                            </div>
+                            <div className="flex-1 min-w-0 overflow-hidden">
+                              <p className={`text-[13px] font-bold truncate ${
+                                entry.type === "block" ? "text-red-800" : "text-[#062c24]"
+                              }`}>
+                                {entry.type === "block" ? (entry.reason || "Time Off") : entry.customer}
+                              </p>
+                              <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                                {entry.type === "block"
+                                  ? `All items · ${entry.nights} day${entry.nights > 1 ? "s" : ""}`
+                                  : `${entry.phone || "No phone"} · ${entry.items.length} item${entry.items.length !== 1 ? "s" : ""} · ${entry.nights} night${entry.nights > 1 ? "s" : ""}`
+                                }
+                              </p>
+                            </div>
+                            <svg className="w-3 h-3 text-slate-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                            </svg>
+                          </div>
+                        </div>
+                      </SwipeableCard>
+                    ))}
+                    {selectedEntries.length > 0 && (
+                      <p className="text-center text-[10px] text-slate-300 mt-1 font-medium">
+                        ← swipe left to delete &nbsp;·&nbsp; swipe right to edit →
+                      </p>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>
-        )}
-      </div>
 
-      {/* FAB - Add Button */}
-      <button
-        onClick={() => {
-          if (selectedDate) {
-            setDateRange([selectedDate, selectedDate]);
-          }
-          setShowAddModal(true);
-        }}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-[#062c24] text-white rounded-full flex items-center justify-center shadow-2xl shadow-[#062c24]/30 hover:bg-emerald-700 transition-all z-40"
-      >
-        <i className="fas fa-plus text-xl"></i>
-      </button>
+        </div>{/* end scrollable content */}
 
-      {/* ═══════════════════════════════════════════════════════════════════════════
-          ADD MODAL - Step by Step Wizard
-          ═══════════════════════════════════════════════════════════════════════════ */}
+        {/* ── FAB ── */}
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 w-full max-w-lg px-3 pointer-events-none flex justify-end">
+          <button
+            onClick={() => {
+              if (selectedDate) setDateRange([selectedDate, selectedDate]);
+              setShowAddModal(true);
+            }}
+            className={`pointer-events-auto bg-[#062c24] text-white font-bold shadow-[0_4px_18px_rgba(6,44,36,0.38)] hover:bg-[#0d4a3a] active:scale-95 transition-all flex items-center gap-2 overflow-hidden whitespace-nowrap ${
+              selectedDate
+                ? "h-12 px-5 rounded-full text-[11px] uppercase tracking-wider max-w-[220px]"
+                : "w-13 h-13 w-[52px] h-[52px] rounded-full justify-center"
+            }`}
+          >
+            <span className="text-xl font-light leading-none flex-shrink-0">+</span>
+            {selectedDate && (
+              <span className="truncate">Add to {formatDate(selectedDate)}</span>
+            )}
+          </button>
+        </div>
+
+      </div>{/* end max-w wrapper */}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          ADD MODAL — WIZARD
+          ══════════════════════════════════════════════════════════════════════ */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-[#062c24]/90 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center">
-          <div className="bg-white w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl max-h-[90vh] flex flex-col">
-            
-            {/* Modal Header */}
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
+        <div
+          className="fixed inset-0 bg-[#062c24]/85 z-50 flex items-end justify-center"
+          onClick={e => { if (e.target === e.currentTarget) { setShowAddModal(false); resetForm(); } }}
+        >
+          <div className="bg-white w-full max-w-lg rounded-t-3xl max-h-[90vh] flex flex-col">
+
+            {/* Handle */}
+            <div className="w-8 h-1 bg-black/10 rounded-full mx-auto mt-3 flex-shrink-0" />
+
+            {/* Progress bar */}
+            <div className="mx-4 mt-3 h-[3px] bg-black/[0.07] rounded-full overflow-hidden flex-shrink-0">
+              <div
+                className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                style={{ width: `${Math.round((addStep / totalAddSteps) * 100)}%` }}
+              />
+            </div>
+
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-4 py-3 flex-shrink-0 gap-2 min-w-0">
+              <div className="flex items-center gap-3 min-w-0 overflow-hidden">
                 {addStep > 1 && (
-                  <button onClick={() => setAddStep(addStep - 1)} className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-[#062c24]">
-                    <i className="fas fa-arrow-left text-sm"></i>
+                  <button
+                    onClick={() => setAddStep(s => s - 1)}
+                    className="text-slate-400 hover:text-[#062c24] text-sm font-semibold whitespace-nowrap flex-shrink-0"
+                  >
+                    ← Back
                   </button>
                 )}
-                <div>
-                  <h3 className="text-base font-black text-[#062c24] uppercase">
-                    {addType === "booking" ? "New Booking" : "Time Off"}
-                  </h3>
-                  <p className="text-[9px] text-slate-400 uppercase tracking-widest">Step {addStep} of {addType === "booking" ? 3 : 2}</p>
-                </div>
+                <span className="text-[14px] font-bold text-[#062c24] truncate">
+                  {addType === "booking" ? "New Booking" : "Time Off"} · {addStep}/{totalAddSteps}
+                </span>
               </div>
-              <button onClick={() => { setShowAddModal(false); resetForm(); }} className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-red-500">
-                <i className="fas fa-times"></i>
+              <button
+                onClick={() => { setShowAddModal(false); resetForm(); }}
+                className="w-8 h-8 rounded-lg bg-slate-100 text-slate-400 hover:text-red-500 flex items-center justify-center flex-shrink-0"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
 
-            {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-4">
-              
-              {/* Step 1: Type & Dates */}
+            {/* Modal body */}
+            <div className="flex-1 overflow-y-auto px-4 pb-2">
+
+              {/* Step 1 — Type + Dates */}
               {addStep === 1 && (
                 <div className="space-y-4">
-                  {/* Type Toggle */}
                   <div>
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Entry Type</p>
+                    <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest mb-2">Entry Type</p>
                     <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => setAddType("booking")}
-                        className={`p-4 rounded-xl border-2 transition-all ${
-                          addType === "booking"
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-slate-100 hover:border-slate-200"
-                        }`}
-                      >
-                        <i className={`fas fa-user text-xl mb-2 ${addType === "booking" ? "text-blue-500" : "text-slate-300"}`}></i>
-                        <p className={`text-xs font-black uppercase ${addType === "booking" ? "text-blue-700" : "text-slate-400"}`}>Booking</p>
-                      </button>
-                      <button
-                        onClick={() => setAddType("block")}
-                        className={`p-4 rounded-xl border-2 transition-all ${
-                          addType === "block"
-                            ? "border-red-500 bg-red-50"
-                            : "border-slate-100 hover:border-slate-200"
-                        }`}
-                      >
-                        <i className={`fas fa-ban text-xl mb-2 ${addType === "block" ? "text-red-500" : "text-slate-300"}`}></i>
-                        <p className={`text-xs font-black uppercase ${addType === "block" ? "text-red-700" : "text-slate-400"}`}>Time Off</p>
-                      </button>
+                      {(["booking", "block"] as const).map(t => (
+                        <button
+                          key={t}
+                          onClick={() => setAddType(t)}
+                          className={`p-4 rounded-2xl border-2 flex flex-col items-center gap-2 transition-all ${
+                            addType === t
+                              ? t === "booking" ? "border-blue-500 bg-blue-50" : "border-red-500 bg-red-50"
+                              : "border-black/[0.07] hover:border-black/10"
+                          }`}
+                        >
+                          <span className="text-2xl">{t === "booking" ? "👤" : "🚫"}</span>
+                          <span className={`text-[11px] font-bold uppercase tracking-wide ${
+                            addType === t ? (t === "booking" ? "text-blue-700" : "text-red-700") : "text-slate-400"
+                          }`}>
+                            {t === "booking" ? "Booking" : "Time Off"}
+                          </span>
+                        </button>
+                      ))}
                     </div>
                   </div>
-
-                  {/* Date Selection */}
                   <div>
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Date Range</p>
+                    <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest mb-2">Date Range</p>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-[8px] text-slate-300 uppercase">Start</label>
+                        <label className="text-[8px] text-slate-300 uppercase tracking-wide block mb-1">Start</label>
                         <input
                           type="date"
                           value={dateRange[0]}
                           min={today}
                           onChange={e => setDateRange([e.target.value, dateRange[1] || e.target.value])}
-                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-[#062c24] outline-none focus:border-emerald-500"
+                          className="w-full p-3 bg-slate-50 border border-black/[0.07] rounded-xl text-sm font-bold text-[#062c24] outline-none focus:border-emerald-500 focus:bg-white transition-colors"
                         />
                       </div>
                       <div>
-                        <label className="text-[8px] text-slate-300 uppercase">End</label>
+                        <label className="text-[8px] text-slate-300 uppercase tracking-wide block mb-1">End</label>
                         <input
                           type="date"
                           value={dateRange[1]}
                           min={dateRange[0] || today}
                           onChange={e => setDateRange([dateRange[0], e.target.value])}
-                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-[#062c24] outline-none focus:border-emerald-500"
+                          className="w-full p-3 bg-slate-50 border border-black/[0.07] rounded-xl text-sm font-bold text-[#062c24] outline-none focus:border-emerald-500 focus:bg-white transition-colors"
                         />
                       </div>
                     </div>
                   </div>
-
-                  {/* Recurring Option (only for Time Off) */}
-                  {addType === "block" && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                      <label className="flex items-center gap-3 cursor-pointer mb-3">
-                        <input
-                          type="checkbox"
-                          checked={isRecurring}
-                          onChange={e => setIsRecurring(e.target.checked)}
-                          className="w-5 h-5 rounded accent-amber-500"
-                        />
-                        <span className="text-sm font-bold text-amber-800">Make this recurring weekly</span>
-                      </label>
-                      
-                      {isRecurring && (
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {DAYS_SHORT.map((day, idx) => (
-                            <button
-                              key={day}
-                              onClick={() => {
-                                setRecurringDays(prev => 
-                                  prev.includes(idx) 
-                                    ? prev.filter(d => d !== idx)
-                                    : [...prev, idx]
-                                );
-                              }}
-                              className={`px-3 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
-                                recurringDays.includes(idx)
-                                  ? "bg-amber-500 text-white"
-                                  : "bg-white text-amber-600 border border-amber-200"
-                              }`}
-                            >
-                              {day}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
               )}
 
-              {/* Step 2: Details (Booking: Customer Info, Block: Reason) */}
+              {/* Step 2 Booking — Customer info */}
               {addStep === 2 && addType === "booking" && (
-                <div className="space-y-4">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Customer Details</p>
+                <div className="space-y-3">
+                  <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Customer Details</p>
                   <input
                     type="text"
                     value={custName}
                     onChange={e => setCustName(e.target.value)}
-                    placeholder="Customer Name"
-                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-[#062c24] outline-none focus:border-emerald-500 placeholder:text-slate-300"
+                    placeholder="Customer name"
+                    className="w-full p-4 bg-slate-50 border border-black/[0.07] rounded-xl text-sm font-semibold text-[#062c24] outline-none focus:border-emerald-500 focus:bg-white placeholder:text-slate-300 transition-colors"
                   />
                   <input
                     type="tel"
                     value={custPhone}
                     onChange={e => setCustPhone(e.target.value)}
-                    placeholder="Phone Number"
-                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-[#062c24] outline-none focus:border-emerald-500 placeholder:text-slate-300"
+                    placeholder="Phone number"
+                    className="w-full p-4 bg-slate-50 border border-black/[0.07] rounded-xl text-sm font-semibold text-[#062c24] outline-none focus:border-emerald-500 focus:bg-white placeholder:text-slate-300 transition-colors"
                   />
                 </div>
               )}
 
+              {/* Step 2 Block — Reason */}
               {addStep === 2 && addType === "block" && (
-                <div className="space-y-4">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Reason (Optional)</p>
+                <div className="space-y-3">
+                  <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Reason (Optional)</p>
                   <input
                     type="text"
                     value={blockReason}
                     onChange={e => setBlockReason(e.target.value)}
-                    placeholder="e.g., Maintenance, Holiday, Personal"
-                    className="w-full p-4 bg-red-50 border border-red-200 rounded-xl text-sm font-bold text-red-700 outline-none focus:border-red-500 placeholder:text-red-300"
+                    placeholder="e.g. Maintenance, Holiday, Personal"
+                    className="w-full p-4 bg-red-50 border border-red-200 rounded-xl text-sm font-semibold text-red-700 outline-none focus:border-red-400 placeholder:text-red-300 transition-colors"
                   />
-                  <div className="bg-slate-50 rounded-xl p-4 text-center">
-                    <i className="fas fa-info-circle text-slate-300 mb-2"></i>
-                    <p className="text-xs text-slate-500">All items will be automatically blocked for these dates</p>
+                  <div className="bg-slate-50 rounded-xl p-4 flex items-start gap-3">
+                    <span className="text-base flex-shrink-0">💤</span>
+                    <p className="text-[12px] text-slate-500 leading-relaxed">
+                      All inventory items will be automatically blocked for these dates.
+                    </p>
                   </div>
                 </div>
               )}
 
-              {/* Step 3: Select Items (Booking only) */}
+              {/* Step 3 Booking — Select items */}
               {addStep === 3 && addType === "booking" && (
-                <div className="space-y-4">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Select Items</p>
-                  
-                  {categories.map(cat => {
-                    const items = allGear.filter(g => (g.category || (g.type === "package" ? "Packages" : "Add-ons")) === cat);
-                    return (
-                      <details key={cat} className="bg-slate-50 rounded-xl overflow-hidden" open>
-                        <summary className="p-3 flex justify-between items-center cursor-pointer">
-                          <span className="text-[10px] font-black text-[#062c24] uppercase">{cat}</span>
-                          <i className="fas fa-chevron-down text-slate-400 text-xs"></i>
-                        </summary>
-                        <div className="bg-white p-2 space-y-1">
-                          {items.map(item => (
-                            <div key={item.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50">
-                              <div className="flex items-center gap-3">
-                                <img src={item.img || "/pacak-khemah.png"} className="w-8 h-8 rounded-lg object-cover bg-slate-100" alt="" />
-                                <div>
-                                  <p className="text-xs font-bold text-[#062c24]">{item.name}</p>
-                                  <p className="text-[9px] text-slate-400">Stock: {item.stock}</p>
+                <div className="space-y-3">
+                  <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Select Items</p>
+                  {allGear.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-sm font-bold text-slate-400">No gear items yet</p>
+                      <p className="text-[11px] text-slate-300 mt-1">Add items in your inventory first</p>
+                    </div>
+                  ) : (
+                    categories.map(cat => {
+                      const items = allGear.filter(g => (g.category || (g.type === "package" ? "Packages" : "Add-ons")) === cat);
+                      return (
+                        <details key={cat} className="bg-slate-50 rounded-xl overflow-hidden" open>
+                          <summary className="px-3 py-2 flex justify-between items-center cursor-pointer">
+                            <span className="text-[10px] font-bold text-[#062c24] uppercase tracking-wide">{cat}</span>
+                          </summary>
+                          <div className="bg-white divide-y divide-slate-50">
+                            {items.map(item => (
+                              <div key={item.id} className="flex items-center justify-between p-3 gap-2 min-w-0">
+                                <div className="flex items-center gap-3 flex-1 min-w-0 overflow-hidden">
+                                  <img
+                                    src={item.img || "/pacak-khemah.png"}
+                                    className="w-8 h-8 rounded-lg object-cover bg-slate-100 flex-shrink-0"
+                                    alt=""
+                                  />
+                                  <div className="min-w-0 overflow-hidden">
+                                    <p className="text-[12px] font-bold text-[#062c24] truncate">{item.name}</p>
+                                    <p className="text-[10px] text-slate-400">Stock: {item.stock}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 flex-shrink-0">
+                                  <button
+                                    onClick={() => setQuantities(p => ({ ...p, [item.id]: Math.max(0, (p[item.id] || 0) - 1) }))}
+                                    className="w-7 h-7 rounded bg-white text-slate-400 hover:text-red-500 font-bold shadow-sm text-sm"
+                                  >−</button>
+                                  <span className="w-7 text-center text-[12px] font-bold text-[#062c24]">
+                                    {quantities[item.id] || 0}
+                                  </span>
+                                  <button
+                                    onClick={() => setQuantities(p => ({ ...p, [item.id]: Math.min(item.stock, (p[item.id] || 0) + 1) }))}
+                                    className="w-7 h-7 rounded bg-white text-slate-400 hover:text-emerald-500 font-bold shadow-sm text-sm"
+                                  >+</button>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-                                <button
-                                  onClick={() => setQuantities(prev => ({ ...prev, [item.id]: Math.max(0, (prev[item.id] || 0) - 1) }))}
-                                  className="w-8 h-8 rounded bg-white text-slate-400 hover:text-red-500 font-bold shadow-sm"
-                                >
-                                  −
-                                </button>
-                                <span className="w-8 text-center text-xs font-bold">{quantities[item.id] || 0}</span>
-                                <button
-                                  onClick={() => setQuantities(prev => ({ ...prev, [item.id]: Math.min(item.stock, (prev[item.id] || 0) + 1) }))}
-                                  className="w-8 h-8 rounded bg-white text-slate-400 hover:text-emerald-500 font-bold shadow-sm"
-                                >
-                                  +
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </details>
-                    );
-                  })}
+                            ))}
+                          </div>
+                        </details>
+                      );
+                    })
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-100 shrink-0">
-              {addStep < (addType === "booking" ? 3 : 2) ? (
+            {/* Modal footer */}
+            <div className="px-4 pt-2 pb-5 flex-shrink-0">
+              {addStep < totalAddSteps ? (
                 <button
-                  onClick={() => setAddStep(addStep + 1)}
+                  onClick={() => setAddStep(s => s + 1)}
                   disabled={addStep === 1 && !dateRange[0]}
-                  className="w-full py-4 bg-[#062c24] text-white rounded-xl font-black uppercase text-xs tracking-widest disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-800 transition-all"
+                  className="w-full py-4 bg-[#062c24] text-white rounded-2xl font-bold uppercase text-[11px] tracking-widest disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#0d4a3a] transition-all"
                 >
-                  Next <i className="fas fa-arrow-right ml-2"></i>
+                  Next →
                 </button>
               ) : (
                 <button
                   onClick={saveEntry}
-                  className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all ${
+                  className={`w-full py-4 rounded-2xl font-bold uppercase text-[11px] tracking-widest transition-all ${
                     addType === "block"
                       ? "bg-red-500 text-white hover:bg-red-600"
-                      : "bg-emerald-500 text-white hover:bg-emerald-600"
+                      : "bg-blue-500 text-white hover:bg-blue-600"
                   }`}
                 >
-                  <i className={`fas ${addType === "block" ? "fa-ban" : "fa-check"} mr-2`}></i>
-                  {addType === "block" ? "Block Dates" : "Save Booking"}
+                  {addType === "block" ? "🚫 Block Dates" : "✓ Save Booking"}
                 </button>
               )}
             </div>
+
           </div>
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════════
+      {/* ══════════════════════════════════════════════════════════════════════
           DETAIL MODAL
-          ═══════════════════════════════════════════════════════════════════════════ */}
+          ══════════════════════════════════════════════════════════════════════ */}
       {showDetailModal && selectedEntry && (
-        <div className="fixed inset-0 bg-[#062c24]/90 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center">
-          <div className="bg-white w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl max-h-[90vh] flex flex-col">
-            
+        <div
+          className="fixed inset-0 bg-[#062c24]/85 z-50 flex items-end justify-center"
+          onClick={e => { if (e.target === e.currentTarget) { setShowDetailModal(false); setSelectedEntry(null); setIsEditing(false); } }}
+        >
+          <div className="bg-white w-full max-w-lg rounded-t-3xl max-h-[90vh] flex flex-col">
+
+            {/* Handle */}
+            <div className="w-8 h-1 bg-black/10 rounded-full mx-auto mt-3 flex-shrink-0" />
+
+            {/* Accent bar */}
+            <div className={`h-1 mx-4 mt-3 rounded-full flex-shrink-0 ${selectedEntry.type === "block" ? "bg-red-500" : "bg-blue-500"}`} />
+
             {/* Header */}
-            <div className={`p-4 border-b ${selectedEntry.type === "block" ? "bg-red-50 border-red-100" : "border-slate-100"}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                    selectedEntry.type === "block" ? "bg-red-100 text-red-500" : "bg-blue-100 text-blue-500"
-                  }`}>
-                    <i className={`fas ${selectedEntry.type === "block" ? "fa-ban" : "fa-user"}`}></i>
-                  </div>
-                  <div>
-                    <h3 className={`text-base font-black uppercase ${selectedEntry.type === "block" ? "text-red-700" : "text-[#062c24]"}`}>
-                      {isEditing ? "Edit Entry" : (selectedEntry.type === "block" ? "Time Off" : "Booking Details")}
-                    </h3>
-                    <p className="text-[10px] text-slate-400">
-                      {formatDate(selectedEntry.start)} → {formatDate(selectedEntry.end)} • {selectedEntry.nights} {selectedEntry.nights === 1 ? "night" : "nights"}
-                    </p>
-                  </div>
+            <div className="flex items-center justify-between px-4 py-3 flex-shrink-0 gap-2 min-w-0">
+              <div className="flex items-center gap-3 min-w-0 overflow-hidden flex-1">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm flex-shrink-0 ${
+                  selectedEntry.type === "block" ? "bg-red-100" : "bg-blue-100"
+                }`}>
+                  {selectedEntry.type === "block" ? "🚫" : "👤"}
                 </div>
-                <button 
-                  onClick={() => { setShowDetailModal(false); setSelectedEntry(null); setIsEditing(false); }}
-                  className="w-8 h-8 rounded-lg bg-slate-100 text-slate-400 hover:text-red-500"
-                >
-                  <i className="fas fa-times"></i>
-                </button>
+                <div className="min-w-0 overflow-hidden">
+                  <p className="text-[14px] font-bold text-[#062c24] truncate">
+                    {isEditing ? "Edit Entry" : selectedEntry.type === "block" ? "Time Off" : "Booking Details"}
+                  </p>
+                  <p className="text-[11px] text-slate-400 truncate">
+                    {formatDate(selectedEntry.start)} → {formatDate(selectedEntry.end)} · {selectedEntry.nights} night{selectedEntry.nights > 1 ? "s" : ""}
+                  </p>
+                </div>
               </div>
+              <button
+                onClick={() => { setShowDetailModal(false); setSelectedEntry(null); setIsEditing(false); }}
+                className="w-8 h-8 rounded-lg bg-slate-100 text-slate-400 hover:text-red-500 flex items-center justify-center flex-shrink-0"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
 
             {/* Body */}
-            <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex-1 overflow-y-auto px-4 pb-2 space-y-3">
               {isEditing ? (
-                // Edit Mode
-                <div className="space-y-4">
+                // Edit mode
+                <>
                   {selectedEntry.type === "block" ? (
                     <input
                       type="text"
                       value={blockReason}
                       onChange={e => setBlockReason(e.target.value)}
                       placeholder="Reason"
-                      className="w-full p-4 bg-red-50 border border-red-200 rounded-xl text-sm font-bold text-red-700 outline-none focus:border-red-500"
+                      className="w-full p-4 bg-red-50 border border-red-200 rounded-xl text-sm font-semibold text-red-700 outline-none focus:border-red-400 transition-colors"
                     />
                   ) : (
                     <>
@@ -1030,102 +1017,100 @@ export default function CalendarPage() {
                         value={custName}
                         onChange={e => setCustName(e.target.value)}
                         placeholder="Customer Name"
-                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-[#062c24] outline-none focus:border-emerald-500"
+                        className="w-full p-4 bg-slate-50 border border-black/[0.07] rounded-xl text-sm font-semibold text-[#062c24] outline-none focus:border-emerald-500 focus:bg-white transition-colors"
                       />
                       <input
                         type="tel"
                         value={custPhone}
                         onChange={e => setCustPhone(e.target.value)}
                         placeholder="Phone Number"
-                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-[#062c24] outline-none focus:border-emerald-500"
+                        className="w-full p-4 bg-slate-50 border border-black/[0.07] rounded-xl text-sm font-semibold text-[#062c24] outline-none focus:border-emerald-500 focus:bg-white transition-colors"
                       />
                     </>
                   )}
-                </div>
+                </>
               ) : (
-                // View Mode
-                <div className="space-y-4">
-                  {/* Customer/Reason Info */}
+                // View mode
+                <>
                   <div className={`p-4 rounded-xl ${selectedEntry.type === "block" ? "bg-red-50" : "bg-slate-50"}`}>
-                    <p className={`text-lg font-black ${selectedEntry.type === "block" ? "text-red-700" : "text-[#062c24]"}`}>
+                    <p className={`text-base font-bold truncate ${selectedEntry.type === "block" ? "text-red-700" : "text-[#062c24]"}`}>
                       {selectedEntry.type === "block" ? (selectedEntry.reason || "Time Off") : selectedEntry.customer}
                     </p>
                     {selectedEntry.type === "booking" && selectedEntry.phone && (
-                      <a href={`tel:${selectedEntry.phone}`} className="flex items-center gap-2 mt-1 text-sm text-slate-500 hover:text-emerald-600">
-                        <i className="fas fa-phone text-xs"></i>
-                        {selectedEntry.phone}
+                      <a href={`tel:${selectedEntry.phone}`} className="flex items-center gap-2 mt-1 text-sm text-slate-500 hover:text-emerald-600 truncate">
+                        📞 <span className="truncate">{selectedEntry.phone}</span>
                       </a>
                     )}
                   </div>
 
-                  {/* Items Accordion */}
-                  <div>
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">
-                      {selectedEntry.type === "block" ? "Blocked Items" : "Booked Gear"}
-                    </p>
-                    
-                    {selectedEntry.type === "block" ? (
-                      <div className="bg-red-50 text-red-500 text-xs font-bold p-4 rounded-xl border border-red-100 flex items-center gap-3">
-                        <i className="fas fa-lock"></i>
-                        All inventory items are blocked for this period.
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {selectedEntry.items.map((item, idx) => (
-                          <div key={idx} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
-                            <div className="flex flex-col">
-                              <span className="text-xs font-bold text-[#062c24]">{item.name}</span>
-                              <span className="text-[9px] text-slate-400 uppercase">{item.category}</span>
-                            </div>
-                            <span className="text-xs font-black text-[#062c24] bg-emerald-100 px-2 py-1 rounded-lg">
-                              x{item.qty}
-                            </span>
+                  <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">
+                    {selectedEntry.type === "block" ? "Blocked Items" : "Booked Gear"}
+                  </p>
+
+                  {selectedEntry.type === "block" ? (
+                    <div className="bg-red-50 text-red-600 text-[12px] font-semibold p-4 rounded-xl flex items-center gap-3">
+                      <span className="flex-shrink-0">💤</span>
+                      <span>All inventory items are blocked for this period.</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {selectedEntry.items.map((item, idx) => (
+                        <div key={idx} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl gap-2 min-w-0">
+                          <div className="min-w-0 flex-1 overflow-hidden">
+                            <p className="text-[12px] font-bold text-[#062c24] truncate">{item.name}</p>
+                            <p className="text-[10px] text-slate-400 uppercase tracking-wide">{item.category}</p>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded-lg flex-shrink-0">
+                            ×{item.qty}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
-            {/* Modal Footer (Actions) */}
-            <div className="p-4 border-t border-slate-100 shrink-0 flex gap-2">
+            {/* Footer */}
+            <div className="px-4 pt-2 pb-5 flex-shrink-0 flex gap-2">
               {isEditing ? (
                 <button
                   onClick={updateEntry}
-                  className="flex-1 py-4 bg-[#062c24] text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-800 transition-all shadow-lg"
+                  className="flex-1 py-4 bg-[#062c24] text-white rounded-2xl font-bold uppercase text-[11px] tracking-widest hover:bg-[#0d4a3a] transition-all"
                 >
                   Save Changes
                 </button>
               ) : (
                 <>
                   <button
-                    onClick={() => setIsEditing(true)}
-                    className="flex-1 py-4 bg-blue-50 text-blue-600 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-blue-100 transition-all"
+                    onClick={() => {
+                      if (selectedEntry.type === "block") setBlockReason(selectedEntry.reason || "");
+                      else { setCustName(selectedEntry.customer || ""); setCustPhone(selectedEntry.phone || ""); }
+                      setIsEditing(true);
+                    }}
+                    className="flex-1 py-4 bg-blue-50 text-blue-700 rounded-2xl font-bold uppercase text-[11px] tracking-widest hover:bg-blue-100 transition-all"
                   >
-                    <i className="fas fa-pen mr-2"></i> Edit Info
+                    ✏ Edit Info
                   </button>
                   <button
                     onClick={() => deleteEntry(selectedEntry)}
-                    className="flex-1 py-4 bg-red-50 text-red-600 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-red-100 transition-all"
+                    className="flex-1 py-4 bg-red-50 text-red-600 rounded-2xl font-bold uppercase text-[11px] tracking-widest hover:bg-red-100 transition-all"
                   >
-                    <i className="fas fa-trash mr-2"></i> Delete
+                    🗑 Delete
                   </button>
                 </>
               )}
             </div>
+
           </div>
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════════
-          TOAST NOTIFICATION
-          ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── TOAST ── */}
       {toast && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-[#062c24] text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 transition-all duration-300">
-          <i className="fas fa-check-circle text-emerald-400"></i>
-          <span className="text-[10px] font-black uppercase tracking-widest">{toast}</span>
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] bg-[#062c24] text-white px-5 py-2.5 rounded-full flex items-center gap-2 max-w-[90vw] overflow-hidden">
+          <span className="text-emerald-400 flex-shrink-0">✓</span>
+          <span className="text-[11px] font-bold uppercase tracking-widest truncate">{toast}</span>
         </div>
       )}
 
