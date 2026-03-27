@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
 import {
   doc, getDoc, collection, query, where, getDocs,
-  runTransaction, serverTimestamp,
+  runTransaction, serverTimestamp, addDoc,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import flatpickr from "flatpickr";
@@ -698,6 +698,39 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
           localStorage.setItem(storageKey, String(Date.now()));
         } catch (e) { console.error(e); }
       }
+
+      // ═══ Create order in orders collection ═══
+      try {
+        const orderData = {
+          vendorId,
+          vendorName: vendorData?.name || "",
+          customerPhone: "",
+          customerName: "",
+          items: cart.map(i => ({
+            id: i.id, name: i.name, qty: i.qty, price: i.price,
+            addSetup: i.addSetup || false,
+            setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0,
+          })),
+          totalAmount: total,
+          pickupLocation: fulfillmentType === "pickup" ? selectedHub : deliveryAddress,
+          fulfillmentType,
+          deliveryZone: selectedZone?.name || null,
+          timeSlot: selectedTimeSlot?.label || null,
+          bookingDates: { start: pickupDate, end: returnDate },
+          status: "pending" as const,
+          createdAt: serverTimestamp(),
+        };
+        const orderRef = await addDoc(collection(db, "orders"), orderData);
+
+        // Save booking data to localStorage for agreement page
+        localStorage.setItem("current_booking", JSON.stringify({
+          vendorId,
+          orderId: orderRef.id,
+          items: cart.map(i => ({ name: i.name, qty: i.qty })),
+          dates: { start: pickupDate, end: returnDate },
+          total,
+        }));
+      } catch (e) { console.error("Order creation error:", e); }
       
       if (typeof window !== "undefined" && typeof (window as any).gtag === "function") {
         (window as any).gtag("event", "whatsapp_booking", {

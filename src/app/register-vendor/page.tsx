@@ -83,6 +83,7 @@ export default function RegisterVendorPage() {
   const [showTerms, setShowTerms] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -97,12 +98,12 @@ export default function RegisterVendorPage() {
   }, []);
 
   /* ── Firebase helpers ── */
-  async function createVendorShell(user: User) {
+  async function createVendorShell(user: User, whatsappPhone?: string) {
     await setDoc(doc(db, "vendors", user.uid), {
       owner_uid: user.uid,
       name: user.displayName || "New Vendor",
       email: user.email,
-      phone: user.phoneNumber || "",
+      phone: whatsappPhone || user.phoneNumber || "",
       image: user.photoURL || "",
       status: "pending",
       credits: startingCredits,
@@ -118,11 +119,22 @@ export default function RegisterVendorPage() {
       setError("Valid email & password (min 6 chars) required.");
       return;
     }
+    if (!phone.trim()) {
+      setError("WhatsApp number is required.");
+      return;
+    }
     setLoading(true);
     try {
+      const cleanPhone = phone.replace(/[^0-9]/g, "");
       const cred = await createUserWithEmailAndPassword(auth, email, password);
-      await createVendorShell(cred.user);
+      await createVendorShell(cred.user, cleanPhone);
       await sendEmailVerification(cred.user);
+      // Notify admin via Telegram
+      fetch("/api/notify-telegram", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vendorName: cred.user.displayName || "New Vendor", email: cred.user.email, phone: cleanPhone, method: "Email" }),
+      }).catch(() => {});
       setDisplayEmail(email);
       setSuccess(true);
     } catch (e: any) {
@@ -141,7 +153,14 @@ export default function RegisterVendorPage() {
       const user = res.user;
       const docSnap = await getDoc(doc(db, "vendors", user.uid));
       if (!docSnap.exists()) {
-        await createVendorShell(user);
+        const cleanPhone = phone.replace(/[^0-9]/g, "");
+        await createVendorShell(user, cleanPhone);
+        // Notify admin via Telegram
+        fetch("/api/notify-telegram", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ vendorName: user.displayName || "New Vendor", email: user.email, phone: cleanPhone, method: "Google" }),
+        }).catch(() => {});
         alert("Account created! Please wait for admin approval to activate your shop.");
       }
       window.location.href = "/store";
@@ -252,8 +271,27 @@ export default function RegisterVendorPage() {
             </div>
 
             <div className="space-y-4">
+              {/* WhatsApp Number — required for both methods */}
+              <div>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">
+                  <i className="fab fa-whatsapp text-emerald-500 mr-1"></i>Your WhatsApp Number
+                </p>
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-emerald-500">
+                    <i className="fab fa-whatsapp text-sm"></i>
+                  </div>
+                  <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+                    placeholder="e.g. 60123456789" disabled={!termsAccepted}
+                    className="w-full bg-slate-50 p-4 pl-10 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all disabled:opacity-50" />
+                </div>
+                <p className="text-[8px] text-slate-300 font-medium mt-1.5 px-1">Customers will contact you on this number</p>
+              </div>
+
               {/* Google Sign Up */}
-              <button onClick={handleGoogleReg} disabled={!termsAccepted || googleLoading}
+              <button onClick={() => {
+                if (!phone.trim()) { setError("Please enter your WhatsApp number first."); return; }
+                handleGoogleReg();
+              }} disabled={!termsAccepted || googleLoading}
                 className="w-full bg-slate-50 border border-slate-200 text-slate-600 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100">
                 {googleLoading
                   ? <i className="fas fa-spinner fa-spin"></i>

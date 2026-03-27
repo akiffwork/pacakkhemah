@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, addDoc, collection, serverTimestamp, updateDoc, increment } from "firebase/firestore";
 import { getStorage, ref, uploadBytes } from "firebase/storage";
 
 type VendorData = { name: string; rules?: string[] };
 type BookingData = {
   vendorId: string;
+  orderId?: string;
   items: { name: string; qty: number }[];
   dates: { start: string; end: string };
   total: number;
@@ -101,10 +102,31 @@ function AgreementContent() {
         icFrontPath: snapFront.metadata.fullPath,
         icBackPath: snapBack.metadata.fullPath,
         bookingDetails: booking || "Manual/Chat Booking",
+        orderId: booking?.orderId || null,
         timestamp: serverTimestamp(),
         status: "signed",
         userAgent: navigator.userAgent,
       });
+
+      // Update order status to confirmed if orderId exists
+      if (booking?.orderId) {
+        try {
+          await updateDoc(doc(db, "orders", booking.orderId), {
+            status: "confirmed",
+            customerName: custName,
+            agreementSigned: true,
+            agreementSignedAt: serverTimestamp(),
+          });
+        } catch (e) { console.error("Order update error:", e); }
+      }
+
+      // Increment vendor order tally
+      try {
+        await updateDoc(doc(db, "vendors", vendorId!), {
+          order_count: increment(1),
+          total_orders: increment(1),
+        });
+      } catch (e) { console.error("Tally update error:", e); }
 
       setSubmitted(true);
     } catch (e) {
