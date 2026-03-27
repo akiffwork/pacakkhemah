@@ -275,7 +275,7 @@ function MockupBanner() {
               <p className="text-sm font-black">This could be YOUR store!</p>
             </div>
           </div>
-          <Link href="/register" className="bg-white text-indigo-600 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-all shadow-lg flex items-center gap-2">
+          <Link href="/register-vendor" className="bg-white text-indigo-600 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-all shadow-lg flex items-center gap-2">
             <i className="fas fa-rocket"></i>
             Register Now
           </Link>
@@ -885,7 +885,6 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
           {/* Vendor Name + Badges */}
           <div className="flex items-center gap-2 mb-2">
             <h1 className="text-xl font-black uppercase tracking-tight">{vendorData?.name || "Loading..."}</h1>
-            {/* Badge Icons Row */}
             {allBadges.length > 0 && (
               <div className="flex items-center gap-1">
                 {allBadges.slice(0, 3).map(badge => (
@@ -898,7 +897,6 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
             )}
           </div>
           
-          {/* Full Badge Pills (expandable) */}
           {allBadges.length > 0 && (
             <div className="flex flex-wrap justify-center gap-1.5 mb-3">
               {allBadges.map(badge => (
@@ -915,7 +913,6 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
             </div>
           )}
 
-          {/* Service badges */}
           <div className="flex flex-wrap justify-center gap-2 text-[9px] font-bold uppercase mb-3">
             <span className="bg-white/10 backdrop-blur-sm px-2.5 py-1 rounded-full border border-white/10">
               <i className="fas fa-truck text-emerald-400 mr-1"></i>Pickup: {vendorData?.pickup?.join(", ") || vendorData?.city}
@@ -937,7 +934,6 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
             )}
           </div>
 
-          {/* Social icons */}
           <div className="flex gap-2 mb-2">
             {whatsappNumber && <a href={`https://wa.me/${whatsappNumber}`} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center hover:bg-emerald-500 transition-colors border border-white/10"><i className="fab fa-whatsapp text-sm"></i></a>}
             {vendorData?.tiktok && <a href={vendorData.tiktok} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center hover:bg-white/20 transition-colors border border-white/10"><i className="fab fa-tiktok text-sm"></i></a>}
@@ -980,16 +976,11 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         {/* GEAR TAB CONTENT */}
         {mainTab === "gear" && (
           <>
-            {/* About Us Section */}
             {(vendorData?.tagline || vendorData?.tagline_my) && (
               <Section title="About Us" icon="fa-info-circle" defaultOpen={false}>
                 <div className="space-y-3">
-                  {vendorData.tagline && (
-                    <p className="text-sm text-slate-700 leading-relaxed">{vendorData.tagline}</p>
-                  )}
-                  {vendorData.tagline_my && (
-                    <p className="text-sm text-emerald-700 italic leading-relaxed">{vendorData.tagline_my}</p>
-                  )}
+                  {vendorData.tagline && <p className="text-sm text-slate-700 leading-relaxed">{vendorData.tagline}</p>}
+                  {vendorData.tagline_my && <p className="text-sm text-emerald-700 italic leading-relaxed">{vendorData.tagline_my}</p>}
                 </div>
               </Section>
             )}
@@ -1033,29 +1024,19 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                   className="w-full bg-slate-50 border border-slate-200 pl-9 pr-4 py-3 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500" />
               </div>
               
-              {/* Category tabs - Scrollable with fade hints */}
               <div className="relative mb-3">
-                {/* Left fade */}
                 <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none rounded-l-xl" />
-                {/* Right fade */}
                 <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none rounded-r-xl" />
-                
                 <div className="flex gap-2 overflow-x-auto py-2 px-1 scrollbar-hide" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
                   {categories.map(cat => (
-                    <button key={cat}
-                      onClick={() => setActiveCategory(cat)}
-                      className={`flex-shrink-0 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap transition-all ${
-                        activeCategory === cat
-                          ? "bg-[#062c24] text-white shadow-lg"
-                          : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-[#062c24]"
-                      }`}>
+                    <button key={cat} onClick={() => setActiveCategory(cat)}
+                      className={`flex-shrink-0 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap transition-all ${activeCategory === cat ? "bg-[#062c24] text-white shadow-lg" : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-[#062c24]"}`}>
                       {cat}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Gear grid */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {filteredGear(activeCategory || categories[0] || "").map((item, idx) => {
                   const avail = getAvailableStock(item.id);
@@ -1069,8 +1050,6 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                     <div key={item.id} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm stagger-in relative" style={{ animationDelay: `${idx * 50}ms` }}>
                       <div className="aspect-square relative cursor-pointer" onClick={() => { setSelectedItem(item); setShowItemModal(true); }}>
                         <img src={item.images?.[0] || item.img || "/placeholder.jpg"} className="w-full h-full object-cover" alt={item.name} />
-                        
-                        {/* Multiple photos indicator dots */}
                         {hasMultipleImages && (
                           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
                             {item.images!.slice(0, 5).map((_, i) => (
@@ -1078,29 +1057,12 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                             ))}
                           </div>
                         )}
-                        
-                        {/* Badges */}
                         <div className="absolute top-2 left-2 flex flex-col gap-1">
-                          {item.type === "package" && (
-                            <span className="bg-purple-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase">
-                              <i className="fas fa-box mr-0.5"></i>Package
-                            </span>
-                          )}
-                          {hasSetupOption && (
-                            <span className="bg-blue-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase">
-                              <i className="fas fa-tools mr-0.5"></i>Setup
-                            </span>
-                          )}
-                          {linkedItems.length > 0 && (
-                            <span className="bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase">
-                              <i className="fas fa-link mr-0.5"></i>{linkedItems.length} items
-                            </span>
-                          )}
+                          {item.type === "package" && <span className="bg-purple-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase"><i className="fas fa-box mr-0.5"></i>Package</span>}
+                          {hasSetupOption && <span className="bg-blue-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase"><i className="fas fa-tools mr-0.5"></i>Setup</span>}
+                          {linkedItems.length > 0 && <span className="bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase"><i className="fas fa-link mr-0.5"></i>{linkedItems.length} items</span>}
                         </div>
-                        
-                        {inCart > 0 && (
-                          <span className="absolute top-2 right-2 bg-emerald-500 text-white text-[9px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-lg">{inCart}</span>
-                        )}
+                        {inCart > 0 && <span className="absolute top-2 right-2 bg-emerald-500 text-white text-[9px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-lg">{inCart}</span>}
                       </div>
                       <div className="p-3">
                         <p className="text-[10px] font-black uppercase truncate text-[#062c24]">{item.name}</p>
@@ -1129,18 +1091,10 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
             ) : (
               posts.map(post => (
                 <div key={post.id} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
-                  {post.pinned && (
-                    <span className="inline-block bg-amber-100 text-amber-600 text-[8px] font-black px-2 py-0.5 rounded-md uppercase mb-2">
-                      <i className="fas fa-thumbtack mr-1"></i>Pinned
-                    </span>
-                  )}
+                  {post.pinned && <span className="inline-block bg-amber-100 text-amber-600 text-[8px] font-black px-2 py-0.5 rounded-md uppercase mb-2"><i className="fas fa-thumbtack mr-1"></i>Pinned</span>}
                   <p className="text-sm text-slate-700 whitespace-pre-wrap">{post.content}</p>
-                  {post.image && (
-                    <img src={post.image} className="mt-3 rounded-xl w-full max-h-64 object-cover" alt="" />
-                  )}
-                  <p className="text-[9px] text-slate-400 mt-2">
-                    {post.createdAt?.seconds ? formatTimeAgo(new Date(post.createdAt.seconds * 1000)) : ""}
-                  </p>
+                  {post.image && <img src={post.image} className="mt-3 rounded-xl w-full max-h-64 object-cover" alt="" />}
+                  <p className="text-[9px] text-slate-400 mt-2">{post.createdAt?.seconds ? formatTimeAgo(new Date(post.createdAt.seconds * 1000)) : ""}</p>
                 </div>
               ))
             )}
@@ -1238,7 +1192,6 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         <div className="fixed inset-0 bg-[#062c24]/95 backdrop-blur-md z-[300] flex items-center justify-center p-4">
           <div className="bg-white rounded-[2rem] w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="relative">
-              {/* Image Carousel */}
               {(selectedItem.images?.length || 0) > 1 ? (
                 <ImageCarousel images={selectedItem.images!} />
               ) : (
@@ -1247,46 +1200,28 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
               <button onClick={() => setShowItemModal(false)} className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 shadow-lg z-20">
                 <i className="fas fa-times"></i>
               </button>
-              
-              {/* Badges */}
               <div className="absolute top-4 left-4 flex flex-col gap-1.5 z-20">
-                {selectedItem.type === "package" && (
-                  <span className="bg-purple-500 text-white text-[9px] font-black px-2 py-1 rounded-lg uppercase shadow-lg">
-                    <i className="fas fa-box mr-1"></i>Package
-                  </span>
-                )}
-                {selectedItem.setup?.available && (
-                  <span className="bg-blue-500 text-white text-[9px] font-black px-2 py-1 rounded-lg uppercase shadow-lg">
-                    <i className="fas fa-tools mr-1"></i>Setup Available
-                  </span>
-                )}
+                {selectedItem.type === "package" && <span className="bg-purple-500 text-white text-[9px] font-black px-2 py-1 rounded-lg uppercase shadow-lg"><i className="fas fa-box mr-1"></i>Package</span>}
+                {selectedItem.setup?.available && <span className="bg-blue-500 text-white text-[9px] font-black px-2 py-1 rounded-lg uppercase shadow-lg"><i className="fas fa-tools mr-1"></i>Setup Available</span>}
               </div>
             </div>
             <div className="p-6">
               <h3 className="text-lg font-black uppercase text-[#062c24] mb-1">{selectedItem.name}</h3>
               <p className="text-emerald-600 font-black text-xl mb-3">RM {selectedItem.price}<span className="text-xs text-slate-400 font-bold">/night</span></p>
               {selectedItem.desc && <p className="text-slate-500 text-sm mb-4 leading-relaxed">{selectedItem.desc}</p>}
-              
-              {/* Setup info */}
               {selectedItem.setup?.available && (
                 <div className="mb-4 p-3 bg-blue-50 rounded-xl border border-blue-100">
                   <p className="text-[9px] font-black text-blue-600 uppercase mb-1"><i className="fas fa-tools mr-1"></i>Setup Service Available</p>
                   <p className="text-xs text-blue-700 font-bold">+RM {selectedItem.setup.fee}</p>
-                  {selectedItem.setup.description && (
-                    <p className="text-[10px] text-blue-600 mt-1">{selectedItem.setup.description}</p>
-                  )}
+                  {selectedItem.setup.description && <p className="text-[10px] text-blue-600 mt-1">{selectedItem.setup.description}</p>}
                 </div>
               )}
-              
-              {/* Linked Items (for packages) */}
               {(() => {
                 const linkedItems = getLinkedItemsData(selectedItem);
                 if (linkedItems.length === 0) return null;
                 return (
                   <div className="mb-4 p-3 bg-purple-50 rounded-xl border border-purple-100">
-                    <p className="text-[9px] font-black text-purple-600 uppercase mb-2">
-                      <i className="fas fa-link mr-1"></i>Package Includes:
-                    </p>
+                    <p className="text-[9px] font-black text-purple-600 uppercase mb-2"><i className="fas fa-link mr-1"></i>Package Includes:</p>
                     <div className="space-y-2">
                       {linkedItems.map(({ item: linkedItem, qty }) => (
                         <div key={linkedItem.id} className="flex items-center gap-2 bg-white p-2 rounded-lg">
@@ -1301,24 +1236,19 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                   </div>
                 );
               })()}
-              
-              {/* Text Includes (legacy) */}
               {selectedItem.inc && selectedItem.inc.length > 0 && (
                 <div className="mb-6 p-3 bg-slate-50 rounded-xl">
                   <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Also Includes:</p>
                   <div className="flex flex-wrap gap-1.5">{selectedItem.inc.map(inc => (<span key={inc} className="bg-white border border-emerald-100 text-emerald-700 px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase">{inc}</span>))}</div>
                 </div>
               )}
-              
               <button onClick={() => addToCart(selectedItem)} className="w-full bg-[#062c24] text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all">Add to Cart</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════════ */}
-      {/* CART MODAL - WITH DELIVERY & SETUP OPTIONS */}
-      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* CART MODAL */}
       {showCart && (
         <div className="fixed inset-0 bg-[#062c24]/95 backdrop-blur-md z-[300] flex items-center justify-center p-4">
           <div className="bg-white rounded-[2rem] w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
@@ -1328,8 +1258,6 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
             </div>
             
             <div className="flex-1 overflow-y-auto p-5 space-y-5" style={{ scrollbarWidth: "none" }}>
-              
-              {/* Cart Items with Setup Checkboxes */}
               <div className="space-y-2">
                 {cart.map(item => (
                   <div key={item.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
@@ -1344,41 +1272,29 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                         <button onClick={() => updateCartQty(item.id, 1)} className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors font-black">+</button>
                       </div>
                     </div>
-                    
-                    {/* Per-item Setup Checkbox - only show if delivery selected and item has setup */}
                     {fulfillmentType === "delivery" && item.setup?.available && !useCombo && (
                       <label className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-100 cursor-pointer">
                         <input type="checkbox" checked={item.addSetup || false} onChange={() => toggleItemSetup(item.id)} className="w-4 h-4 accent-blue-500 rounded" />
-                        <span className="text-[9px] font-bold text-blue-600 uppercase">
-                          <i className="fas fa-tools mr-1"></i>Add Setup +RM{item.setup.fee}
-                        </span>
+                        <span className="text-[9px] font-bold text-blue-600 uppercase"><i className="fas fa-tools mr-1"></i>Add Setup +RM{item.setup.fee}</span>
                       </label>
                     )}
                   </div>
                 ))}
               </div>
 
-              {/* ═══ FULFILLMENT SELECTOR ═══ */}
               {hasDelivery && (
                 <div className="bg-gradient-to-br from-slate-50 to-emerald-50/50 p-4 rounded-2xl border border-emerald-100">
-                  <p className="text-[9px] font-black text-slate-400 uppercase mb-3 flex items-center gap-2">
-                    <i className="fas fa-truck text-emerald-500"></i>Fulfillment Method
-                  </p>
-                  
+                  <p className="text-[9px] font-black text-slate-400 uppercase mb-3 flex items-center gap-2"><i className="fas fa-truck text-emerald-500"></i>Fulfillment Method</p>
                   <div className="flex gap-2 mb-3">
-                    <button 
-                      onClick={() => { setFulfillmentType("pickup"); setUseCombo(false); }}
+                    <button onClick={() => { setFulfillmentType("pickup"); setUseCombo(false); }}
                       className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${fulfillmentType === "pickup" ? "bg-[#062c24] text-white shadow-lg" : "bg-white text-slate-500 border border-slate-200 hover:border-emerald-300"}`}>
                       <i className="fas fa-store mr-1.5"></i>Self Pickup
                     </button>
-                    <button 
-                      onClick={() => setFulfillmentType("delivery")}
+                    <button onClick={() => setFulfillmentType("delivery")}
                       className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${fulfillmentType === "delivery" ? "bg-[#062c24] text-white shadow-lg" : "bg-white text-slate-500 border border-slate-200 hover:border-emerald-300"}`}>
                       <i className="fas fa-shipping-fast mr-1.5"></i>Delivery
                     </button>
                   </div>
-
-                  {/* Pickup Location */}
                   {fulfillmentType === "pickup" && (
                     <div className="relative">
                       <label className="text-[9px] font-black text-slate-300 uppercase mb-1.5 block ml-1">Pickup Point</label>
@@ -1388,25 +1304,13 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                       <i className="fas fa-chevron-down absolute right-4 bottom-4 text-slate-400 text-xs pointer-events-none"></i>
                     </div>
                   )}
-
-                  {/* Delivery Options */}
                   {fulfillmentType === "delivery" && (
                     <div className="space-y-3">
-                      {/* Delivery Address */}
                       <div>
-                        <label className="text-[9px] font-black text-slate-300 uppercase mb-1.5 block ml-1">
-                          <i className="fas fa-map-marker-alt text-red-400 mr-1"></i>Delivery Address
-                        </label>
-                        <textarea 
-                          value={deliveryAddress} 
-                          onChange={e => setDeliveryAddress(e.target.value)}
-                          placeholder="Enter campsite / delivery address..."
-                          rows={2}
-                          className="w-full bg-white p-3.5 rounded-xl text-xs font-bold outline-none border border-slate-200 resize-none focus:border-emerald-500"
-                        />
+                        <label className="text-[9px] font-black text-slate-300 uppercase mb-1.5 block ml-1"><i className="fas fa-map-marker-alt text-red-400 mr-1"></i>Delivery Address</label>
+                        <textarea value={deliveryAddress} onChange={e => setDeliveryAddress(e.target.value)} placeholder="Enter campsite / delivery address..." rows={2}
+                          className="w-full bg-white p-3.5 rounded-xl text-xs font-bold outline-none border border-slate-200 resize-none focus:border-emerald-500" />
                       </div>
-
-                      {/* Zone Selection (if zone-based pricing) */}
                       {services?.delivery?.pricingType === "zones" && (services.delivery.zones?.length ?? 0) > 0 && (
                         <div>
                           <label className="text-[9px] font-black text-slate-300 uppercase mb-1.5 block ml-1">Select Zone</label>
@@ -1423,70 +1327,34 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                           </div>
                         </div>
                       )}
-
-                      {/* Distance Input (if per-km pricing) */}
                       {services?.delivery?.pricingType === "per_km" && (
                         <div>
-                          <label className="text-[9px] font-black text-slate-300 uppercase mb-1.5 block ml-1">
-                            Distance (km) • RM{services.delivery?.perKmRate ?? 0}/km, min RM{services.delivery?.minFee ?? 0}
-                          </label>
-                          <input 
-                            type="number" 
-                            value={deliveryDistance} 
-                            onChange={e => setDeliveryDistance(e.target.value)}
-                            placeholder="Enter distance in km"
-                            className="w-full bg-white p-3.5 rounded-xl text-xs font-bold outline-none border border-slate-200 focus:border-emerald-500"
-                          />
-                          {deliveryDistance && (
-                            <p className="text-[10px] font-bold text-emerald-600 mt-1 ml-1">
-                              Delivery Fee: RM {deliveryFee}
-                            </p>
-                          )}
+                          <label className="text-[9px] font-black text-slate-300 uppercase mb-1.5 block ml-1">Distance (km) • RM{services.delivery?.perKmRate ?? 0}/km, min RM{services.delivery?.minFee ?? 0}</label>
+                          <input type="number" value={deliveryDistance} onChange={e => setDeliveryDistance(e.target.value)} placeholder="Enter distance in km"
+                            className="w-full bg-white p-3.5 rounded-xl text-xs font-bold outline-none border border-slate-200 focus:border-emerald-500" />
+                          {deliveryDistance && <p className="text-[10px] font-bold text-emerald-600 mt-1 ml-1">Delivery Fee: RM {deliveryFee}</p>}
                         </div>
                       )}
-
-                      {/* Fixed Fee Display */}
                       {services?.delivery?.pricingType === "fixed" && (
                         <div className="bg-white p-3 rounded-xl border border-slate-200">
-                          <p className="text-[10px] font-bold text-slate-500">
-                            <i className="fas fa-truck text-emerald-500 mr-1"></i>
-                            Delivery Fee: <span className="text-emerald-600 font-black">RM {services.delivery?.fixedFee ?? 0}</span>
-                          </p>
+                          <p className="text-[10px] font-bold text-slate-500"><i className="fas fa-truck text-emerald-500 mr-1"></i>Delivery Fee: <span className="text-emerald-600 font-black">RM {services.delivery?.fixedFee ?? 0}</span></p>
                           {(services.delivery?.freeAbove ?? 0) > 0 && subAfterDisc < (services.delivery?.freeAbove ?? 0) && (
-                            <p className="text-[9px] text-amber-600 mt-1">
-                              <i className="fas fa-info-circle mr-1"></i>
-                              Free delivery for orders above RM {services.delivery?.freeAbove ?? 0}
-                            </p>
+                            <p className="text-[9px] text-amber-600 mt-1"><i className="fas fa-info-circle mr-1"></i>Free delivery for orders above RM {services.delivery?.freeAbove ?? 0}</p>
                           )}
                         </div>
                       )}
-
-                      {/* Quote Notice */}
                       {services?.delivery?.pricingType === "quote" && (
                         <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
-                          <p className="text-[10px] font-bold text-amber-700">
-                            <i className="fas fa-comments mr-1"></i>
-                            Delivery fee will be confirmed via WhatsApp
-                          </p>
+                          <p className="text-[10px] font-bold text-amber-700"><i className="fas fa-comments mr-1"></i>Delivery fee will be confirmed via WhatsApp</p>
                         </div>
                       )}
-
-                      {/* Delivery Notes */}
-                      {services?.delivery?.notes && (
-                        <p className="text-[9px] text-slate-400 italic px-1">{services.delivery.notes}</p>
-                      )}
-
-                      {/* Time Slot Selection */}
+                      {services?.delivery?.notes && <p className="text-[9px] text-slate-400 italic px-1">{services.delivery.notes}</p>}
                       {hasTimeSlots && (services?.timeSlots?.slots?.length ?? 0) > 0 && (
                         <div>
-                          <label className="text-[9px] font-black text-slate-300 uppercase mb-1.5 block ml-1">
-                            <i className="fas fa-clock text-blue-400 mr-1"></i>Preferred Time Slot
-                          </label>
+                          <label className="text-[9px] font-black text-slate-300 uppercase mb-1.5 block ml-1"><i className="fas fa-clock text-blue-400 mr-1"></i>Preferred Time Slot</label>
                           <div className="grid grid-cols-3 gap-2">
                             {services?.timeSlots?.slots?.map(slot => (
-                              <button 
-                                key={slot.time}
-                                onClick={() => setSelectedTimeSlot(slot)}
+                              <button key={slot.time} onClick={() => setSelectedTimeSlot(slot)}
                                 className={`p-2.5 rounded-xl text-[9px] font-black uppercase transition-all ${selectedTimeSlot?.time === slot.time ? "bg-blue-500 text-white shadow-lg" : "bg-white text-slate-500 border border-slate-200 hover:border-blue-300"}`}>
                                 {slot.label}
                               </button>
@@ -1494,24 +1362,14 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                           </div>
                         </div>
                       )}
-
-                      {/* Combo Bundle Option */}
                       {hasCombo && hasAnySetupSelected && (
                         <div className={`p-4 rounded-xl border-2 transition-all ${useCombo ? "bg-gradient-to-r from-emerald-50 to-blue-50 border-emerald-400" : "bg-white border-dashed border-slate-300"}`}>
                           <label className="flex items-start gap-3 cursor-pointer">
                             <input type="checkbox" checked={useCombo} onChange={e => setUseCombo(e.target.checked)} className="w-5 h-5 accent-emerald-500 mt-0.5" />
                             <div className="flex-1">
-                              <p className="text-xs font-black text-emerald-700 uppercase">
-                                <i className="fas fa-gift mr-1"></i>Bundle & Save!
-                              </p>
-                              <p className="text-[10px] text-slate-600 mt-0.5">
-                                Delivery + All Setup for just <span className="font-black text-emerald-600">RM {services?.combo?.fee}</span>
-                              </p>
-                              {comboSavings > 0 && (
-                                <span className="inline-block mt-1 bg-red-100 text-red-600 text-[9px] font-black px-2 py-0.5 rounded-full">
-                                  SAVE RM {comboSavings}!
-                                </span>
-                              )}
+                              <p className="text-xs font-black text-emerald-700 uppercase"><i className="fas fa-gift mr-1"></i>Bundle & Save!</p>
+                              <p className="text-[10px] text-slate-600 mt-0.5">Delivery + All Setup for just <span className="font-black text-emerald-600">RM {services?.combo?.fee}</span></p>
+                              {comboSavings > 0 && <span className="inline-block mt-1 bg-red-100 text-red-600 text-[9px] font-black px-2 py-0.5 rounded-full">SAVE RM {comboSavings}!</span>}
                             </div>
                           </label>
                         </div>
@@ -1521,7 +1379,6 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                 </div>
               )}
 
-              {/* If no delivery service, show pickup only */}
               {!hasDelivery && (
                 <div>
                   <label className="text-[9px] font-black text-slate-300 uppercase mb-2 block ml-1">Pickup Point</label>
@@ -1534,52 +1391,25 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                 </div>
               )}
 
-              {/* Price Breakdown */}
               <div className="bg-slate-50 p-5 rounded-2xl space-y-2 text-[10px] font-bold uppercase">
                 <div className="flex justify-between"><span>Duration</span><span className="text-[#062c24]">{nights} Night{nights > 1 ? "s" : ""}</span></div>
                 <div className="flex justify-between"><span>Subtotal</span><span className="text-[#062c24]">RM {sub}</span></div>
                 {showAuto && <div className="flex justify-between text-emerald-600"><span>Extended Stay</span><span>− RM {Math.round(autoDisc)}</span></div>}
                 {showPromo && <div className="flex justify-between text-emerald-600"><span>Promo Code</span><span>− RM {Math.round(promoDisc)}</span></div>}
-                
-                {/* Service Fees */}
                 {fulfillmentType === "delivery" && (
                   <>
                     {useCombo && hasCombo ? (
-                      <div className="flex justify-between text-blue-600">
-                        <span><i className="fas fa-gift mr-1"></i>Delivery + Setup Combo</span>
-                        <span>RM {comboFee}</span>
-                      </div>
+                      <div className="flex justify-between text-blue-600"><span><i className="fas fa-gift mr-1"></i>Delivery + Setup Combo</span><span>RM {comboFee}</span></div>
                     ) : (
                       <>
-                        {deliveryFee > 0 && (
-                          <div className="flex justify-between text-slate-600">
-                            <span><i className="fas fa-truck mr-1"></i>Delivery Fee</span>
-                            <span>RM {deliveryFee}</span>
-                          </div>
-                        )}
-                        {services?.delivery?.pricingType === "quote" && (
-                          <div className="flex justify-between text-amber-600">
-                            <span><i className="fas fa-truck mr-1"></i>Delivery Fee</span>
-                            <span>TBD</span>
-                          </div>
-                        )}
-                        {setupFee > 0 && (
-                          <div className="flex justify-between text-blue-600">
-                            <span><i className="fas fa-tools mr-1"></i>Setup Fee</span>
-                            <span>RM {setupFee}</span>
-                          </div>
-                        )}
+                        {deliveryFee > 0 && <div className="flex justify-between text-slate-600"><span><i className="fas fa-truck mr-1"></i>Delivery Fee</span><span>RM {deliveryFee}</span></div>}
+                        {services?.delivery?.pricingType === "quote" && <div className="flex justify-between text-amber-600"><span><i className="fas fa-truck mr-1"></i>Delivery Fee</span><span>TBD</span></div>}
+                        {setupFee > 0 && <div className="flex justify-between text-blue-600"><span><i className="fas fa-tools mr-1"></i>Setup Fee</span><span>RM {setupFee}</span></div>}
                       </>
                     )}
-                    {comboSavings > 0 && useCombo && (
-                      <div className="flex justify-between text-red-500">
-                        <span>Bundle Savings</span>
-                        <span>− RM {comboSavings}</span>
-                      </div>
-                    )}
+                    {comboSavings > 0 && useCombo && <div className="flex justify-between text-red-500"><span>Bundle Savings</span><span>− RM {comboSavings}</span></div>}
                   </>
                 )}
-                
                 <div className="flex justify-between border-t border-slate-200 pt-3"><span>Security Deposit</span><span className="text-slate-400">RM {Math.round(dep)}</span></div>
                 <div className="flex justify-between text-xl font-black text-[#062c24] pt-2">
                   <span>Total</span>
@@ -1590,7 +1420,6 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                 )}
               </div>
 
-              {/* Promo Code */}
               <div className="grid grid-cols-3 gap-2">
                 <input type="text" value={promoInput} onChange={e => setPromoInput(e.target.value.toUpperCase())} placeholder="Promo Code" onKeyDown={e => e.key === "Enter" && applyPromo()}
                   className="col-span-2 bg-slate-50 p-4 rounded-xl text-xs font-bold outline-none border border-slate-100 uppercase tracking-widest" />
@@ -1598,7 +1427,6 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
               </div>
               {promoMsg && <p className={`text-center text-[10px] font-bold ${promoMsg.success ? "text-emerald-500" : "text-red-500"}`}>{promoMsg.text}</p>}
 
-              {/* Terms */}
               <div className="bg-white border border-slate-100 p-4 rounded-xl space-y-3">
                 <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest border-b border-slate-50 pb-2">Rental Policy</p>
                 <div className="space-y-2 text-[9px] font-bold text-slate-500 uppercase">{terms}</div>
@@ -1609,7 +1437,6 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
               </div>
             </div>
 
-            {/* Submit Button */}
             <div className="p-5 bg-slate-50 border-t border-slate-100 space-y-4">
               <button onClick={canOrder ? sendWhatsAppOrder : undefined} disabled={!canOrder}
                 className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl transition-all ${canOrder ? "bg-[#062c24] text-white hover:bg-emerald-900 active:scale-95" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}>
@@ -1620,7 +1447,6 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                   : !termsAgreed ? "Agree to Terms to Proceed" 
                   : "Submit Order via WhatsApp 🟢"}
               </button>
-              
               <AdBanner variant="inline" />
             </div>
           </div>
@@ -1640,7 +1466,6 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         <p className="text-[8px] font-bold text-slate-300 uppercase text-center">© 2026 Pacak Khemah. All Rights Reserved</p>
       </footer>
 
-      {/* Toasts */}
       {showShareToast && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[500] bg-[#062c24] text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-toastIn">
           <i className="fas fa-check-circle text-emerald-400"></i><span className="text-[10px] font-black uppercase tracking-widest">Link Copied!</span>
