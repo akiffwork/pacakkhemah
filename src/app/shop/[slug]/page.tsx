@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
 import {
   doc, getDoc, collection, query, where, getDocs,
-  runTransaction, serverTimestamp, addDoc,
+  runTransaction, serverTimestamp, addDoc, orderBy,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import flatpickr from "flatpickr";
@@ -84,6 +84,7 @@ type CartItem = GearItem & { qty: number; addSetup?: boolean };
 type AvailRule = { itemId?: string; type?: string; start: string; end?: string; qty?: number };
 type Discount = { type: string; trigger_nights?: number; discount_percent: number; code?: string; deleted?: boolean; is_public?: boolean };
 type VendorPost = { id: string; content: string; image?: string; pinned?: boolean; createdAt: any };
+type Review = { id: string; customerName: string; rating: number; comment?: string | null; createdAt: any; isVerified?: boolean };
 
 type FulfillmentType = "pickup" | "delivery";
 
@@ -304,6 +305,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
   const [availRules, setAvailRules] = useState<AvailRule[]>([]);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [posts, setPosts] = useState<VendorPost[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedDates, setSelectedDates] = useState<[Date | null, Date | null]>([null, null]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -420,11 +422,12 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         if (!hasCredits) { setBlockState("nocredits"); return; }
       } else if (!isApproved || isVacation) { setOwnerPreview(true); }
       
-      const [gearSnap, availSnap, discSnap, postsSnap] = await Promise.all([
+      const [gearSnap, availSnap, discSnap, postsSnap, reviewsSnap] = await Promise.all([
         getDocs(query(collection(db, "gear"), where("vendorId", "==", vendorId))),
         getDocs(collection(db, "vendors", vendorId, "availability")),
         getDocs(collection(db, "vendors", vendorId, "discounts")),
         getDocs(collection(db, "vendors", vendorId, "posts")),
+        getDocs(query(collection(db, "reviews"), where("vendorId", "==", vendorId), where("status", "==", "published"), orderBy("createdAt", "desc"))),
       ]);
       setAllGear(gearSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted));
       setAvailRules(availSnap.docs.map(d => d.data() as AvailRule));
@@ -434,6 +437,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         if (!a.pinned && b.pinned) return 1;
         return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
       }));
+      setReviews(reviewsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Review)));
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
@@ -1145,11 +1149,76 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
 
         {/* REVIEWS TAB */}
         {mainTab === "reviews" && (
-          <div className="bg-white rounded-2xl p-8 text-center border border-slate-100">
-            <i className="fas fa-star text-amber-300 text-4xl mb-3"></i>
-            <p className="text-slate-400 text-sm font-bold">Reviews coming soon</p>
+          <div className="space-y-4">
+            {/* Rating Summary */}
             {reviewCount > 0 && (
-              <p className="text-[10px] text-slate-300 mt-2">{reviewCount} reviews • {rating.toFixed(1)} avg rating</p>
+              <div className="bg-white rounded-2xl p-6 border border-slate-100">
+                <div className="flex items-center gap-6">
+                  <div className="text-center">
+                    <p className="text-4xl font-black text-[#062c24]">{rating.toFixed(1)}</p>
+                    <div className="flex gap-0.5 justify-center my-1">
+                      {[1,2,3,4,5].map(s => (
+                        <i key={s} className={`fas fa-star text-xs ${s <= Math.round(rating) ? "text-amber-400" : "text-slate-200"}`}></i>
+                      ))}
+                    </div>
+                    <p className="text-[9px] text-slate-400 font-bold">{reviewCount} reviews</p>
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    {[5,4,3,2,1].map(s => {
+                      const count = (vendorData as any)?.ratingBreakdown?.[s] || 0;
+                      const pct = reviewCount > 0 ? (count / reviewCount) * 100 : 0;
+                      return (
+                        <div key={s} className="flex items-center gap-2">
+                          <span className="text-[9px] font-bold text-slate-400 w-3">{s}</span>
+                          <i className="fas fa-star text-[8px] text-amber-400"></i>
+                          <div className="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
+                            <div className="bg-amber-400 h-full rounded-full transition-all" style={{ width: `${pct}%` }}></div>
+                          </div>
+                          <span className="text-[8px] font-bold text-slate-300 w-5 text-right">{count}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Review Cards */}
+            {reviews.length > 0 ? (
+              <div className="space-y-3">
+                {reviews.map(r => (
+                  <div key={r.id} className="bg-white rounded-2xl p-5 border border-slate-100">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 font-black text-sm">
+                          {(r.customerName || "C")[0].toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-[#062c24]">
+                            {r.customerName || "Camper"}
+                            {r.isVerified && <i className="fas fa-check-circle text-emerald-500 text-[9px] ml-1.5"></i>}
+                          </p>
+                          <div className="flex gap-0.5 mt-0.5">
+                            {[1,2,3,4,5].map(s => (
+                              <i key={s} className={`fas fa-star text-[9px] ${s <= r.rating ? "text-amber-400" : "text-slate-200"}`}></i>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[8px] text-slate-300 font-bold">
+                        {r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" }) : ""}
+                      </span>
+                    </div>
+                    {r.comment && <p className="text-xs text-slate-500 leading-relaxed">{r.comment}</p>}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl p-8 text-center border border-slate-100">
+                <i className="fas fa-star text-amber-300 text-4xl mb-3"></i>
+                <p className="text-slate-400 text-sm font-bold">No reviews yet</p>
+                <p className="text-[10px] text-slate-300 mt-1">Be the first to rent and leave a review!</p>
+              </div>
             )}
           </div>
         )}
