@@ -245,11 +245,8 @@ export default function DirectoryPage() {
       const snap = await getDocs(q);
       const vendors = snap.docs
         .map(d => ({ id: d.id, ...d.data() } as Vendor))
-        .filter(v => v.credits && v.credits > 0 && v.is_vacation !== true)
+        .filter(v => v.credits && v.credits > 0 && v.is_vacation !== true && v.is_mockup !== true)
         .sort((a, b) => {
-          // NEW: Mockup shops first
-          if (a.is_mockup && !b.is_mockup) return -1;
-          if (!a.is_mockup && b.is_mockup) return 1;
           return (b.credits || 0) - (a.credits || 0);
         });
       setAllVendors(vendors);
@@ -735,19 +732,52 @@ export default function DirectoryPage() {
 
       {/* ═══ VENDOR CTA ═══ */}
       <section className="max-w-4xl mx-auto px-4 py-10">
-        <div className="bg-gradient-to-br from-[#062c24] to-emerald-800 rounded-3xl p-8 text-white text-center relative overflow-hidden">
+        <div className="bg-gradient-to-br from-[#062c24] to-emerald-800 rounded-3xl p-8 sm:p-10 text-white relative overflow-hidden">
           <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "url('/pattern-chevron.png')", backgroundSize: "200px" }} />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-400/5 rounded-full blur-[80px]" />
           <div className="relative z-10">
-            <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <i className="fas fa-store text-2xl"></i>
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center gap-2 bg-white/10 border border-white/10 px-4 py-1.5 rounded-full mb-5">
+                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
+                <span className="text-[9px] font-bold uppercase tracking-widest text-emerald-300">
+                  {allVendors.length > 0 ? `${allVendors.length}+ vendor sudah sertai` : "Terbuka untuk pendaftaran"}
+                </span>
+              </div>
+              <h3 className="text-2xl sm:text-3xl font-black uppercase mb-3">Ada Gear Camping?<br/><span className="text-emerald-400">Jana Pendapatan.</span></h3>
+              <p className="text-sm text-white/50 max-w-md mx-auto">
+                Tukarkan peralatan camping anda jadi bisnes rental. Tiada yuran bulanan — selamanya.
+              </p>
+              <p className="text-xs text-white/30 max-w-md mx-auto mt-1 italic">
+                Turn idle camping equipment into a rental business. No monthly fees — ever.
+              </p>
             </div>
-            <h3 className="text-xl font-black uppercase mb-2">Got Camping Gear?</h3>
-            <p className="text-sm text-emerald-200 max-w-md mx-auto mb-6">
-              Turn your equipment into income. Join {allVendors.length > 0 ? `${allVendors.length}+` : "our"} verified vendors on Pacak Khemah.
-            </p>
-            <Link href="/register-vendor" className="inline-block bg-white text-[#062c24] px-8 py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-50 transition-colors shadow-lg">
-              <i className="fas fa-rocket mr-2"></i> Start Earning
-            </Link>
+
+            <div className="grid grid-cols-3 gap-3 mb-8">
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
+                <p className="text-2xl font-black text-emerald-400">RM0</p>
+                <p className="text-[8px] font-bold text-white/40 uppercase tracking-widest mt-1">Kos Daftar</p>
+                <p className="text-[7px] text-white/20 italic">Free to register</p>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
+                <p className="text-2xl font-black text-emerald-400">10</p>
+                <p className="text-[8px] font-bold text-white/40 uppercase tracking-widest mt-1">Kredit Percuma</p>
+                <p className="text-[7px] text-white/20 italic">Free starter credits</p>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
+                <p className="text-2xl font-black text-emerald-400">1</p>
+                <p className="text-[8px] font-bold text-white/40 uppercase tracking-widest mt-1">Kredit / Lead</p>
+                <p className="text-[7px] text-white/20 italic">Pay per customer</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Link href="/register-vendor" className="bg-white text-[#062c24] px-8 py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-50 transition-colors shadow-lg text-center">
+                <i className="fas fa-rocket mr-2"></i>Daftar Percuma
+              </Link>
+              <Link href={`/shop/UHdf5wMhsPbwi7qFGPSloXGdbu53`} className="bg-white/10 border border-white/20 text-white px-8 py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-white/20 transition-colors text-center">
+                <i className="fas fa-eye mr-2"></i>Lihat Demo Shop
+              </Link>
+            </div>
           </div>
         </div>
       </section>

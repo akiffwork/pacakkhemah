@@ -12,6 +12,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import flatpickr from "flatpickr";
 import "flatpickr/dist/flatpickr.min.css";
 import AdBanner from "@/components/AdBanner";
+import DemoShopGuide from "@/components/DemoShopGuide";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -849,6 +850,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
     <div className="pb-8 min-h-screen" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f0f2f1", color: "#0f172a" }}>
       {/* Mock-up Banner */}
       {isMockup && <MockupBanner />}
+      {isMockup && <DemoShopGuide />}
       
       {ownerPreview && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-amber-400 text-[#062c24] px-4 py-2 rounded-full text-[10px] font-black uppercase shadow-xl z-[200] animate-bounce">PREVIEW MODE</div>
@@ -877,7 +879,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         </div>
 
         {/* Centered profile */}
-        <div className="relative z-10 flex flex-col items-center text-center px-6 pt-6 pb-2">
+        <div id="demo-hero" className="relative z-10 flex flex-col items-center text-center px-6 pt-6 pb-2">
           <div className="w-20 h-20 bg-white rounded-2xl p-1 shadow-2xl mb-4">
             <img src={vendorData?.image || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-[0.9rem]" alt="logo" />
           </div>
@@ -953,7 +955,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         )}
 
         {/* Main Tabs */}
-        <div className="flex bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm">
+        <div id="demo-tabs" className="flex bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm">
           {([
             { id: "gear" as const, label: "Gear", icon: "fa-campground", badge: 0 },
             { id: "updates" as const, label: "Updates", icon: "fa-bullhorn", badge: posts.length },
@@ -1005,7 +1007,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
             )}
 
             <Section title="Pick Your Date" icon="fa-calendar-alt" defaultOpen={true}>
-              <div className="flex gap-3">
+              <div id="demo-dates" className="flex gap-3">
                 <div className="flex-1">
                   <label className="text-[9px] font-black text-emerald-600 uppercase block mb-1.5 ml-1">Pick Up Date</label>
                   <input id="checkin-date" readOnly className="w-full bg-slate-50 border border-slate-200 text-xs font-bold text-[#062c24] outline-none text-center py-3.5 rounded-xl focus:ring-2 focus:ring-emerald-500 cursor-pointer" placeholder="Select" />
@@ -1037,7 +1039,8 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {/* Gear grid */}
+              <div id="demo-gear" className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {filteredGear(activeCategory || categories[0] || "").map((item, idx) => {
                   const avail = getAvailableStock(item.id);
                   const inCart = cart.find(c => c.id === item.id)?.qty || 0;
@@ -1180,7 +1183,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
 
       {/* Floating Cart Button */}
       {cartCount > 0 && (
-        <button onClick={() => setShowCart(true)}
+        <button id="demo-cart-btn" onClick={() => setShowCart(true)}
           className="fixed bottom-6 right-6 bg-[#062c24] text-white w-16 h-16 rounded-2xl shadow-2xl flex items-center justify-center z-[100] hover:bg-emerald-800 active:scale-95 transition-all">
           <i className="fas fa-shopping-cart text-xl"></i>
           <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center">{cartCount}</span>
