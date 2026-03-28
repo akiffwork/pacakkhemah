@@ -2,61 +2,90 @@
 
 import { useState, useEffect, useCallback } from "react";
 
+type Lang = "en" | "my";
+
 type TourStep = {
   targetId: string;
-  title: string;
-  titleMy: string;
-  desc: string;
   icon: string;
-  position?: "top" | "bottom";
+  en: { title: string; desc: string };
+  my: { title: string; desc: string };
 };
+
+type HotspotData = {
+  targetId: string;
+  icon: string;
+  en: { title: string; desc: string };
+  my: { title: string; desc: string };
+};
+
+type Rect = { top: number; left: number; width: number; height: number };
 
 const TOUR_STEPS: TourStep[] = [
   {
     targetId: "demo-hero",
-    title: "Vendor Profile",
-    titleMy: "Profil Vendor",
-    desc: "Your shop's identity — logo, name, badges, social links, and service tags. Customers see this first. You customize all of it from Vendor Studio.",
     icon: "fa-user-circle",
+    en: { title: "Vendor Profile & Branding", desc: "Your shop's identity — logo, name, verified badges, and rating. Customers see this first. You set it up once in Vendor Studio and it stays updated." },
+    my: { title: "Profil & Branding Vendor", desc: "Identiti kedai anda — logo, nama, lencana pengesahan, dan rating. Pelanggan nampak ini dulu. Anda set sekali di Vendor Studio dan ia sentiasa dikemas kini." },
+  },
+  {
+    targetId: "demo-services",
+    icon: "fa-truck",
+    en: { title: "Pickup, Delivery & Setup", desc: "Show customers your pickup locations, delivery zones, and setup services. You configure these options in your dashboard — they appear automatically here." },
+    my: { title: "Pickup, Penghantaran & Setup", desc: "Tunjukkan lokasi pickup, zon penghantaran, dan perkhidmatan setup anda. Anda tetapkan ini di dashboard — ia muncul secara automatik di sini." },
   },
   {
     targetId: "demo-tabs",
-    title: "Shop Tabs",
-    titleMy: "Tab Kedai",
-    desc: "Three sections: Gear (your items), Updates (announcements to customers), and Reviews (verified customer ratings). All managed from your dashboard.",
     icon: "fa-layer-group",
+    en: { title: "Shop Tabs", desc: "Three sections: Gear (your items for rent), Updates (announcements to customers), and Reviews (verified ratings from past renters). All managed from your dashboard." },
+    my: { title: "Tab Kedai", desc: "Tiga bahagian: Gear (item untuk disewa), Updates (pengumuman), dan Reviews (rating pelanggan). Semua diuruskan dari dashboard anda." },
+  },
+  {
+    targetId: "demo-about",
+    icon: "fa-info-circle",
+    en: { title: "About Us Section", desc: "Tell your story — describe your business, what makes you different, and why customers should rent from you. Supports bilingual content (EN/BM)." },
+    my: { title: "Bahagian Tentang Kami", desc: "Ceritakan kisah anda — terangkan bisnes anda, apa yang membuatkan anda berbeza, dan kenapa pelanggan patut menyewa dari anda. Sokong dwibahasa (EN/BM)." },
+  },
+  {
+    targetId: "demo-howto",
+    icon: "fa-list-ol",
+    en: { title: "How to Rent Guide", desc: "Custom step-by-step rental instructions for your customers. Set your own process — from booking to return. Each step can have bilingual titles and descriptions." },
+    my: { title: "Panduan Cara Sewa", desc: "Arahan langkah demi langkah untuk pelanggan anda. Tetapkan proses anda sendiri — dari tempahan hingga pulangan. Setiap langkah boleh ada tajuk dan penerangan dwibahasa." },
+  },
+  {
+    targetId: "demo-offer",
+    icon: "fa-tags",
+    en: { title: "Discount & Promotions", desc: "Auto-discount banners appear when you set nightly discounts (e.g. 10% off for 3+ nights). You can also create promo codes. All configured in your dashboard." },
+    my: { title: "Diskaun & Promosi", desc: "Banner diskaun automatik muncul bila anda set diskaun malam (cth. 10% off untuk 3+ malam). Anda juga boleh cipta kod promo. Semua diset di dashboard." },
   },
   {
     targetId: "demo-dates",
-    title: "Date Picker",
-    titleMy: "Pilih Tarikh",
-    desc: "Customers pick their rental dates here. Blocked dates from your calendar won't appear. You control availability per item from your dashboard.",
     icon: "fa-calendar-alt",
+    en: { title: "Date Picker", desc: "Customers pick rental dates here. Blocked dates from your availability calendar are hidden automatically. You manage availability per item from your dashboard." },
+    my: { title: "Pilih Tarikh", desc: "Pelanggan pilih tarikh sewa di sini. Tarikh yang diblok dari kalendar anda disembunyikan secara automatik. Anda urus ketersediaan setiap item dari dashboard." },
   },
   {
     targetId: "demo-gear",
-    title: "Gear Listing",
-    titleMy: "Senarai Gear",
-    desc: "Your items organized by category with photos, pricing, and stock. Customers add to cart and checkout via WhatsApp. You manage everything from Vendor Studio.",
     icon: "fa-campground",
+    en: { title: "Gear Catalogue", desc: "Your items organized by category with photos, pricing per night, and stock count. Customers add to cart and checkout via WhatsApp. You manage everything from Vendor Studio." },
+    my: { title: "Katalog Gear", desc: "Item anda disusun mengikut kategori dengan gambar, harga semalam, dan stok. Pelanggan tambah ke troli dan checkout via WhatsApp. Anda urus semua dari Vendor Studio." },
+  },
+  {
+    targetId: "demo-cart-btn",
+    icon: "fa-shopping-cart",
+    en: { title: "Cart & Booking Summary", desc: "After adding items, customers open the cart to see full pricing breakdown — subtotal, discounts, delivery fees, deposit, and total. They submit the order via WhatsApp." },
+    my: { title: "Troli & Ringkasan Tempahan", desc: "Selepas tambah item, pelanggan buka troli untuk lihat pecahan harga penuh — subtotal, diskaun, kos penghantaran, deposit, dan jumlah. Mereka hantar tempahan via WhatsApp." },
   },
 ];
 
-type HotspotData = {
-  targetId: string;
-  title: string;
-  desc: string;
-  icon: string;
-};
-
 const HOTSPOTS: HotspotData[] = [
-  { targetId: "demo-hero", title: "Profil & Branding", desc: "Your logo, name, badges, social links — fully customizable from Vendor Studio.", icon: "fa-user-circle" },
-  { targetId: "demo-tabs", title: "Tab Navigasi", desc: "Gear, Updates & Reviews — customers explore your shop through these tabs.", icon: "fa-layer-group" },
-  { targetId: "demo-dates", title: "Tarikh Sewa", desc: "Smart date picker that respects your availability calendar. Blocked dates auto-hidden.", icon: "fa-calendar-alt" },
-  { targetId: "demo-gear", title: "Katalog Gear", desc: "Your items with photos, pricing & stock. Organized by category. Add-to-cart in one tap.", icon: "fa-campground" },
+  { targetId: "demo-hero", icon: "fa-user-circle", en: { title: "Profile & Branding", desc: "Logo, name, badges, rating, social links — fully customizable." }, my: { title: "Profil & Branding", desc: "Logo, nama, lencana, rating, pautan sosial — semuanya boleh diubah suai." } },
+  { targetId: "demo-services", icon: "fa-truck", en: { title: "Pickup, Delivery & Setup", desc: "Show your service options — pickup points, delivery zones, setup services." }, my: { title: "Pickup, Penghantaran & Setup", desc: "Tunjukkan pilihan perkhidmatan anda — lokasi pickup, zon penghantaran, setup." } },
+  { targetId: "demo-tabs", icon: "fa-layer-group", en: { title: "Navigation Tabs", desc: "Gear, Updates & Reviews — customers explore your shop through these." }, my: { title: "Tab Navigasi", desc: "Gear, Updates & Reviews — pelanggan terokai kedai melalui tab ini." } },
+  { targetId: "demo-about", icon: "fa-info-circle", en: { title: "About Section", desc: "Your story and business description. Supports bilingual content." }, my: { title: "Tentang Kami", desc: "Cerita dan penerangan bisnes anda. Sokong dwibahasa." } },
+  { targetId: "demo-howto", icon: "fa-list-ol", en: { title: "Rental Steps", desc: "Custom step-by-step guide for your customers." }, my: { title: "Langkah Sewa", desc: "Panduan langkah demi langkah untuk pelanggan anda." } },
+  { targetId: "demo-dates", icon: "fa-calendar-alt", en: { title: "Date Picker", desc: "Smart date selector linked to your availability calendar." }, my: { title: "Pilih Tarikh", desc: "Pemilih tarikh pintar yang dipautkan ke kalendar ketersediaan anda." } },
+  { targetId: "demo-gear", icon: "fa-campground", en: { title: "Gear Catalogue", desc: "Items with photos, pricing & stock. Organized by category." }, my: { title: "Katalog Gear", desc: "Item dengan gambar, harga & stok. Disusun mengikut kategori." } },
 ];
-
-type Rect = { top: number; left: number; width: number; height: number };
 
 function getRect(id: string): Rect | null {
   const el = document.getElementById(id);
@@ -66,6 +95,7 @@ function getRect(id: string): Rect | null {
 }
 
 export default function DemoShopGuide() {
+  const [lang, setLang] = useState<Lang>("my");
   const [mode, setMode] = useState<"idle" | "hotspots" | "tour">("idle");
   const [tourStep, setTourStep] = useState(0);
   const [showMenu, setShowMenu] = useState(false);
@@ -74,37 +104,37 @@ export default function DemoShopGuide() {
   const [dismissed, setDismissed] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
 
-  // Auto-dismiss intro after 8s
   useEffect(() => {
-    const t = setTimeout(() => setShowIntro(false), 8000);
+    const t = setTimeout(() => setShowIntro(false), 10000);
     return () => clearTimeout(t);
   }, []);
 
-  // Calculate element positions
   const updateRects = useCallback(() => {
     const newRects: Record<string, Rect> = {};
-    [...TOUR_STEPS, ...HOTSPOTS].forEach(s => {
-      const r = getRect(s.targetId);
-      if (r) newRects[s.targetId] = r;
+    const ids = new Set([...TOUR_STEPS.map(s => s.targetId), ...HOTSPOTS.map(h => h.targetId)]);
+    ids.forEach(id => {
+      const r = getRect(id);
+      if (r) newRects[id] = r;
     });
     setRects(newRects);
   }, []);
 
   useEffect(() => {
     updateRects();
-    const handler = () => updateRects();
-    window.addEventListener("scroll", handler, { passive: true });
-    window.addEventListener("resize", handler);
+    const onScroll = () => updateRects();
+    const onResize = () => updateRects();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onResize);
     return () => {
-      window.removeEventListener("scroll", handler);
-      window.removeEventListener("resize", handler);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
     };
   }, [updateRects, mode]);
 
-  // Tour: scroll to current step
   useEffect(() => {
     if (mode !== "tour") return;
     const step = TOUR_STEPS[tourStep];
+    if (!step) return;
     const el = document.getElementById(step.targetId);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -112,44 +142,41 @@ export default function DemoShopGuide() {
     }
   }, [tourStep, mode, updateRects]);
 
-  function startTour() {
-    setMode("tour");
-    setTourStep(0);
-    setShowMenu(false);
-    setShowIntro(false);
-  }
+  function startTour() { setMode("tour"); setTourStep(0); setShowMenu(false); setShowIntro(false); }
+  function startHotspots() { setMode("hotspots"); setShowMenu(false); setShowIntro(false); }
+  function endTour() { setMode("idle"); setTourStep(0); setActiveHotspot(null); }
+  function nextStep() { tourStep < TOUR_STEPS.length - 1 ? setTourStep(tourStep + 1) : endTour(); }
+  function prevStep() { if (tourStep > 0) setTourStep(tourStep - 1); }
+  function toggleLang() { setLang(prev => prev === "en" ? "my" : "en"); }
 
-  function startHotspots() {
-    setMode("hotspots");
-    setShowMenu(false);
-    setShowIntro(false);
-  }
-
-  function endTour() {
-    setMode("idle");
-    setTourStep(0);
-    setActiveHotspot(null);
-  }
-
-  function nextStep() {
-    if (tourStep < TOUR_STEPS.length - 1) setTourStep(tourStep + 1);
-    else endTour();
-  }
-
-  function prevStep() {
-    if (tourStep > 0) setTourStep(tourStep - 1);
-  }
+  const t = (obj: { en: string; my: string }) => obj[lang];
 
   if (dismissed) return null;
 
   const currentStep = TOUR_STEPS[tourStep];
-  const currentRect = rects[currentStep?.targetId];
+  const currentRect = currentStep ? rects[currentStep.targetId] : undefined;
+
+  // Filter to only steps whose elements exist on page
+  const availableSteps = TOUR_STEPS.filter(s => rects[s.targetId]);
+  const currentStepIndex = availableSteps.findIndex(s => s.targetId === currentStep?.targetId);
 
   return (
     <>
-      {/* ═══ INTRO PROMPT (shows on first load) ═══ */}
+      {/* ═══ LANGUAGE TOGGLE (always visible when guide active) ═══ */}
+      {(mode !== "idle" || showIntro) && (
+        <button
+          onClick={toggleLang}
+          className="fixed top-20 right-4 z-[95] bg-white shadow-xl border border-slate-200 rounded-full px-3 py-1.5 flex items-center gap-2 hover:shadow-2xl transition-all"
+        >
+          <i className="fas fa-globe text-indigo-500 text-xs"></i>
+          <span className="text-[9px] font-black uppercase tracking-widest text-[#062c24]">{lang === "en" ? "EN" : "BM"}</span>
+          <i className="fas fa-exchange-alt text-slate-300 text-[8px]"></i>
+        </button>
+      )}
+
+      {/* ═══ INTRO PROMPT ═══ */}
       {showIntro && mode === "idle" && (
-        <div className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-auto sm:bottom-24 sm:left-6 z-[90] max-w-xs animate-slideUp">
+        <div className="fixed bottom-20 left-4 right-4 sm:left-6 sm:right-auto z-[90] max-w-xs" style={{ animation: "dsg-slideUp 0.3s ease-out" }}>
           <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl p-4 shadow-2xl relative">
             <button onClick={() => setShowIntro(false)} className="absolute top-2 right-2 w-6 h-6 bg-white/20 rounded-full flex items-center justify-center text-[10px] hover:bg-white/30">
               <i className="fas fa-times"></i>
@@ -159,14 +186,18 @@ export default function DemoShopGuide() {
                 <i className="fas fa-magic text-lg"></i>
               </div>
               <div>
-                <p className="text-xs font-black uppercase mb-1">Explore This Demo Shop!</p>
-                <p className="text-[10px] text-white/70 leading-relaxed mb-3">Tap the purple button below to learn what each feature does and how it works for vendors.</p>
+                <p className="text-xs font-black uppercase mb-1">
+                  {t({ en: "Explore This Demo Shop!", my: "Terokai Demo Shop Ini!" })}
+                </p>
+                <p className="text-[10px] text-white/70 leading-relaxed mb-3">
+                  {t({ en: "Tap the purple button to learn what each feature does and how it works for vendors.", my: "Tekan butang ungu untuk ketahui fungsi setiap bahagian dan cara ia berfungsi untuk vendor." })}
+                </p>
                 <div className="flex gap-2">
                   <button onClick={startTour} className="bg-white text-indigo-600 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase hover:bg-indigo-50 transition-all">
-                    <i className="fas fa-play mr-1"></i>Guided Tour
+                    <i className="fas fa-play mr-1"></i>{t({ en: "Guided Tour", my: "Jelajah Berpandu" })}
                   </button>
                   <button onClick={startHotspots} className="bg-white/20 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase hover:bg-white/30 transition-all">
-                    <i className="fas fa-dot-circle mr-1"></i>Hotspots
+                    <i className="fas fa-dot-circle mr-1"></i>{t({ en: "Hotspots", my: "Titik Info" })}
                   </button>
                 </div>
               </div>
@@ -188,17 +219,27 @@ export default function DemoShopGuide() {
             )}
           </button>
 
-          {/* Menu popup */}
           {showMenu && (
-            <div className="absolute bottom-16 left-0 bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 w-52 animate-scaleIn">
+            <div className="absolute bottom-16 left-0 bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 w-56" style={{ animation: "dsg-scaleIn 0.2s ease-out" }}>
+              {/* Language toggle in menu */}
+              <div className="flex items-center justify-between px-4 py-2 mb-1">
+                <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
+                  {t({ en: "Language", my: "Bahasa" })}
+                </span>
+                <button onClick={toggleLang} className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-lg hover:bg-slate-200 transition-colors">
+                  <span className="text-[9px] font-black text-[#062c24]">{lang === "en" ? "EN" : "BM"}</span>
+                  <i className="fas fa-exchange-alt text-slate-400 text-[7px]"></i>
+                </button>
+              </div>
+
               <button onClick={startTour}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-indigo-50 transition-all text-left group">
                 <div className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
                   <i className="fas fa-play text-xs"></i>
                 </div>
                 <div>
-                  <p className="text-[10px] font-black text-[#062c24] uppercase">Guided Tour</p>
-                  <p className="text-[8px] text-slate-400 font-medium">Step-by-step walkthrough</p>
+                  <p className="text-[10px] font-black text-[#062c24] uppercase">{t({ en: "Guided Tour", my: "Jelajah Berpandu" })}</p>
+                  <p className="text-[8px] text-slate-400 font-medium">{t({ en: "Step-by-step walkthrough", my: "Panduan langkah demi langkah" })}</p>
                 </div>
               </button>
               <button onClick={startHotspots}
@@ -207,14 +248,14 @@ export default function DemoShopGuide() {
                   <i className="fas fa-dot-circle text-xs"></i>
                 </div>
                 <div>
-                  <p className="text-[10px] font-black text-[#062c24] uppercase">Hotspots</p>
-                  <p className="text-[8px] text-slate-400 font-medium">Explore at your own pace</p>
+                  <p className="text-[10px] font-black text-[#062c24] uppercase">{t({ en: "Hotspots", my: "Titik Info" })}</p>
+                  <p className="text-[8px] text-slate-400 font-medium">{t({ en: "Explore at your own pace", my: "Terokai mengikut rentak anda" })}</p>
                 </div>
               </button>
               <div className="border-t border-slate-100 mt-1 pt-1">
                 <button onClick={() => { setDismissed(true); setShowMenu(false); }}
                   className="w-full px-4 py-2 text-[9px] font-bold text-slate-400 hover:text-red-500 transition-colors text-center">
-                  Hide Guide
+                  {t({ en: "Hide Guide", my: "Sembunyikan Panduan" })}
                 </button>
               </div>
             </div>
@@ -225,7 +266,6 @@ export default function DemoShopGuide() {
       {/* ═══ HOTSPOT MODE ═══ */}
       {mode === "hotspots" && (
         <>
-          {/* Close button */}
           <div className="fixed bottom-6 left-6 z-[80]">
             <button onClick={endTour}
               className="w-14 h-14 bg-red-500 text-white rounded-2xl shadow-2xl flex items-center justify-center hover:bg-red-600 active:scale-95 transition-all">
@@ -233,17 +273,16 @@ export default function DemoShopGuide() {
             </button>
           </div>
 
-          {/* Hotspot dots */}
           {HOTSPOTS.map(h => {
             const rect = rects[h.targetId];
             if (!rect) return null;
-            const top = rect.top + 12;
-            const left = rect.left + rect.width - 40;
+            const dotTop = rect.top + 12;
+            const dotLeft = rect.left + rect.width - 40;
             const isActive = activeHotspot === h.targetId;
+            const content = h[lang];
 
             return (
-              <div key={h.targetId} className="absolute z-[70]" style={{ top, left }}>
-                {/* Pulsing dot */}
+              <div key={h.targetId} className="absolute z-[70]" style={{ top: dotTop, left: dotLeft }}>
                 <button
                   onClick={() => setActiveHotspot(isActive ? null : h.targetId)}
                   className="relative w-8 h-8 flex items-center justify-center"
@@ -254,20 +293,19 @@ export default function DemoShopGuide() {
                   </span>
                 </button>
 
-                {/* Tooltip */}
                 {isActive && (
-                  <div className="absolute top-10 right-0 w-56 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 animate-scaleIn z-[75]">
+                  <div className="absolute top-10 right-0 w-60 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 z-[75]" style={{ animation: "dsg-scaleIn 0.2s ease-out" }}>
                     <div className="flex items-start gap-3">
                       <div className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center shrink-0">
                         <i className={`fas ${h.icon} text-sm`}></i>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[10px] font-black text-[#062c24] uppercase">{h.title}</p>
-                        <p className="text-[10px] text-slate-500 leading-relaxed mt-1">{h.desc}</p>
+                        <p className="text-[10px] font-black text-[#062c24] uppercase">{content.title}</p>
+                        <p className="text-[10px] text-slate-500 leading-relaxed mt-1">{content.desc}</p>
                       </div>
                     </div>
                     <button onClick={() => setActiveHotspot(null)} className="mt-3 w-full py-2 bg-slate-50 text-slate-400 rounded-xl text-[9px] font-bold uppercase hover:bg-slate-100 transition-colors">
-                      Tutup
+                      {t({ en: "Close", my: "Tutup" })}
                     </button>
                   </div>
                 )}
@@ -278,9 +316,8 @@ export default function DemoShopGuide() {
       )}
 
       {/* ═══ GUIDED TOUR MODE ═══ */}
-      {mode === "tour" && currentRect && (
+      {mode === "tour" && currentRect && currentStep && (
         <>
-          {/* Dark overlay with spotlight cutout */}
           <div className="fixed inset-0 z-[85]" onClick={endTour}>
             <svg className="w-full h-full" style={{ position: "absolute", top: 0, left: 0 }}>
               <defs>
@@ -300,7 +337,6 @@ export default function DemoShopGuide() {
             </svg>
           </div>
 
-          {/* Spotlight border */}
           <div
             className="fixed z-[86] border-2 border-indigo-400 rounded-2xl pointer-events-none transition-all duration-300"
             style={{
@@ -312,14 +348,15 @@ export default function DemoShopGuide() {
             }}
           />
 
-          {/* Info card */}
           <div
-            className="fixed z-[87] left-4 right-4 sm:left-auto sm:right-auto sm:w-80 animate-slideUpCenter"
+            className="fixed z-[87] left-4 right-4 sm:left-1/2 sm:right-auto sm:w-96"
             style={{
               ...(currentRect.top - window.scrollY > window.innerHeight / 2
-                ? { top: Math.max(80, currentRect.top - window.scrollY - 200), left: "50%", transform: "translateX(-50%)" }
-                : { top: Math.min(window.innerHeight - 220, currentRect.top - window.scrollY + currentRect.height + 20), left: "50%", transform: "translateX(-50%)" }
+                ? { top: Math.max(80, currentRect.top - window.scrollY - 230) }
+                : { top: Math.min(window.innerHeight - 250, currentRect.top - window.scrollY + currentRect.height + 20) }
               ),
+              ...(typeof window !== "undefined" && window.innerWidth >= 640 ? { transform: "translateX(-50%)" } : {}),
+              animation: "dsg-slideUp 0.3s ease-out",
             }}
           >
             <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -329,14 +366,20 @@ export default function DemoShopGuide() {
               </div>
 
               <div className="p-5">
-                {/* Step counter */}
+                {/* Header row */}
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">
                     {tourStep + 1} / {TOUR_STEPS.length}
                   </span>
-                  <button onClick={endTour} className="w-7 h-7 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors">
-                    <i className="fas fa-times text-[10px]"></i>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={toggleLang} className="flex items-center gap-1 bg-slate-100 px-2 py-1 rounded-lg hover:bg-slate-200 transition-colors">
+                      <i className="fas fa-globe text-indigo-400 text-[8px]"></i>
+                      <span className="text-[8px] font-black text-slate-500">{lang === "en" ? "EN" : "BM"}</span>
+                    </button>
+                    <button onClick={endTour} className="w-7 h-7 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors">
+                      <i className="fas fa-times text-[10px]"></i>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Content */}
@@ -345,26 +388,25 @@ export default function DemoShopGuide() {
                     <i className={`fas ${currentStep.icon}`}></i>
                   </div>
                   <div>
-                    <p className="text-sm font-black text-[#062c24] uppercase leading-tight">{currentStep.title}</p>
-                    <p className="text-[10px] text-emerald-600 font-bold">{currentStep.titleMy}</p>
+                    <p className="text-sm font-black text-[#062c24] uppercase leading-tight">{currentStep[lang].title}</p>
                   </div>
                 </div>
-                <p className="text-xs text-slate-500 leading-relaxed mb-5">{currentStep.desc}</p>
+                <p className="text-xs text-slate-500 leading-relaxed mb-5">{currentStep[lang].desc}</p>
 
                 {/* Navigation */}
                 <div className="flex gap-2">
                   {tourStep > 0 && (
                     <button onClick={prevStep}
                       className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl text-[10px] font-black uppercase hover:bg-slate-200 transition-all">
-                      <i className="fas fa-arrow-left mr-1"></i> Sebelum
+                      <i className="fas fa-arrow-left mr-1"></i> {t({ en: "Back", my: "Sebelum" })}
                     </button>
                   )}
                   <button onClick={nextStep}
                     className="flex-[2] py-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl text-[10px] font-black uppercase hover:from-indigo-600 hover:to-purple-600 transition-all shadow-lg">
                     {tourStep < TOUR_STEPS.length - 1 ? (
-                      <>Seterusnya <i className="fas fa-arrow-right ml-1"></i></>
+                      <>{t({ en: "Next", my: "Seterusnya" })} <i className="fas fa-arrow-right ml-1"></i></>
                     ) : (
-                      <>Selesai <i className="fas fa-check ml-1"></i></>
+                      <>{t({ en: "Finish", my: "Selesai" })} <i className="fas fa-check ml-1"></i></>
                     )}
                   </button>
                 </div>
@@ -374,23 +416,15 @@ export default function DemoShopGuide() {
         </>
       )}
 
-      {/* ═══ ANIMATIONS ═══ */}
       <style>{`
-        @keyframes slideUp {
+        @keyframes dsg-slideUp {
           from { opacity: 0; transform: translateY(12px); }
           to { opacity: 1; transform: translateY(0); }
         }
-        @keyframes slideUpCenter {
-          from { opacity: 0; transform: translateY(12px) translateX(-50%); }
-          to { opacity: 1; transform: translateY(0) translateX(-50%); }
-        }
-        @keyframes scaleIn {
+        @keyframes dsg-scaleIn {
           from { opacity: 0; transform: scale(0.9); }
           to { opacity: 1; transform: scale(1); }
         }
-        .animate-slideUp { animation: slideUp 0.3s ease-out forwards; }
-        .animate-slideUpCenter { animation: slideUpCenter 0.3s ease-out forwards; }
-        .animate-scaleIn { animation: scaleIn 0.2s ease-out forwards; }
       `}</style>
     </>
   );

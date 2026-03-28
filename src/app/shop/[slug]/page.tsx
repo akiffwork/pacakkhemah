@@ -915,7 +915,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
             </div>
           )}
 
-          <div className="flex flex-wrap justify-center gap-2 text-[9px] font-bold uppercase mb-3">
+          <div id="demo-services" className="flex flex-wrap justify-center gap-2 text-[9px] font-bold uppercase mb-3">
             <span className="bg-white/10 backdrop-blur-sm px-2.5 py-1 rounded-full border border-white/10">
               <i className="fas fa-truck text-emerald-400 mr-1"></i>Pickup: {vendorData?.pickup?.join(", ") || vendorData?.city}
             </span>
@@ -948,7 +948,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
 
       <main className="max-w-4xl mx-auto px-4 mt-4 space-y-3">
         {specialOffer && (
-          <div className="bg-gradient-to-r from-red-600 to-orange-500 p-3.5 rounded-2xl text-white text-center shadow-lg relative overflow-hidden">
+          <div id="demo-offer" className="bg-gradient-to-r from-red-600 to-orange-500 p-3.5 rounded-2xl text-white text-center shadow-lg relative overflow-hidden">
             <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/cubes.png')" }} />
             <p className="relative z-10 text-[10px] font-black uppercase tracking-widest"><i className="fas fa-fire mr-1"></i> SAVE {specialOffer.discount_percent}% ON STAYS OF {specialOffer.trigger_nights}+ NIGHTS!</p>
           </div>
@@ -979,15 +979,18 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         {mainTab === "gear" && (
           <>
             {(vendorData?.tagline || vendorData?.tagline_my) && (
+              <div id="demo-about">
               <Section title="About Us" icon="fa-info-circle" defaultOpen={false}>
                 <div className="space-y-3">
                   {vendorData.tagline && <p className="text-sm text-slate-700 leading-relaxed">{vendorData.tagline}</p>}
                   {vendorData.tagline_my && <p className="text-sm text-emerald-700 italic leading-relaxed">{vendorData.tagline_my}</p>}
                 </div>
               </Section>
+              </div>
             )}
 
             {vendorData?.steps && vendorData.steps.length > 0 && (
+              <div id="demo-howto">
               <Section title="How to Rent?" icon="fa-list-ol" defaultOpen={false}>
                 <div className="space-y-2">
                   {vendorData.steps.map((step, i) => (
@@ -1004,6 +1007,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                   ))}
                 </div>
               </Section>
+              </div>
             )}
 
             <Section title="Pick Your Date" icon="fa-calendar-alt" defaultOpen={true}>
