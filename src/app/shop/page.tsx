@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
 import {
-  doc, getDoc, collection, query, where, getDocs,
+  doc, getDoc, getDocs, collection, query, where,
   runTransaction, serverTimestamp, addDoc, orderBy,
   onSnapshot
 } from "firebase/firestore";
@@ -316,7 +316,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   const [showCart, setShowCart] = useState(false);
   const [showItemModal, setShowItemModal] = useState(false);
   
-  // FIX 1: Modal Live State
+  // FIX: Make the modal live-sync with updates by keeping the ID instead of the object
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const selectedItem = allGear.find(g => g.id === selectedItemId) || null;
   
@@ -376,6 +376,9 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REAL-TIME EFFECTS (CLEANED UP!)
+  // ═══════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     if (!vendorId) return;
 
@@ -412,21 +415,25 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
           setOwnerPreview(true); 
         }
 
+        // 1. Listen to Gear changes real-time
         unsubs.push(
           onSnapshot(query(collection(db, "gear"), where("vendorId", "==", vendorId)), snap => {
             setAllGear(snap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted));
           })
         );
+        // 2. Listen to Availability changes real-time
         unsubs.push(
           onSnapshot(collection(db, "vendors", vendorId!, "availability"), snap => {
             setAvailRules(snap.docs.map(d => d.data() as AvailRule));
           })
         );
+        // 3. Listen to Discounts changes real-time
         unsubs.push(
           onSnapshot(collection(db, "vendors", vendorId!, "discounts"), snap => {
             setDiscounts(snap.docs.map(d => d.data() as Discount).filter(d => !d.deleted));
           })
         );
+        // 4. Listen to Posts changes real-time
         unsubs.push(
           onSnapshot(collection(db, "vendors", vendorId!, "posts"), snap => {
             setPosts(snap.docs.map(d => ({ id: d.id, ...d.data() } as VendorPost)).sort((a, b) => {
@@ -436,6 +443,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
             }));
           })
         );
+        // 5. Listen to Reviews changes real-time
         unsubs.push(
           onSnapshot(query(collection(db, "reviews"), where("vendorId", "==", vendorId), where("status", "==", "published"), orderBy("createdAt", "desc")), snap => {
             setReviews(snap.docs.map(d => ({ id: d.id, ...d.data() } as Review)));
