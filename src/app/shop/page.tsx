@@ -7,7 +7,7 @@ import { db, auth } from "@/lib/firebase";
 import {
   doc, getDoc, collection, query, where, getDocs,
   runTransaction, serverTimestamp, addDoc, orderBy,
-  onSnapshot // <--- Added Real-time listener
+  onSnapshot
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import flatpickr from "flatpickr";
@@ -315,7 +315,11 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   const [promoMsg, setPromoMsg] = useState<{ text: string; success: boolean } | null>(null);
   const [showCart, setShowCart] = useState(false);
   const [showItemModal, setShowItemModal] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<GearItem | null>(null);
+  
+  // FIX 1: Modal Live State
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const selectedItem = allGear.find(g => g.id === selectedItemId) || null;
+  
   const [selectedHub, setSelectedHub] = useState("");
   const [termsAgreed, setTermsAgreed] = useState(false);
   const [blockState, setBlockState] = useState<null | "unapproved" | "vacation" | "nocredits">(null);
@@ -372,9 +376,6 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // REAL-TIME EFFECTS
-  // ═══════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     if (!vendorId) return;
 
@@ -411,25 +412,21 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
           setOwnerPreview(true); 
         }
 
-        // 1. Listen to Gear changes real-time
         unsubs.push(
           onSnapshot(query(collection(db, "gear"), where("vendorId", "==", vendorId)), snap => {
             setAllGear(snap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted));
           })
         );
-        // 2. Listen to Availability changes real-time
         unsubs.push(
           onSnapshot(collection(db, "vendors", vendorId!, "availability"), snap => {
             setAvailRules(snap.docs.map(d => d.data() as AvailRule));
           })
         );
-        // 3. Listen to Discounts changes real-time
         unsubs.push(
           onSnapshot(collection(db, "vendors", vendorId!, "discounts"), snap => {
             setDiscounts(snap.docs.map(d => d.data() as Discount).filter(d => !d.deleted));
           })
         );
-        // 4. Listen to Posts changes real-time
         unsubs.push(
           onSnapshot(collection(db, "vendors", vendorId!, "posts"), snap => {
             setPosts(snap.docs.map(d => ({ id: d.id, ...d.data() } as VendorPost)).sort((a, b) => {
@@ -439,7 +436,6 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
             }));
           })
         );
-        // 5. Listen to Reviews changes real-time
         unsubs.push(
           onSnapshot(query(collection(db, "reviews"), where("vendorId", "==", vendorId), where("status", "==", "published"), orderBy("createdAt", "desc")), snap => {
             setReviews(snap.docs.map(d => ({ id: d.id, ...d.data() } as Review)));
@@ -963,7 +959,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                   
                   return (
                     <div key={item.id} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm stagger-in relative" style={{ animationDelay: `${idx * 50}ms` }}>
-                      <div className="aspect-square relative cursor-pointer" onClick={() => { setSelectedItem(item); setShowItemModal(true); }}>
+                      <div className="aspect-square relative cursor-pointer" onClick={() => { setSelectedItemId(item.id); setShowItemModal(true); }}>
                         <img src={item.images?.[0] || item.img || "/placeholder.jpg"} className="w-full h-full object-cover" alt={item.name} />
                         {hasMultipleImages && (
                           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">

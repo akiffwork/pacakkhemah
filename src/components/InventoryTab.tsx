@@ -301,11 +301,6 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     );
   }
 
-  // Get item name by ID
-  function getItemName(itemId: string): string {
-    return allGear.find(g => g.id === itemId)?.name || "Unknown";
-  }
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -368,7 +363,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {items.map(g => (
-                  <div key={g.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-all group">
+                  <div key={g.id} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-all group">
                     <div className="w-14 h-14 rounded-xl bg-white p-0.5 shadow-sm overflow-hidden flex-shrink-0 relative">
                       <img src={g.images?.[0] || g.img || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-lg" alt={g.name} />
                       {g.setup?.available && (
@@ -395,8 +390,19 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                           </p>
                         )}
                       </div>
+                      
+                      {/* FIX 2: Added Spec Pills to Admin View so you know it saved! */}
+                      {g.specs && (g.specs.maxPax || g.specs.size || g.specs.puRating || g.specs.layers || g.specs.weight) && (
+                        <div className="flex flex-wrap gap-1 mt-1.5 pt-1.5 border-t border-slate-200/50">
+                          {g.specs.maxPax ? <span className="text-[7px] font-bold text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded">{g.specs.maxPax}P</span> : null}
+                          {g.specs.size ? <span className="text-[7px] font-bold text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded">{g.specs.size}</span> : null}
+                          {g.specs.puRating ? <span className="text-[7px] font-bold text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded">{g.specs.puRating}</span> : null}
+                          {g.specs.layers ? <span className="text-[7px] font-bold text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded">{g.specs.layers === "Double Layer" ? "Double" : "Single"}</span> : null}
+                          {g.specs.weight ? <span className="text-[7px] font-bold text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded">{g.specs.weight}</span> : null}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity flex-shrink-0">
                       <button onClick={() => openEditGear(g)}
                         className="w-8 h-8 flex items-center justify-center rounded-lg bg-white text-slate-400 hover:text-emerald-600 shadow-sm transition-all">
                         <i className="fas fa-pen text-[10px]"></i>
