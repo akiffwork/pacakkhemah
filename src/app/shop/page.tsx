@@ -1093,12 +1093,13 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                       <div className="p-3">
                         <p className="text-[10px] font-black uppercase truncate text-[#062c24]">{item.name}</p>
                         {/* Spec pills */}
-                        {item.specs && Object.values(item.specs).some(Boolean) && (
+                        {item.specs && (item.specs.maxPax || item.specs.size || item.specs.puRating || item.specs.layers || item.specs.weight) && (
                           <div className="flex flex-wrap gap-1 mt-1">
-                            {item.specs.maxPax && <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.maxPax}P</span>}
-                            {item.specs.puRating && <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.puRating}</span>}
-                            {item.specs.layers && <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.layers === "Double Layer" ? "Double" : "Single"}</span>}
-                            {item.specs.size && <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.size}</span>}
+                            {item.specs.maxPax ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.maxPax}P</span> : null}
+                            {item.specs.puRating ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.puRating}</span> : null}
+                            {item.specs.layers ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.layers === "Double Layer" ? "Double" : "Single"}</span> : null}
+                            {item.specs.size ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.size}</span> : null}
+                            {item.specs.weight ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.weight}</span> : null}
                           </div>
                         )}
                         <p className="text-[10px] font-bold text-emerald-600 mt-1">RM {item.price}/night</p>
@@ -1245,38 +1246,38 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
               <p className="text-emerald-600 font-black text-xl mb-3">RM {selectedItem.price}<span className="text-xs text-slate-400 font-bold">/night</span></p>
               {selectedItem.desc && <p className="text-slate-500 text-sm mb-4 leading-relaxed">{selectedItem.desc}</p>}
               {/* Specs Grid */}
-              {selectedItem.specs && Object.values(selectedItem.specs).some(Boolean) && (
+              {selectedItem.specs && (selectedItem.specs.maxPax || selectedItem.specs.size || selectedItem.specs.puRating || selectedItem.specs.layers || selectedItem.specs.weight) && (
                 <div className="mb-4 grid grid-cols-2 gap-2">
-                  {selectedItem.specs.maxPax && (
+                  {selectedItem.specs.maxPax ? (
                     <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-2.5">
                       <div className="w-7 h-7 bg-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center shrink-0"><i className="fas fa-users text-[9px]"></i></div>
                       <div><p className="text-[8px] font-bold text-slate-400 uppercase">Max Pax</p><p className="text-xs font-black text-[#062c24]">{selectedItem.specs.maxPax} person</p></div>
                     </div>
-                  )}
-                  {selectedItem.specs.size && (
+                  ) : null}
+                  {selectedItem.specs.size ? (
                     <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-2.5">
                       <div className="w-7 h-7 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center shrink-0"><i className="fas fa-ruler-combined text-[9px]"></i></div>
                       <div><p className="text-[8px] font-bold text-slate-400 uppercase">Size</p><p className="text-xs font-black text-[#062c24]">{selectedItem.specs.size}</p></div>
                     </div>
-                  )}
-                  {selectedItem.specs.puRating && (
+                  ) : null}
+                  {selectedItem.specs.puRating ? (
                     <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-2.5">
                       <div className="w-7 h-7 bg-amber-100 text-amber-600 rounded-lg flex items-center justify-center shrink-0"><i className="fas fa-tint text-[9px]"></i></div>
                       <div><p className="text-[8px] font-bold text-slate-400 uppercase">PU Rating</p><p className="text-xs font-black text-[#062c24]">{selectedItem.specs.puRating}</p></div>
                     </div>
-                  )}
-                  {selectedItem.specs.layers && (
+                  ) : null}
+                  {selectedItem.specs.layers ? (
                     <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-2.5">
                       <div className="w-7 h-7 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center shrink-0"><i className="fas fa-layer-group text-[9px]"></i></div>
                       <div><p className="text-[8px] font-bold text-slate-400 uppercase">Layer</p><p className="text-xs font-black text-[#062c24]">{selectedItem.specs.layers}</p></div>
                     </div>
-                  )}
-                  {selectedItem.specs.weight && (
+                  ) : null}
+                  {selectedItem.specs.weight ? (
                     <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-2.5 col-span-2">
                       <div className="w-7 h-7 bg-slate-200 text-slate-600 rounded-lg flex items-center justify-center shrink-0"><i className="fas fa-weight-hanging text-[9px]"></i></div>
                       <div><p className="text-[8px] font-bold text-slate-400 uppercase">Weight</p><p className="text-xs font-black text-[#062c24]">{selectedItem.specs.weight}</p></div>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               )}
               {selectedItem.setup?.available && (
