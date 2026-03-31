@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, use } from "react";
+import { useEffect, useState, useRef, use, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
@@ -298,10 +298,10 @@ const MOCKUP_VENDOR_ID = "UHdf5wMhsPbwi7qFGPSloXGdbu53";
 const ADMIN_WHATSAPP = "6011136904336";
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MAIN SHOP PAGE
+// MAIN SHOP PAGE CONTENT
 // ═══════════════════════════════════════════════════════════════════════════
 
-export default function ShopPage({ params }: { params: Promise<{ slug: string }> }) {
+function ShopContent({ params }: { params: Promise<{ slug: string }> }) {
   const searchParams = useSearchParams();
   const resolvedParams = use(params);
   const slug = resolvedParams.slug;
@@ -1548,5 +1548,24 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         .skeleton { background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
       `}</style>
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NEW DEFAULT EXPORT WITH SUSPENSE BOUNDARY
+// ═══════════════════════════════════════════════════════════════════════════
+
+export default function ShopPage({ params }: { params: Promise<{ slug: string }> }) {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-[#f0f2f1]">
+        <div className="flex flex-col items-center justify-center space-y-4">
+          <i className="fas fa-campground text-emerald-600 text-4xl animate-bounce"></i>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loading Shop...</p>
+        </div>
+      </div>
+    }>
+      <ShopContent params={params} />
+    </Suspense>
   );
 }
