@@ -25,11 +25,17 @@ type GearItem = {
   inc?: string[]; // Text-based includes (legacy)
   linkedItems?: { itemId: string; qty: number }[]; // Linked add-on items for packages
   deleted?: boolean;
-  // NEW: Setup service per item
   setup?: {
     available: boolean;
     fee: number;
     description: string;
+  };
+  specs?: {
+    size?: string;
+    maxPax?: number;
+    puRating?: string;
+    layers?: string;
+    weight?: string;
   };
 };
 
@@ -75,6 +81,13 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
   const [setupFee, setSetupFee] = useState("");
   const [setupDesc, setSetupDesc] = useState("");
 
+  // Specs form state
+  const [specSize, setSpecSize] = useState("");
+  const [specMaxPax, setSpecMaxPax] = useState("");
+  const [specPuRating, setSpecPuRating] = useState("");
+  const [specLayers, setSpecLayers] = useState("");
+  const [specWeight, setSpecWeight] = useState("");
+
   // Discount form state
   const [discType, setDiscType] = useState("nightly_discount");
   const [discPercent, setDiscPercent] = useState("");
@@ -108,6 +121,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     setGearImages([]); setGearInc([]); setLinkedItems([]);
     setPendingFiles([]);
     setSetupAvailable(false); setSetupFee(""); setSetupDesc("");
+    setSpecSize(""); setSpecMaxPax(""); setSpecPuRating(""); setSpecLayers(""); setSpecWeight("");
     setShowGearModal(true);
   }
 
@@ -125,6 +139,12 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     setSetupAvailable(g.setup?.available || false);
     setSetupFee(String(g.setup?.fee || ""));
     setSetupDesc(g.setup?.description || "");
+    // Specs fields
+    setSpecSize(g.specs?.size || "");
+    setSpecMaxPax(g.specs?.maxPax ? String(g.specs.maxPax) : "");
+    setSpecPuRating(g.specs?.puRating || "");
+    setSpecLayers(g.specs?.layers || "");
+    setSpecWeight(g.specs?.weight || "");
     setShowGearModal(true);
   }
 
@@ -169,6 +189,15 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
         fee: Number(setupFee) || 0,
         description: setupDesc,
       };
+
+      // Add specs data (only non-empty values)
+      const specs: any = {};
+      if (specSize.trim()) specs.size = specSize.trim();
+      if (specMaxPax && Number(specMaxPax) > 0) specs.maxPax = Number(specMaxPax);
+      if (specPuRating.trim()) specs.puRating = specPuRating.trim();
+      if (specLayers.trim()) specs.layers = specLayers.trim();
+      if (specWeight.trim()) specs.weight = specWeight.trim();
+      data.specs = specs;
       
       if (editingGear) {
         await updateDoc(doc(db, "gear", editingGear.id), data);
@@ -560,6 +589,48 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Specifications */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                <label className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-2 mb-3">
+                  <i className="fas fa-ruler-combined"></i> Specifications <span className="text-[8px] font-normal text-slate-400 normal-case">(optional)</span>
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Size / Dimensions</label>
+                    <input value={specSize} onChange={e => setSpecSize(e.target.value)}
+                      className="w-full bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-semibold outline-none focus:border-emerald-400"
+                      placeholder="e.g. 300×250cm" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Max Pax</label>
+                    <input type="number" value={specMaxPax} onChange={e => setSpecMaxPax(e.target.value)} min="0"
+                      className="w-full bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-semibold outline-none focus:border-emerald-400"
+                      placeholder="e.g. 4" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">PU Rating</label>
+                    <input value={specPuRating} onChange={e => setSpecPuRating(e.target.value)}
+                      className="w-full bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-semibold outline-none focus:border-emerald-400"
+                      placeholder="e.g. PU3000" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Layer Type</label>
+                    <select value={specLayers} onChange={e => setSpecLayers(e.target.value)}
+                      className="w-full bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-semibold outline-none focus:border-emerald-400">
+                      <option value="">Not specified</option>
+                      <option value="Single Layer">Single Layer</option>
+                      <option value="Double Layer">Double Layer</option>
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Weight</label>
+                    <input value={specWeight} onChange={e => setSpecWeight(e.target.value)}
+                      className="w-full bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-semibold outline-none focus:border-emerald-400"
+                      placeholder="e.g. 8.5kg" />
+                  </div>
+                </div>
               </div>
 
               {/* Package: Linked Items */}
