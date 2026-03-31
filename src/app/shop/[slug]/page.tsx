@@ -1131,9 +1131,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
               <h3 className="text-lg font-black uppercase text-[#062c24] mb-1">{selectedItem.name}</h3>
               <p className="text-emerald-600 font-black text-xl mb-3">RM {selectedItem.price}<span className="text-xs text-slate-400 font-bold">/night</span></p>
               {selectedItem.desc && <p className="text-slate-500 text-sm mb-4 leading-relaxed">{selectedItem.desc}</p>}
-              <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-xl mb-4 text-xs font-mono">
-   DEBUG CHECK: {JSON.stringify(selectedItem.specs || "NO SPECS FOUND")}
-</div>
+             
               {selectedItem.specs && (selectedItem.specs.maxPax || selectedItem.specs.size || selectedItem.specs.puRating || selectedItem.specs.layers || selectedItem.specs.weight) && (
                 <div className="mb-4 grid grid-cols-2 gap-2">
                   {selectedItem.specs.maxPax ? (
