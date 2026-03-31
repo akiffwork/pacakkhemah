@@ -27,11 +27,11 @@ type VendorInfo = {
 };
 
 type Props = { vendorId: string; onClose: () => void };
-type ImgData = { b64: string; ratio: number };
+type ImgData = { b64: string; w: number; h: number };
 
 function loadImage(url: string, maxSize = 300): Promise<ImgData> {
   return new Promise((resolve) => {
-    if (!url) { resolve({ b64: "", ratio: 1 }); return; }
+    if (!url) { resolve({ b64: "", w: 0, h: 0 }); return; }
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
@@ -41,9 +41,9 @@ function loadImage(url: string, maxSize = 300): Promise<ImgData> {
       canvas.height = img.height * scale;
       const ctx = canvas.getContext("2d")!;
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve({ b64: canvas.toDataURL("image/jpeg", 0.8), ratio: img.width / img.height });
+      resolve({ b64: canvas.toDataURL("image/jpeg", 0.85), w: img.width, h: img.height });
     };
-    img.onerror = () => resolve({ b64: "", ratio: 1 });
+    img.onerror = () => resolve({ b64: "", w: 0, h: 0 });
     img.src = url;
   });
 }
@@ -82,7 +82,6 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
       return next;
     });
   }
-
   function selectAll() { setSelectedIds(new Set(allGear.map(g => g.id))); }
   function selectNone() { setSelectedIds(new Set()); }
 
@@ -101,13 +100,13 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
       const W = 210, H = 297, M = 10;
       const CW = W - M * 2;
 
-      // Colors
       const DARK: [number, number, number] = [6, 44, 36];
       const EMERALD: [number, number, number] = [16, 185, 129];
       const WHITE: [number, number, number] = [255, 255, 255];
       const GRAY: [number, number, number] = [148, 163, 184];
-      const LIGHT: [number, number, number] = [245, 247, 246];
+      const LIGHT: [number, number, number] = [243, 245, 244];
       const BORDER: [number, number, number] = [226, 232, 240];
+      const BG: [number, number, number] = [240, 242, 241];
 
       const shopUrl = `https://pacakkhemah.com/shop/${vendor.slug || vendorId}`;
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(shopUrl)}&bgcolor=FFFFFF&color=062c24`;
@@ -123,7 +122,6 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
         gearImgs.push(await loadImage(selectedItems[i].images?.[0] || selectedItems[i].img || "", 300));
       }
 
-      // Build gear lookup + load linked thumbnails for packages
       const gearById = new Map<string, GearItem>();
       allGear.forEach(g => gearById.set(g.id, g));
 
@@ -131,9 +129,8 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
       const linkedImgMap = new Map<string, ImgData>();
       const linkedIds = new Set<string>();
       selectedItems.forEach(item => {
-        if (item.type === "package" && item.linkedItems?.length) {
+        if (item.type === "package" && item.linkedItems?.length)
           item.linkedItems.forEach(li => linkedIds.add(li.itemId));
-        }
       });
       for (const lid of linkedIds) {
         const g = gearById.get(lid);
@@ -142,24 +139,24 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
 
       setProgress("Generating PDF...");
 
-      // ═══ LAYOUT — 3 columns matching shop UI ═══
-      const HEADER_H = 30;
-      const SUBTITLE_H = 8;
-      const FOOTER_H = 28;
+      // ═══ LAYOUT ═══
+      const HEADER_H = 28;
+      const SUBTITLE_H = 7;
+      const FOOTER_H = 26;
       const COLS = 3;
       const COL_GAP = 4;
       const ROW_GAP = 4;
       const COL_W = (CW - COL_GAP * (COLS - 1)) / COLS;
-      const IMG_H = 36; // Square-ish image area
-      const INFO_H = 22; // Name + price + button
-      const PKG_EXTRA = 10; // Extra height for package thumbnails
+      const IMG_H = 34;
+      const INFO_H = 20;
+      const PKG_EXTRA = 10;
       const CARD_H = IMG_H + INFO_H;
       const CARD_PKG_H = CARD_H + PKG_EXTRA;
       const GRID_TOP = HEADER_H + SUBTITLE_H + 4;
-      const GRID_BOTTOM = H - FOOTER_H - 3;
+      const GRID_BOTTOM = H - FOOTER_H - 2;
 
       // ═══ Build rows of 3 ═══
-      type RowData = { items: { item: GearItem; img: ImgData; }[]; height: number };
+      type RowData = { items: { item: GearItem; img: ImgData }[]; height: number };
       const rows: RowData[] = [];
       for (let i = 0; i < selectedItems.length; i += COLS) {
         const chunk: { item: GearItem; img: ImgData }[] = [];
@@ -172,40 +169,41 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
         rows.push({ items: chunk, height: maxH });
       }
 
-      // Paginate rows
+      // Paginate
       const pages: RowData[][] = [];
-      let currentPage: RowData[] = [];
-      let cy = GRID_TOP;
+      let curPage: RowData[] = [];
+      let curY = GRID_TOP;
       for (const row of rows) {
-        if (cy + row.height > GRID_BOTTOM && currentPage.length > 0) {
-          pages.push(currentPage);
-          currentPage = [];
-          cy = GRID_TOP;
+        if (curY + row.height > GRID_BOTTOM && curPage.length > 0) {
+          pages.push(curPage);
+          curPage = [];
+          curY = GRID_TOP;
         }
-        currentPage.push(row);
-        cy += row.height + ROW_GAP;
+        curPage.push(row);
+        curY += row.height + ROW_GAP;
       }
-      if (currentPage.length > 0) pages.push(currentPage);
+      if (curPage.length > 0) pages.push(curPage);
       const totalPages = pages.length;
 
       // ═══ DRAW FUNCTIONS ═══
 
       function drawHeader(pageIdx: number) {
+        // Header background
         pdf.setFillColor(...DARK);
         pdf.rect(0, 0, W, HEADER_H, "F");
 
-        let textX = M + 4;
+        let tx = M + 4;
         if (logoData.b64) {
           pdf.setFillColor(...WHITE);
-          pdf.roundedRect(M, 4, 22, 22, 3, 3, "F");
-          try { pdf.addImage(logoData.b64, "JPEG", M + 1.5, 5.5, 19, 19); } catch {}
-          textX = M + 28;
+          pdf.roundedRect(M, 3.5, 21, 21, 3, 3, "F");
+          try { pdf.addImage(logoData.b64, "JPEG", M + 1.5, 5, 18, 18); } catch {}
+          tx = M + 27;
         }
 
         pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(16);
+        pdf.setFontSize(15);
         pdf.setTextColor(...WHITE);
-        pdf.text(vendor!.name.toUpperCase(), textX, 14);
+        pdf.text(vendor!.name.toUpperCase(), tx, 12);
 
         pdf.setFont("helvetica", "normal");
         pdf.setFontSize(7);
@@ -214,20 +212,21 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
         let info = "";
         if (pickup) info += `Pickup: ${pickup}`;
         if (vendor!.phone) info += (info ? "   |   " : "") + `WhatsApp: ${vendor!.phone}`;
-        if (info) pdf.text(info, textX, 20);
+        if (info) pdf.text(info, tx, 18);
 
         if (totalPages > 1) {
           pdf.setFontSize(6);
           pdf.setTextColor(100, 160, 140);
-          pdf.text(`${pageIdx + 1} / ${totalPages}`, W - M - 2, 26, { align: "right" });
+          pdf.text(`${pageIdx + 1} / ${totalPages}`, W - M - 2, 24, { align: "right" });
         }
 
+        // Subtitle
         pdf.setFillColor(...LIGHT);
         pdf.rect(0, HEADER_H, W, SUBTITLE_H, "F");
         pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(6.5);
+        pdf.setFontSize(6);
         pdf.setTextColor(...DARK);
-        pdf.text("SENARAI GEAR UNTUK DISEWA  /  GEAR RENTAL CATALOGUE", W / 2, HEADER_H + 5.5, { align: "center" });
+        pdf.text("SENARAI GEAR UNTUK DISEWA  /  GEAR RENTAL CATALOGUE", W / 2, HEADER_H + 5, { align: "center" });
       }
 
       function drawFooter() {
@@ -237,148 +236,130 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
 
         if (qrData.b64) {
           pdf.setFillColor(...WHITE);
-          pdf.roundedRect(M, fy + 3, 22, 22, 2, 2, "F");
-          try { pdf.addImage(qrData.b64, "PNG", M + 1, fy + 4, 20, 20); } catch {}
+          pdf.roundedRect(M, fy + 2.5, 21, 21, 2, 2, "F");
+          try { pdf.addImage(qrData.b64, "PNG", M + 1, fy + 3.5, 19, 19); } catch {}
         }
 
-        const tx = M + 27;
+        const ftx = M + 26;
         pdf.setFont("helvetica", "bold");
         pdf.setFontSize(9);
         pdf.setTextColor(...WHITE);
-        pdf.text("IMBAS UNTUK TEMPAH", tx, fy + 10);
+        pdf.text("IMBAS UNTUK TEMPAH", ftx, fy + 9);
         pdf.setFont("helvetica", "normal");
         pdf.setFontSize(7);
         pdf.setTextColor(150, 200, 180);
-        pdf.text("Scan to browse & book via WhatsApp", tx, fy + 15);
+        pdf.text("Scan to browse & book via WhatsApp", ftx, fy + 14);
         pdf.setFontSize(6);
         pdf.setTextColor(100, 160, 140);
-        pdf.text(shopUrl, tx, fy + 20);
+        pdf.text(shopUrl, ftx, fy + 19);
         pdf.setFontSize(5.5);
         pdf.setTextColor(70, 120, 100);
-        pdf.text("Powered by PACAK KHEMAH  —  pacakkhemah.com", W / 2, fy + 26, { align: "center" });
+        pdf.text("Powered by PACAK KHEMAH  —  pacakkhemah.com", W / 2, fy + 24, { align: "center" });
+      }
+
+      function drawFitImage(imgData: ImgData, bx: number, by: number, bw: number, bh: number) {
+        // Light bg behind image area
+        pdf.setFillColor(...BG);
+        pdf.roundedRect(bx, by, bw, bh, 2, 2, "F");
+
+        if (!imgData.b64) return;
+
+        const ratio = imgData.w / imgData.h;
+        let dw = bw;
+        let dh = bw / ratio;
+        if (dh > bh) { dh = bh; dw = bh * ratio; }
+        const dx = bx + (bw - dw) / 2;
+        const dy = by + (bh - dh) / 2;
+        try { pdf.addImage(imgData.b64, "JPEG", dx, dy, dw, dh); } catch {}
       }
 
       function drawCard(item: GearItem, imgData: ImgData, x: number, y: number, cardH: number) {
         const isPackage = item.type === "package" && item.linkedItems && item.linkedItems.length > 0;
-        const r = 2.5;
 
-        // Card background
+        // Card bg + border
         pdf.setFillColor(...WHITE);
-        pdf.roundedRect(x, y, COL_W, cardH, r, r, "F");
+        pdf.roundedRect(x, y, COL_W, cardH, 2.5, 2.5, "F");
         pdf.setDrawColor(...BORDER);
         pdf.setLineWidth(0.2);
-        pdf.roundedRect(x, y, COL_W, cardH, r, r, "S");
+        pdf.roundedRect(x, y, COL_W, cardH, 2.5, 2.5, "S");
 
-        // ── Image area: edge-to-edge, cover-fit ──
-        if (imgData.b64) {
-          // Fill the entire image box (cover style)
-          const ratio = imgData.ratio;
-          let drawW = COL_W;
-          let drawH = COL_W / ratio;
-          if (drawH < IMG_H) {
-            drawH = IMG_H;
-            drawW = IMG_H * ratio;
-          }
-          const dx = x + (COL_W - drawW) / 2;
-          const dy = y + (IMG_H - drawH) / 2;
+        // Image — contain-fit inside card top area
+        drawFitImage(imgData, x + 1, y + 1, COL_W - 2, IMG_H - 2);
 
-          // Clip to card top area using white overlay trick
-          try { pdf.addImage(imgData.b64, "JPEG", dx, dy, drawW, drawH); } catch {}
-
-          // Mask overflow: draw white rects on the sides and below
-          pdf.setFillColor(...WHITE);
-          // Left overflow
-          if (dx < x) pdf.rect(x - 1, y, x - dx + 1, IMG_H, "F");
-          // Right overflow
-          const rightEdge = dx + drawW;
-          if (rightEdge > x + COL_W) pdf.rect(x + COL_W, y, rightEdge - (x + COL_W) + 1, IMG_H, "F");
-          // Below image area
-          pdf.rect(x, y + IMG_H, COL_W, cardH - IMG_H, "F");
-
-          // Redraw bottom corners border
-          pdf.setDrawColor(...BORDER);
-          pdf.setLineWidth(0.2);
-          // Only redraw the card border to cover the mask
-          pdf.roundedRect(x, y, COL_W, cardH, r, r, "S");
-        } else {
-          pdf.setFillColor(...LIGHT);
-          pdf.rect(x + 0.5, y + 0.5, COL_W - 1, IMG_H - 1, "F");
-          pdf.setFont("helvetica", "normal");
-          pdf.setFontSize(6);
-          pdf.setTextColor(200, 200, 200);
-          pdf.text("No Image", x + COL_W / 2, y + IMG_H / 2 + 1, { align: "center" });
-        }
-
-        // ── Name: bold uppercase ──
-        const nameY = y + IMG_H + 5;
+        // Name
+        const nameY = y + IMG_H + 4;
         pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(6.5);
-        pdf.setTextColor(...DARK);
-        const truncName = item.name.length > 22 ? item.name.substring(0, 20) + "..." : item.name;
-        pdf.text(truncName.toUpperCase(), x + COL_W / 2, nameY, { align: "center" });
-
-        // ── Price: emerald ──
-        pdf.setFont("helvetica", "normal");
         pdf.setFontSize(6);
-        pdf.setTextColor(...EMERALD);
-        pdf.text(`RM ${item.price}/night`, x + COL_W / 2, nameY + 4.5, { align: "center" });
+        pdf.setTextColor(...DARK);
+        const name = item.name.length > 24 ? item.name.substring(0, 22) + "..." : item.name;
+        pdf.text(name.toUpperCase(), x + COL_W / 2, nameY, { align: "center" });
 
-        // ── "SHOP NOW" button ──
-        const btnW = COL_W - 8;
-        const btnH = 5.5;
-        const btnX = x + 4;
-        const btnY = nameY + 7;
-        pdf.setFillColor(...DARK);
-        pdf.roundedRect(btnX, btnY, btnW, btnH, 2, 2, "F");
-        pdf.setFont("helvetica", "bold");
+        // Price
+        pdf.setFont("helvetica", "normal");
         pdf.setFontSize(5.5);
+        pdf.setTextColor(...EMERALD);
+        pdf.text(`RM ${item.price}/night`, x + COL_W / 2, nameY + 4, { align: "center" });
+
+        // SHOP NOW button
+        const btnW = COL_W - 6;
+        const btnH = 5;
+        const btnX = x + 3;
+        const btnY = nameY + 6.5;
+        pdf.setFillColor(...DARK);
+        pdf.roundedRect(btnX, btnY, btnW, btnH, 1.5, 1.5, "F");
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(5);
         pdf.setTextColor(...WHITE);
-        pdf.text("SHOP NOW", x + COL_W / 2, btnY + 3.8, { align: "center" });
+        pdf.text("SHOP NOW", x + COL_W / 2, btnY + 3.5, { align: "center" });
 
-        // ── Package linked thumbnails ──
+        // Package thumbnails
         if (isPackage && item.linkedItems) {
-          const thumbY = btnY + btnH + 2;
-          const thumbSize = 7;
-          const thumbGap = 1.5;
-          const maxThumbs = Math.min(item.linkedItems.length, 5);
-          const totalThumbW = maxThumbs * thumbSize + (maxThumbs - 1) * thumbGap;
-          let tx = x + (COL_W - totalThumbW) / 2;
+          const thY = btnY + btnH + 1.5;
+          const thSize = 6.5;
+          const thGap = 1.2;
+          const maxTh = Math.min(item.linkedItems.length, 5);
+          const totalW = maxTh * thSize + (maxTh - 1) * thGap;
+          let thX = x + (COL_W - totalW) / 2;
 
-          for (let t = 0; t < maxThumbs; t++) {
+          for (let t = 0; t < maxTh; t++) {
             const li = item.linkedItems[t];
             const liImg = linkedImgMap.get(li.itemId);
 
             pdf.setFillColor(...LIGHT);
-            pdf.roundedRect(tx, thumbY, thumbSize, thumbSize, 1, 1, "F");
+            pdf.roundedRect(thX, thY, thSize, thSize, 1, 1, "F");
             pdf.setDrawColor(...BORDER);
             pdf.setLineWidth(0.15);
-            pdf.roundedRect(tx, thumbY, thumbSize, thumbSize, 1, 1, "S");
+            pdf.roundedRect(thX, thY, thSize, thSize, 1, 1, "S");
 
             if (liImg?.b64) {
-              try { pdf.addImage(liImg.b64, "JPEG", tx + 0.3, thumbY + 0.3, thumbSize - 0.6, thumbSize - 0.6); } catch {}
+              try { pdf.addImage(liImg.b64, "JPEG", thX + 0.3, thY + 0.3, thSize - 0.6, thSize - 0.6); } catch {}
             }
-            tx += thumbSize + thumbGap;
+            thX += thSize + thGap;
           }
 
-          if (item.linkedItems.length > maxThumbs) {
+          if (item.linkedItems.length > maxTh) {
             pdf.setFont("helvetica", "normal");
             pdf.setFontSize(4.5);
             pdf.setTextColor(...GRAY);
-            pdf.text(`+${item.linkedItems.length - maxThumbs}`, tx + 1, thumbY + thumbSize / 2 + 1);
+            pdf.text(`+${item.linkedItems.length - maxTh}`, thX + 0.5, thY + thSize / 2 + 1);
           }
         }
       }
 
-      // ═══ RENDER PAGES ═══
+      // ═══ RENDER ═══
       for (let p = 0; p < totalPages; p++) {
         if (p > 0) pdf.addPage();
+
+        // Page background
+        pdf.setFillColor(...BG);
+        pdf.rect(0, 0, W, H, "F");
+
         drawHeader(p);
 
         let rowY = GRID_TOP;
         for (const row of pages[p]) {
           for (let c = 0; c < row.items.length; c++) {
-            const colX = M + c * (COL_W + COL_GAP);
-            drawCard(row.items[c].item, row.items[c].img, colX, rowY, row.height);
+            drawCard(row.items[c].item, row.items[c].img, M + c * (COL_W + COL_GAP), rowY, row.height);
           }
           rowY += row.height + ROW_GAP;
         }
@@ -398,8 +379,6 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
     }
   }
 
-  // ═══ UI ═══
-
   if (loading) {
     return (
       <div className="fixed inset-0 bg-[#062c24]/90 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
@@ -414,7 +393,6 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
   return (
     <div className="fixed inset-0 bg-[#062c24]/90 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-        {/* Header */}
         <div className="p-5 border-b border-slate-100">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -432,7 +410,6 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
           </div>
         </div>
 
-        {/* Selection controls */}
         <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
           <span className="text-[10px] font-black text-slate-500 uppercase">{selectedIds.size} / {allGear.length} items</span>
           <div className="flex gap-2">
@@ -442,7 +419,6 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
           </div>
         </div>
 
-        {/* Item list */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4" style={{ scrollbarWidth: "none" }}>
           {categories.map(cat => {
             const items = allGear.filter(g => (g.category || (g.type === "package" ? "Packages" : "Add-ons")) === cat);
@@ -452,7 +428,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">{cat}</p>
                 <div className="space-y-1.5">
                   {items.map(item => {
-                    const isPackage = item.type === "package" && item.linkedItems && item.linkedItems.length > 0;
+                    const isPkg = item.type === "package" && item.linkedItems && item.linkedItems.length > 0;
                     return (
                       <label key={item.id}
                         className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
@@ -471,9 +447,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
                           <p className="text-xs font-bold text-[#062c24] truncate">{item.name}</p>
                           <div className="flex items-center gap-2">
                             <p className="text-[10px] text-emerald-600 font-bold">RM {item.price}/night</p>
-                            {isPackage && (
-                              <span className="text-[8px] bg-indigo-50 text-indigo-500 px-1.5 py-0.5 rounded font-bold">{item.linkedItems!.length} items</span>
-                            )}
+                            {isPkg && <span className="text-[8px] bg-indigo-50 text-indigo-500 px-1.5 py-0.5 rounded font-bold">{item.linkedItems!.length} items</span>}
                           </div>
                         </div>
                       </label>
@@ -491,7 +465,6 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
           )}
         </div>
 
-        {/* Footer */}
         <div className="p-5 border-t border-slate-100 bg-slate-50 space-y-3">
           {generating && progress && (
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center gap-3">
