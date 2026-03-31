@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
-import { doc, updateDoc, increment, arrayUnion, arrayRemove } from "firebase/firestore";
+import { doc, updateDoc, increment, arrayUnion, arrayRemove, collection, query, where, getDocs, getDoc } from "firebase/firestore";
 
 type Badge = "verified" | "id_verified" | "top_rated" | "fast_responder" | "premium";
 
@@ -19,6 +19,8 @@ type Vendor = {
   rating?: number;
   avg_response_time?: number;
   is_mockup?: boolean;
+  referredBy?: string;
+  referralRewarded?: boolean;
 };
 
 // Badge configuration
@@ -36,6 +38,17 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
   const [search, setSearch] = useState("");
   const [badgeModalVendor, setBadgeModalVendor] = useState<Vendor | null>(null);
   const [filter, setFilter] = useState<"all" | "pending" | "premium" | "mockup">("all");
+  const [referralReward, setReferralReward] = useState(5);
+  const [rewardingId, setRewardingId] = useState<string | null>(null);
+
+  // Load referral reward setting
+  useEffect(() => {
+    getDoc(doc(db, "settings", "referral_config")).then(snap => {
+      if (snap.exists() && snap.data().rewardCredits) {
+        setReferralReward(snap.data().rewardCredits);
+      }
+    }).catch(() => {});
+  }, []);
 
   // Count pending for badge
   const pendingCount = allVendors.filter(v => v.status === "pending").length;
@@ -66,8 +79,50 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
   }
 
   async function approveVendor(id: string) {
-    if (confirm("Approve this vendor?"))
-      await updateDoc(doc(db, "vendors", id), { status: "approved" });
+    if (!confirm("Approve this vendor?")) return;
+    await updateDoc(doc(db, "vendors", id), { status: "approved" });
+    
+    // Auto-reward referrer
+    const vendor = allVendors.find(v => v.id === id);
+    if (vendor?.referredBy && !vendor.referralRewarded) {
+      await rewardReferrer(id, vendor.referredBy);
+    }
+  }
+
+  async function rewardReferrer(vendorId: string, refCode: string) {
+    setRewardingId(vendorId);
+    try {
+      // Find referrer vendor by their myReferralCode
+      const snap = await getDocs(query(collection(db, "vendors"), where("myReferralCode", "==", refCode)));
+      if (!snap.empty) {
+        const referrerId = snap.docs[0].id;
+        const referrerName = snap.docs[0].data().name || "Vendor";
+        
+        // Add credits to referrer
+        await updateDoc(doc(db, "vendors", referrerId), {
+          credits: increment(referralReward),
+          referral_total_referred: increment(1),
+          referral_total_credits: increment(referralReward),
+        });
+
+        // Mark as rewarded on the referred vendor
+        await updateDoc(doc(db, "vendors", vendorId), {
+          referralRewarded: true,
+          referralRewardedAt: new Date().toISOString(),
+        });
+
+        alert(`Rewarded ${referrerName} with ${referralReward} credits for referral!`);
+      } else {
+        alert(`Referral code "${refCode}" not found. No reward given.`);
+        // Still mark as processed so it doesn't retry
+        await updateDoc(doc(db, "vendors", vendorId), { referralRewarded: true });
+      }
+    } catch (e) {
+      console.error("Referral reward error:", e);
+      alert("Failed to process referral reward.");
+    } finally {
+      setRewardingId(null);
+    }
   }
 
   async function toggleBadge(vendorId: string, badge: Badge, currentlyHas: boolean) {
@@ -191,6 +246,14 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                             Pending Approval
                           </span>
                         )}
+                        {/* Referral badge */}
+                        {v.referredBy && (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold border ${v.referralRewarded ? "bg-emerald-50 text-emerald-600 border-emerald-200" : "bg-purple-50 text-purple-600 border-purple-200"}`}>
+                            <i className={`fas ${v.referralRewarded ? "fa-check-circle" : "fa-gift"}`}></i>
+                            Ref: {v.referredBy}
+                            {v.referralRewarded && <span className="opacity-60">(Rewarded)</span>}
+                          </span>
+                        )}
                         {/* Show other badges */}
                         {!isPending && allBadges.length > 0 ? (
                           allBadges.map(badge => {
@@ -233,6 +296,14 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                           <button onClick={() => approveVendor(v.id)}
                             className="w-8 h-8 rounded-lg bg-emerald-500 text-white flex items-center justify-center hover:bg-emerald-600 transition-all shadow-sm" title="Approve Vendor">
                             <i className="fas fa-check text-[10px]"></i>
+                          </button>
+                        )}
+                        {/* Manual Referral Reward Button */}
+                        {v.referredBy && !v.referralRewarded && !isPending && (
+                          <button onClick={() => rewardReferrer(v.id, v.referredBy!)}
+                            disabled={rewardingId === v.id}
+                            className="w-8 h-8 rounded-lg bg-purple-50 text-purple-500 flex items-center justify-center hover:bg-purple-500 hover:text-white transition-all disabled:opacity-50" title={`Reward referrer (${referralReward} credits)`}>
+                            <i className={`fas ${rewardingId === v.id ? "fa-spinner fa-spin" : "fa-gift"} text-[10px]`}></i>
                           </button>
                         )}
                         {/* Badge Manager Button */}

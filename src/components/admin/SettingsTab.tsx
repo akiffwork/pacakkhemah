@@ -55,11 +55,12 @@ const DEFAULT_POLICIES: DefaultPolicies = {
 };
 
 export default function AdminSettingsTab() {
-  const [activeSection, setActiveSection] = useState<"site" | "social" | "admins" | "policies" | "danger">("site");
+  const [activeSection, setActiveSection] = useState<"site" | "social" | "admins" | "policies" | "referral" | "danger">("site");
   const [settings, setSettings] = useState<SiteSettings>(DEFAULT_SETTINGS);
   const [social, setSocial] = useState<SocialLinks>(DEFAULT_SOCIAL);
   const [admins, setAdmins] = useState<AdminEmails>(["akiff.work@gmail.com"]);
   const [policies, setPolicies] = useState<DefaultPolicies>(DEFAULT_POLICIES);
+  const [referralConfig, setReferralConfig] = useState({ rewardCredits: 5, enabled: true });
   const [newAdmin, setNewAdmin] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -71,17 +72,19 @@ export default function AdminSettingsTab() {
 
   async function loadSettings() {
     try {
-      const [siteSnap, socialSnap, adminsSnap, policiesSnap] = await Promise.all([
+      const [siteSnap, socialSnap, adminsSnap, policiesSnap, referralSnap] = await Promise.all([
         getDoc(doc(db, "settings", "site")),
         getDoc(doc(db, "settings", "social_links")),
         getDoc(doc(db, "settings", "admin_emails")),
         getDoc(doc(db, "settings", "default_policies")),
+        getDoc(doc(db, "settings", "referral_config")),
       ]);
       
       if (siteSnap.exists()) setSettings({ ...DEFAULT_SETTINGS, ...siteSnap.data() });
       if (socialSnap.exists()) setSocial({ ...DEFAULT_SOCIAL, ...socialSnap.data() });
       if (adminsSnap.exists() && adminsSnap.data().emails) setAdmins(adminsSnap.data().emails);
       if (policiesSnap.exists()) setPolicies({ ...DEFAULT_POLICIES, ...policiesSnap.data() });
+      if (referralSnap.exists()) setReferralConfig({ rewardCredits: 5, enabled: true, ...referralSnap.data() });
     } catch (e) {
       console.error(e);
     } finally {
@@ -97,6 +100,7 @@ export default function AdminSettingsTab() {
         setDoc(doc(db, "settings", "social_links"), social),
         setDoc(doc(db, "settings", "admin_emails"), { emails: admins }),
         setDoc(doc(db, "settings", "default_policies"), policies),
+        setDoc(doc(db, "settings", "referral_config"), referralConfig),
       ]);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -133,6 +137,7 @@ export default function AdminSettingsTab() {
     { id: "social", label: "Social Links", icon: "fa-share-nodes" },
     { id: "admins", label: "Admin Access", icon: "fa-user-shield" },
     { id: "policies", label: "Default Policies", icon: "fa-file-contract" },
+    { id: "referral", label: "Referral Program", icon: "fa-gift" },
     { id: "danger", label: "Danger Zone", icon: "fa-exclamation-triangle" },
   ] as const;
 
@@ -354,6 +359,61 @@ export default function AdminSettingsTab() {
                 className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none resize-none"
                 rows={3}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Referral Program */}
+      {activeSection === "referral" && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl border border-slate-100 p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-sm font-black text-[#062c24] uppercase">
+                <i className="fas fa-gift mr-2 text-purple-500"></i>
+                Vendor Referral Program
+              </h3>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={referralConfig.enabled}
+                  onChange={e => setReferralConfig({ ...referralConfig, enabled: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
+              </label>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Credits Per Successful Referral</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={referralConfig.rewardCredits}
+                    onChange={e => setReferralConfig({ ...referralConfig, rewardCredits: Number(e.target.value) || 5 })}
+                    className="w-32 bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-black text-center outline-none focus:border-purple-500"
+                  />
+                  <span className="text-xs text-slate-400 font-bold">credits</span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-2">
+                  This is the number of credits awarded to the referrer when the referred vendor is approved.
+                </p>
+              </div>
+
+              <div className="bg-purple-50 border border-purple-100 rounded-xl p-4">
+                <p className="text-[10px] font-black text-purple-700 uppercase mb-2">
+                  <i className="fas fa-info-circle mr-1"></i> How It Works
+                </p>
+                <div className="space-y-1.5 text-[10px] text-purple-600">
+                  <p>1. Vendor A shares their referral link</p>
+                  <p>2. Vendor B registers using the link (code auto-captured)</p>
+                  <p>3. Admin approves Vendor B → Vendor A auto-receives <span className="font-black">{referralConfig.rewardCredits} credits</span></p>
+                  <p>4. If auto-reward fails, admin can manually reward from Vendors tab</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

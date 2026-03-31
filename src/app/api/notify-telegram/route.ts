@@ -10,16 +10,21 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { vendorName, email, phone, method } = body;
+    const { vendorName, email, phone, method, referralCode } = body;
 
-    const message =
+    let message =
       `🏕️ *New Vendor Registration!*\n\n` +
       `👤 *Name:* ${vendorName || "New Vendor"}\n` +
       `📧 *Email:* ${email || "N/A"}\n` +
       `📱 *WhatsApp:* ${phone || "N/A"}\n` +
       `🔑 *Method:* ${method || "Unknown"}\n` +
-      `📅 *Time:* ${new Date().toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" })}\n\n` +
-      `➡️ [Open Admin Panel](https://pacakkhemah.com/admin)`;
+      `📅 *Time:* ${new Date().toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" })}`;
+
+    if (referralCode) {
+      message += `\n\n🎁 *Referred by:* ${referralCode}`;
+    }
+
+    message += `\n\n➡️ [Open Admin Panel](https://pacakkhemah.com/admin)`;
 
     const telegramRes = await fetch(
       `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,

@@ -66,7 +66,7 @@ export default function ReferralsTab({ vendorId, vendorName }: ReferralsTabProps
     return () => unsub();
   }, [vendorId]);
 
-  // Load/generate vendor referral code
+  // Load/generate vendor referral code + stats
   useEffect(() => {
     async function loadVendorReferral() {
       const vendorDoc = await getDoc(doc(db, "vendors", vendorId));
@@ -79,6 +79,11 @@ export default function ReferralsTab({ vendorId, vendorName }: ReferralsTabProps
           await updateDoc(doc(db, "vendors", vendorId), { myReferralCode: newCode });
           setMyReferralCode(newCode);
         }
+        // Load real referral stats
+        setReferralStats({
+          referred: data.referral_total_referred || 0,
+          creditsEarned: data.referral_total_credits || 0,
+        });
       }
     }
     loadVendorReferral();
@@ -183,8 +188,18 @@ export default function ReferralsTab({ vendorId, vendorName }: ReferralsTabProps
     }
   }
 
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  function copyVendorLink() {
+    if (myReferralCode) {
+      navigator.clipboard.writeText(`https://pacakkhemah.com/register-vendor?ref=${myReferralCode}`);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    }
+  }
+
   function shareVendorCode() {
-    const message = `Join Pacak Khemah as a vendor! Use my referral code: ${myReferralCode}\n\nSign up at: https://pacakkhemah.com/register?ref=${myReferralCode}`;
+    const message = `Join Pacak Khemah as a vendor! Use my referral code: ${myReferralCode}\n\nSign up here: https://pacakkhemah.com/register-vendor?ref=${myReferralCode}`;
     if (navigator.share) {
       navigator.share({ title: "Join Pacak Khemah", text: message });
     } else {
@@ -342,20 +357,34 @@ export default function ReferralsTab({ vendorId, vendorName }: ReferralsTabProps
       {activeSection === "vendor" && (
         <>
           <div className="bg-gradient-to-br from-[#062c24] to-emerald-800 rounded-2xl p-6 text-white">
-            <div className="text-center mb-6">
+            <div className="text-center mb-4">
               <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-300 mb-2">Your Vendor Referral Code</p>
               <div className="bg-white/10 backdrop-blur rounded-xl px-6 py-4 inline-block">
                 <p className="text-3xl font-black tracking-[0.2em]">{myReferralCode || "..."}</p>
               </div>
             </div>
 
-            <div className="flex gap-3 justify-center">
+            {/* Shareable Link */}
+            {myReferralCode && (
+              <div className="bg-white/5 border border-white/10 rounded-xl p-3 mb-4">
+                <p className="text-[8px] font-bold text-emerald-300 uppercase tracking-widest mb-1.5">Your Referral Link</p>
+                <p className="text-[10px] text-white/60 break-all font-mono leading-relaxed">
+                  pacakkhemah.com/register-vendor?ref={myReferralCode}
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-center flex-wrap">
               <button onClick={copyVendorCode} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${copiedCode ? "bg-emerald-400 text-white" : "bg-white/20 hover:bg-white/30"}`}>
-                <i className={`fas ${copiedCode ? "fa-check" : "fa-copy"} mr-2`}></i>
+                <i className={`fas ${copiedCode ? "fa-check" : "fa-copy"} mr-1.5`}></i>
                 {copiedCode ? "Copied!" : "Copy Code"}
               </button>
+              <button onClick={copyVendorLink} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${copiedLink ? "bg-emerald-400 text-white" : "bg-white/20 hover:bg-white/30"}`}>
+                <i className={`fas ${copiedLink ? "fa-check" : "fa-link"} mr-1.5`}></i>
+                {copiedLink ? "Copied!" : "Copy Link"}
+              </button>
               <button onClick={shareVendorCode} className="px-4 py-2.5 rounded-xl text-[10px] font-black uppercase bg-emerald-500 hover:bg-emerald-400 transition-all">
-                <i className="fas fa-share mr-2"></i>Share
+                <i className="fab fa-whatsapp mr-1.5"></i>Share
               </button>
             </div>
           </div>
@@ -367,13 +396,13 @@ export default function ReferralsTab({ vendorId, vendorName }: ReferralsTabProps
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-slate-50 rounded-xl p-4 text-center">
                 <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3 text-sm font-black">1</div>
-                <p className="text-xs font-bold text-slate-700">Share Your Code</p>
-                <p className="text-[10px] text-slate-400 mt-1">Share with friends who want to become vendors</p>
+                <p className="text-xs font-bold text-slate-700">Share Your Link</p>
+                <p className="text-[10px] text-slate-400 mt-1">Send your referral link to friends who want to become vendors</p>
               </div>
               <div className="bg-slate-50 rounded-xl p-4 text-center">
                 <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3 text-sm font-black">2</div>
                 <p className="text-xs font-bold text-slate-700">They Sign Up</p>
-                <p className="text-[10px] text-slate-400 mt-1">They enter your code during registration</p>
+                <p className="text-[10px] text-slate-400 mt-1">Your code is auto-filled when they open the link</p>
               </div>
               <div className="bg-slate-50 rounded-xl p-4 text-center">
                 <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-3 text-sm font-black">3</div>
