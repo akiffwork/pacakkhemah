@@ -27,34 +27,13 @@ type VendorInfo = {
 };
 
 type Props = { vendorId: string; onClose: () => void };
-type ImgData = { b64: string; w: number; h: number };
-
-function loadImage(url: string, maxSize = 300): Promise<ImgData> {
-  return new Promise((resolve) => {
-    if (!url) { resolve({ b64: "", w: 0, h: 0 }); return; }
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
-      canvas.width = img.width * scale;
-      canvas.height = img.height * scale;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve({ b64: canvas.toDataURL("image/jpeg", 0.85), w: img.width, h: img.height });
-    };
-    img.onerror = () => resolve({ b64: "", w: 0, h: 0 });
-    img.src = url;
-  });
-}
 
 export default function GearFlyerModal({ vendorId, onClose }: Props) {
   const [vendor, setVendor] = useState<VendorInfo | null>(null);
   const [allGear, setAllGear] = useState<GearItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
-  const [progress, setProgress] = useState("");
+  const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -82,302 +61,15 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
       return next;
     });
   }
+  
   function selectAll() { setSelectedIds(new Set(allGear.map(g => g.id))); }
   function selectNone() { setSelectedIds(new Set()); }
 
   const selectedItems = allGear.filter(g => selectedIds.has(g.id));
   const categories = Array.from(new Set(allGear.map(g => g.category || (g.type === "package" ? "Packages" : "Add-ons"))));
 
-  async function generatePDF() {
-    if (selectedItems.length === 0 || !vendor) return;
-    setGenerating(true);
-    setProgress("Loading images...");
-
-    try {
-      const { jsPDF } = await import("jspdf");
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-
-      const W = 210, H = 297, M = 10;
-      const CW = W - M * 2;
-
-      const DARK: [number, number, number] = [6, 44, 36];
-      const EMERALD: [number, number, number] = [16, 185, 129];
-      const WHITE: [number, number, number] = [255, 255, 255];
-      const GRAY: [number, number, number] = [148, 163, 184];
-      const LIGHT: [number, number, number] = [243, 245, 244];
-      const BORDER: [number, number, number] = [226, 232, 240];
-      const BG: [number, number, number] = [240, 242, 241];
-
-      const shopUrl = `https://pacakkhemah.com/shop/${vendor.slug || vendorId}`;
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(shopUrl)}&bgcolor=FFFFFF&color=062c24`;
-
-      setProgress("Loading vendor logo...");
-      const logoData = await loadImage(vendor.image || "", 150);
-      const qrData = await loadImage(qrUrl, 300);
-
-      setProgress(`Loading gear photos (0/${selectedItems.length})...`);
-      const gearImgs: ImgData[] = [];
-      for (let i = 0; i < selectedItems.length; i++) {
-        setProgress(`Loading gear photos (${i + 1}/${selectedItems.length})...`);
-        gearImgs.push(await loadImage(selectedItems[i].images?.[0] || selectedItems[i].img || "", 300));
-      }
-
-      const gearById = new Map<string, GearItem>();
-      allGear.forEach(g => gearById.set(g.id, g));
-
-      setProgress("Loading package thumbnails...");
-      const linkedImgMap = new Map<string, ImgData>();
-      const linkedIds = new Set<string>();
-      selectedItems.forEach(item => {
-        if (item.type === "package" && item.linkedItems?.length)
-          item.linkedItems.forEach(li => linkedIds.add(li.itemId));
-      });
-      for (const lid of linkedIds) {
-        const g = gearById.get(lid);
-        if (g) linkedImgMap.set(lid, await loadImage(g.images?.[0] || g.img || "", 100));
-      }
-
-      setProgress("Generating PDF...");
-
-      // ═══ LAYOUT ═══
-      const HEADER_H = 28;
-      const SUBTITLE_H = 7;
-      const FOOTER_H = 26;
-      const COLS = 3;
-      const COL_GAP = 4;
-      const ROW_GAP = 4;
-      const COL_W = (CW - COL_GAP * (COLS - 1)) / COLS;
-      const IMG_H = 34;
-      const INFO_H = 20;
-      const PKG_EXTRA = 10;
-      const CARD_H = IMG_H + INFO_H;
-      const CARD_PKG_H = CARD_H + PKG_EXTRA;
-      const GRID_TOP = HEADER_H + SUBTITLE_H + 4;
-      const GRID_BOTTOM = H - FOOTER_H - 2;
-
-      // ═══ Build rows of 3 ═══
-      type RowData = { items: { item: GearItem; img: ImgData }[]; height: number };
-      const rows: RowData[] = [];
-      for (let i = 0; i < selectedItems.length; i += COLS) {
-        const chunk: { item: GearItem; img: ImgData }[] = [];
-        let maxH = CARD_H;
-        for (let c = 0; c < COLS && i + c < selectedItems.length; c++) {
-          const item = selectedItems[i + c];
-          chunk.push({ item, img: gearImgs[i + c] });
-          if (item.type === "package" && item.linkedItems?.length) maxH = CARD_PKG_H;
-        }
-        rows.push({ items: chunk, height: maxH });
-      }
-
-      // Paginate
-      const pages: RowData[][] = [];
-      let curPage: RowData[] = [];
-      let curY = GRID_TOP;
-      for (const row of rows) {
-        if (curY + row.height > GRID_BOTTOM && curPage.length > 0) {
-          pages.push(curPage);
-          curPage = [];
-          curY = GRID_TOP;
-        }
-        curPage.push(row);
-        curY += row.height + ROW_GAP;
-      }
-      if (curPage.length > 0) pages.push(curPage);
-      const totalPages = pages.length;
-
-      // ═══ DRAW FUNCTIONS ═══
-
-      function drawHeader(pageIdx: number) {
-        // Header background
-        pdf.setFillColor(...DARK);
-        pdf.rect(0, 0, W, HEADER_H, "F");
-
-        let tx = M + 4;
-        if (logoData.b64) {
-          pdf.setFillColor(...WHITE);
-          pdf.roundedRect(M, 3.5, 21, 21, 3, 3, "F");
-          try { pdf.addImage(logoData.b64, "JPEG", M + 1.5, 5, 18, 18); } catch {}
-          tx = M + 27;
-        }
-
-        pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(15);
-        pdf.setTextColor(...WHITE);
-        pdf.text(vendor!.name.toUpperCase(), tx, 12);
-
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(7);
-        pdf.setTextColor(150, 200, 180);
-        const pickup = vendor!.pickup?.join(", ") || vendor!.city || "";
-        let info = "";
-        if (pickup) info += `Pickup: ${pickup}`;
-        if (vendor!.phone) info += (info ? "   |   " : "") + `WhatsApp: ${vendor!.phone}`;
-        if (info) pdf.text(info, tx, 18);
-
-        if (totalPages > 1) {
-          pdf.setFontSize(6);
-          pdf.setTextColor(100, 160, 140);
-          pdf.text(`${pageIdx + 1} / ${totalPages}`, W - M - 2, 24, { align: "right" });
-        }
-
-        // Subtitle
-        pdf.setFillColor(...LIGHT);
-        pdf.rect(0, HEADER_H, W, SUBTITLE_H, "F");
-        pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(6);
-        pdf.setTextColor(...DARK);
-        pdf.text("SENARAI GEAR UNTUK DISEWA  /  GEAR RENTAL CATALOGUE", W / 2, HEADER_H + 5, { align: "center" });
-      }
-
-      function drawFooter() {
-        const fy = H - FOOTER_H;
-        pdf.setFillColor(...DARK);
-        pdf.rect(0, fy, W, FOOTER_H, "F");
-
-        if (qrData.b64) {
-          pdf.setFillColor(...WHITE);
-          pdf.roundedRect(M, fy + 2.5, 21, 21, 2, 2, "F");
-          try { pdf.addImage(qrData.b64, "PNG", M + 1, fy + 3.5, 19, 19); } catch {}
-        }
-
-        const ftx = M + 26;
-        pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(9);
-        pdf.setTextColor(...WHITE);
-        pdf.text("IMBAS UNTUK TEMPAH", ftx, fy + 9);
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(7);
-        pdf.setTextColor(150, 200, 180);
-        pdf.text("Scan to browse & book via WhatsApp", ftx, fy + 14);
-        pdf.setFontSize(6);
-        pdf.setTextColor(100, 160, 140);
-        pdf.text(shopUrl, ftx, fy + 19);
-        pdf.setFontSize(5.5);
-        pdf.setTextColor(70, 120, 100);
-        pdf.text("Powered by PACAK KHEMAH  —  pacakkhemah.com", W / 2, fy + 24, { align: "center" });
-      }
-
-      function drawFitImage(imgData: ImgData, bx: number, by: number, bw: number, bh: number) {
-        // Light bg behind image area
-        pdf.setFillColor(...BG);
-        pdf.roundedRect(bx, by, bw, bh, 2, 2, "F");
-
-        if (!imgData.b64) return;
-
-        const ratio = imgData.w / imgData.h;
-        let dw = bw;
-        let dh = bw / ratio;
-        if (dh > bh) { dh = bh; dw = bh * ratio; }
-        const dx = bx + (bw - dw) / 2;
-        const dy = by + (bh - dh) / 2;
-        try { pdf.addImage(imgData.b64, "JPEG", dx, dy, dw, dh); } catch {}
-      }
-
-      function drawCard(item: GearItem, imgData: ImgData, x: number, y: number, cardH: number) {
-        const isPackage = item.type === "package" && item.linkedItems && item.linkedItems.length > 0;
-
-        // Card bg + border
-        pdf.setFillColor(...WHITE);
-        pdf.roundedRect(x, y, COL_W, cardH, 2.5, 2.5, "F");
-        pdf.setDrawColor(...BORDER);
-        pdf.setLineWidth(0.2);
-        pdf.roundedRect(x, y, COL_W, cardH, 2.5, 2.5, "S");
-
-        // Image — contain-fit inside card top area
-        drawFitImage(imgData, x + 1, y + 1, COL_W - 2, IMG_H - 2);
-
-        // Name
-        const nameY = y + IMG_H + 4;
-        pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(6);
-        pdf.setTextColor(...DARK);
-        const name = item.name.length > 24 ? item.name.substring(0, 22) + "..." : item.name;
-        pdf.text(name.toUpperCase(), x + COL_W / 2, nameY, { align: "center" });
-
-        // Price
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(5.5);
-        pdf.setTextColor(...EMERALD);
-        pdf.text(`RM ${item.price}/night`, x + COL_W / 2, nameY + 4, { align: "center" });
-
-        // SHOP NOW button
-        const btnW = COL_W - 6;
-        const btnH = 5;
-        const btnX = x + 3;
-        const btnY = nameY + 6.5;
-        pdf.setFillColor(...DARK);
-        pdf.roundedRect(btnX, btnY, btnW, btnH, 1.5, 1.5, "F");
-        pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(5);
-        pdf.setTextColor(...WHITE);
-        pdf.text("SHOP NOW", x + COL_W / 2, btnY + 3.5, { align: "center" });
-
-        // Package thumbnails
-        if (isPackage && item.linkedItems) {
-          const thY = btnY + btnH + 1.5;
-          const thSize = 6.5;
-          const thGap = 1.2;
-          const maxTh = Math.min(item.linkedItems.length, 5);
-          const totalW = maxTh * thSize + (maxTh - 1) * thGap;
-          let thX = x + (COL_W - totalW) / 2;
-
-          for (let t = 0; t < maxTh; t++) {
-            const li = item.linkedItems[t];
-            const liImg = linkedImgMap.get(li.itemId);
-
-            pdf.setFillColor(...LIGHT);
-            pdf.roundedRect(thX, thY, thSize, thSize, 1, 1, "F");
-            pdf.setDrawColor(...BORDER);
-            pdf.setLineWidth(0.15);
-            pdf.roundedRect(thX, thY, thSize, thSize, 1, 1, "S");
-
-            if (liImg?.b64) {
-              try { pdf.addImage(liImg.b64, "JPEG", thX + 0.3, thY + 0.3, thSize - 0.6, thSize - 0.6); } catch {}
-            }
-            thX += thSize + thGap;
-          }
-
-          if (item.linkedItems.length > maxTh) {
-            pdf.setFont("helvetica", "normal");
-            pdf.setFontSize(4.5);
-            pdf.setTextColor(...GRAY);
-            pdf.text(`+${item.linkedItems.length - maxTh}`, thX + 0.5, thY + thSize / 2 + 1);
-          }
-        }
-      }
-
-      // ═══ RENDER ═══
-      for (let p = 0; p < totalPages; p++) {
-        if (p > 0) pdf.addPage();
-
-        // Page background
-        pdf.setFillColor(...BG);
-        pdf.rect(0, 0, W, H, "F");
-
-        drawHeader(p);
-
-        let rowY = GRID_TOP;
-        for (const row of pages[p]) {
-          for (let c = 0; c < row.items.length; c++) {
-            drawCard(row.items[c].item, row.items[c].img, M + c * (COL_W + COL_GAP), rowY, row.height);
-          }
-          rowY += row.height + ROW_GAP;
-        }
-
-        drawFooter();
-      }
-
-      const filename = `${vendor.name.replace(/[^a-zA-Z0-9 ]/g, "").replace(/\s+/g, "_")}_Gear_Catalogue.pdf`;
-      pdf.save(filename);
-
-    } catch (e) {
-      console.error("PDF generation error:", e);
-      alert("Failed to generate PDF. Please try again.");
-    } finally {
-      setGenerating(false);
-      setProgress("");
-    }
-  }
+  const shopUrl = `https://pacakkhemah.com/shop/${vendor?.slug || vendorId}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(shopUrl)}&bgcolor=FFFFFF&color=062c24`;
 
   if (loading) {
     return (
@@ -390,53 +82,183 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
     );
   }
 
-  return (
-    <div className="fixed inset-0 bg-[#062c24]/90 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-        <div className="p-5 border-b border-slate-100">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-red-50 text-red-500 rounded-xl flex items-center justify-center">
-                <i className="fas fa-file-pdf text-lg"></i>
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-[#062c24] uppercase">Gear Flyer</h3>
-                <p className="text-[10px] text-slate-400">Select items for your A4 promotional flyer</p>
-              </div>
-            </div>
-            <button onClick={onClose} className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors">
-              <i className="fas fa-times"></i>
+  // ==========================================
+  // VIEW: PRINT PREVIEW (The Output)
+  // ==========================================
+  if (showPreview && vendor) {
+    return (
+      <div className="fixed inset-0 bg-slate-900 z-[600] overflow-y-auto print:bg-white print:overflow-visible">
+        {/* CSS for perfect native A4 printing */}
+        <style>{`
+          @media print {
+            @page { size: A4 portrait; margin: 0; }
+            body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            ::-webkit-scrollbar { display: none; }
+          }
+        `}</style>
+
+        {/* Toolbar - Hidden when printing */}
+        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center z-50 print:hidden shadow-md">
+          <button onClick={() => setShowPreview(false)} className="text-slate-500 hover:text-[#062c24] font-bold text-sm flex items-center gap-2 transition-colors">
+            <i className="fas fa-arrow-left"></i> Back to Editor
+          </button>
+          <div className="flex items-center gap-4">
+            <p className="text-xs text-slate-400 font-medium hidden sm:block">
+              Choose <b>"Save as PDF"</b> in the print destination
+            </p>
+            <button onClick={() => window.print()} className="bg-[#062c24] text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-900 transition-colors shadow-lg flex items-center gap-2">
+              <i className="fas fa-print"></i> Print / Save PDF
             </button>
           </div>
         </div>
 
+        {/* A4 Paper Layout */}
+        <div className="w-[210mm] min-h-[297mm] mx-auto bg-white my-8 shadow-2xl flex flex-col relative print:my-0 print:w-full print:shadow-none overflow-hidden">
+          
+          {/* HEADER */}
+          <div className="bg-[#062c24] flex items-center p-8 text-white break-inside-avoid">
+            {vendor.image && (
+              <img src={vendor.image} crossOrigin="anonymous" className="w-20 h-20 rounded-xl object-cover bg-white p-1 mr-6 shrink-0" alt="Vendor Logo" />
+            )}
+            <div>
+              <h1 className="text-3xl font-black uppercase tracking-wide leading-tight">{vendor.name}</h1>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-2 text-emerald-100 text-sm">
+                {vendor.pickup && vendor.pickup.length > 0 && (
+                  <span><i className="fas fa-map-marker-alt mr-2"></i>Pickup: {vendor.pickup.join(", ")}</span>
+                )}
+                {vendor.phone && (
+                  <span><i className="fab fa-whatsapp mr-2"></i>WhatsApp: {vendor.phone}</span>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          {/* SUBTITLE */}
+          <div className="bg-slate-100 py-3 text-center text-[10px] font-black text-[#062c24] tracking-[0.2em] uppercase border-b border-slate-200 break-inside-avoid">
+             Senarai Gear Untuk DiseWA &nbsp;/&nbsp; Gear Rental Catalogue
+          </div>
+
+          {/* GRID OF ITEMS */}
+          <div className="p-6 grid grid-cols-3 gap-5 flex-1 content-start items-start">
+            {selectedItems.map((item) => {
+              const imgUrl = item.images?.[0] || item.img;
+              const isPkg = item.type === "package" && item.linkedItems && item.linkedItems.length > 0;
+
+              return (
+                <div key={item.id} className="border border-slate-200 rounded-xl bg-white overflow-hidden flex flex-col break-inside-avoid shadow-sm h-full">
+                  
+                  {/* Item Image (4:3 aspect ratio, cover, no stretching) */}
+                  <div className="aspect-[4/3] w-full relative bg-slate-50 border-b border-slate-100">
+                    {imgUrl ? (
+                      <img src={imgUrl} crossOrigin="anonymous" className="w-full h-full object-cover" alt={item.name} />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-slate-300"><i className="fas fa-image text-2xl"></i></div>
+                    )}
+                  </div>
+                  
+                  {/* Item Info */}
+                  <div className="p-4 flex flex-col flex-1 gap-3">
+                    <div>
+                      <h4 className="font-black text-[13px] text-[#062c24] uppercase leading-tight">{item.name}</h4>
+                      <p className="text-emerald-600 font-bold text-xs mt-1">RM {item.price}/night</p>
+                    </div>
+
+                    {/* Package Thumbnails */}
+                    {isPkg && (
+                      <div className="flex flex-wrap gap-1.5 mt-auto pt-2 border-t border-slate-100">
+                        {item.linkedItems!.map((li, idx) => {
+                          const linkedItem = allGear.find(g => g.id === li.itemId);
+                          const linkedImg = linkedItem?.images?.[0] || linkedItem?.img;
+                          return linkedImg ? (
+                            <img key={idx} src={linkedImg} crossOrigin="anonymous" className="w-6 h-6 rounded object-cover border border-slate-200 bg-slate-50" title={linkedItem?.name} alt="" />
+                          ) : null;
+                        })}
+                      </div>
+                    )}
+
+                    {/* Button */}
+                    <div className={isPkg ? "mt-1" : "mt-auto pt-2"}>
+                      <div className="w-full bg-[#062c24] text-white py-2.5 rounded-lg text-center text-[11px] font-black tracking-widest uppercase">
+                        Shop Now
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* FOOTER */}
+          <div className="bg-[#062c24] p-8 text-white flex items-center gap-6 mt-auto break-inside-avoid">
+            <img src={qrUrl} crossOrigin="anonymous" className="w-24 h-24 rounded-xl bg-white p-1.5 shrink-0" alt="QR Code" />
+            <div>
+              <h2 className="text-xl font-black uppercase tracking-wide mb-1 text-emerald-50">Imbas Untuk Tempah</h2>
+              <p className="text-emerald-100 text-sm mb-2 opacity-90">Scan to browse & book via WhatsApp</p>
+              <p className="text-emerald-400 text-xs font-mono font-bold tracking-tight bg-black/20 inline-block px-2 py-1 rounded">{shopUrl}</p>
+            </div>
+            <div className="ml-auto text-right self-end pb-1 opacity-50">
+              <p className="text-[8px] uppercase tracking-widest">Powered By</p>
+              <p className="text-[10px] font-bold">Pacak Khemah</p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // VIEW: COMPONENT CONFIGURATOR
+  // ==========================================
+  return (
+    <div className="fixed inset-0 bg-[#062c24]/90 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+        
+        {/* Header */}
+        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-white z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center shadow-sm">
+              <i className="fas fa-file-pdf text-lg"></i>
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-[#062c24] uppercase">Gear Flyer Editor</h3>
+              <p className="text-[10px] text-slate-400 font-medium">Select items for your layout</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors">
+            <i className="fas fa-times"></i>
+          </button>
+        </div>
+
+        {/* Selection Controls */}
         <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
           <span className="text-[10px] font-black text-slate-500 uppercase">{selectedIds.size} / {allGear.length} items</span>
           <div className="flex gap-2">
-            <button onClick={selectAll} className="text-[9px] font-bold text-emerald-600 hover:underline uppercase">Select All</button>
-            <span className="text-slate-200">|</span>
-            <button onClick={selectNone} className="text-[9px] font-bold text-slate-400 hover:underline uppercase">Clear</button>
+            <button onClick={selectAll} className="text-[10px] font-bold text-emerald-600 hover:underline uppercase">Select All</button>
+            <span className="text-slate-300">|</span>
+            <button onClick={selectNone} className="text-[10px] font-bold text-slate-400 hover:underline uppercase">Clear</button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-4" style={{ scrollbarWidth: "none" }}>
+        {/* Item List */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-5" style={{ scrollbarWidth: "none" }}>
           {categories.map(cat => {
             const items = allGear.filter(g => (g.category || (g.type === "package" ? "Packages" : "Add-ons")) === cat);
             if (!items.length) return null;
             return (
               <div key={cat}>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">{cat}</p>
-                <div className="space-y-1.5">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">{cat}</p>
+                <div className="space-y-2">
                   {items.map(item => {
                     const isPkg = item.type === "package" && item.linkedItems && item.linkedItems.length > 0;
                     return (
                       <label key={item.id}
-                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                          selectedIds.has(item.id) ? "bg-emerald-50 border-emerald-200" : "bg-white border-slate-100 hover:border-slate-200"
+                        className={`flex items-center gap-4 p-3 rounded-2xl border cursor-pointer transition-all ${
+                          selectedIds.has(item.id) ? "bg-emerald-50/50 border-emerald-200 shadow-sm" : "bg-white border-slate-100 hover:border-slate-200"
                         }`}>
                         <input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggleItem(item.id)}
-                          className="w-4 h-4 accent-emerald-500 rounded shrink-0" />
-                        <div className="w-10 h-10 bg-slate-100 rounded-lg overflow-hidden shrink-0">
+                          className="w-5 h-5 accent-emerald-600 rounded shrink-0 cursor-pointer" />
+                        <div className="w-12 h-12 bg-slate-100 rounded-xl overflow-hidden shrink-0 border border-slate-200/50">
                           {(item.images?.[0] || item.img) ? (
                             <img src={item.images?.[0] || item.img} className="w-full h-full object-cover" alt="" />
                           ) : (
@@ -444,10 +266,10 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-[#062c24] truncate">{item.name}</p>
-                          <div className="flex items-center gap-2">
-                            <p className="text-[10px] text-emerald-600 font-bold">RM {item.price}/night</p>
-                            {isPkg && <span className="text-[8px] bg-indigo-50 text-indigo-500 px-1.5 py-0.5 rounded font-bold">{item.linkedItems!.length} items</span>}
+                          <p className="text-sm font-bold text-[#062c24] truncate">{item.name}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-[11px] text-emerald-600 font-bold">RM {item.price}/night</p>
+                            {isPkg && <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold">{item.linkedItems!.length} items</span>}
                           </div>
                         </div>
                       </label>
@@ -458,29 +280,21 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
             );
           })}
           {allGear.length === 0 && (
-            <div className="text-center py-8">
-              <i className="fas fa-box-open text-slate-200 text-3xl mb-3"></i>
-              <p className="text-xs text-slate-400 font-bold">No gear items found</p>
+            <div className="text-center py-12">
+              <i className="fas fa-box-open text-slate-200 text-4xl mb-4"></i>
+              <p className="text-sm text-slate-400 font-bold">No gear items found</p>
             </div>
           )}
         </div>
 
-        <div className="p-5 border-t border-slate-100 bg-slate-50 space-y-3">
-          {generating && progress && (
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center gap-3">
-              <i className="fas fa-spinner fa-spin text-blue-500"></i>
-              <p className="text-[10px] font-bold text-blue-600">{progress}</p>
-            </div>
-          )}
-          <button onClick={generatePDF} disabled={selectedIds.size === 0 || generating}
-            className="w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed bg-[#062c24] text-white hover:bg-emerald-900">
-            {generating ? (
-              <><i className="fas fa-spinner fa-spin"></i> Generating...</>
-            ) : (
-              <><i className="fas fa-file-pdf"></i> Generate Flyer ({selectedIds.size} items)</>
-            )}
+        {/* Action Footer */}
+        <div className="p-5 border-t border-slate-100 bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.02)] z-10">
+          <button onClick={() => setShowPreview(true)} disabled={selectedIds.size === 0}
+            className="w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed bg-[#062c24] text-white hover:bg-emerald-900">
+            <i className="fas fa-eye text-sm"></i> Preview & Print Flyer ({selectedIds.size})
           </button>
         </div>
+
       </div>
     </div>
   );
