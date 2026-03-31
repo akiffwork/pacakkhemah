@@ -8,6 +8,7 @@ import {
   addDoc, updateDoc, doc,
 } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import GearFlyerModal from "@/components/GearFlyerModal";
 
 type InventoryTabProps = { vendorId: string };
 
@@ -55,6 +56,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
   const [editingGear, setEditingGear] = useState<GearItem | null>(null);
   const [editingDisc, setEditingDisc] = useState<Discount | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [showFlyer, setShowFlyer] = useState(false);
 
   // Gear form state
   const [gearName, setGearName] = useState("");
@@ -285,6 +287,10 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
             <p className="text-xs text-slate-400 mt-1">Manage your gear, packages, and pricing</p>
           </div>
           <div className="flex gap-2 w-full md:w-auto">
+            <button onClick={() => setShowFlyer(true)}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-red-50 text-red-500 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-red-100 transition-all border border-red-100">
+              <i className="fas fa-file-pdf"></i> Flyer
+            </button>
             <button onClick={openAddDisc}
               className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-indigo-50 text-indigo-600 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-indigo-100 transition-all border border-indigo-100">
               <i className="fas fa-tags"></i> Discounts
@@ -754,6 +760,9 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
           </div>
         </div>
       )}
+
+      {/* Gear Flyer Modal */}
+      {showFlyer && <GearFlyerModal vendorId={vendorId} onClose={() => setShowFlyer(false)} />}
     </div>
   );
 }
