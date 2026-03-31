@@ -87,18 +87,22 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
   // ==========================================
   if (showPreview && vendor) {
     return (
-      <div className="fixed inset-0 bg-slate-900 z-[600] overflow-y-auto print:bg-white print:overflow-visible">
+      <div id="flyer-preview-root" className="fixed inset-0 bg-slate-900 z-[600] overflow-y-auto print:bg-white print:overflow-visible">
         {/* CSS for perfect native A4 printing */}
         <style>{`
           @media print {
             @page { size: A4 portrait; margin: 0; }
             body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            ::-webkit-scrollbar { display: none; }
+            body > * { visibility: hidden; }
+            #flyer-preview-root, #flyer-preview-root * { visibility: visible; }
+            #flyer-preview-root { position: absolute; top: 0; left: 0; width: 100%; background: none !important; overflow: visible !important; }
+            #flyer-toolbar { display: none !important; }
+            #flyer-paper { margin: 0 !important; box-shadow: none !important; width: 100% !important; }
           }
         `}</style>
 
         {/* Toolbar - Hidden when printing */}
-        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center z-50 print:hidden shadow-md">
+        <div id="flyer-toolbar" className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center z-50 print:hidden shadow-md">
           <button onClick={() => setShowPreview(false)} className="text-slate-500 hover:text-[#062c24] font-bold text-sm flex items-center gap-2 transition-colors">
             <i className="fas fa-arrow-left"></i> Back to Editor
           </button>
@@ -113,7 +117,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
         </div>
 
         {/* A4 Paper Layout */}
-        <div className="w-[210mm] min-h-[297mm] mx-auto bg-white my-8 shadow-2xl flex flex-col relative print:my-0 print:w-full print:shadow-none overflow-hidden">
+        <div id="flyer-paper" className="w-[210mm] min-h-[297mm] mx-auto bg-white my-8 shadow-2xl flex flex-col relative print:my-0 print:w-full print:shadow-none overflow-hidden">
           
           {/* HEADER */}
           <div className="bg-[#062c24] flex items-center p-8 text-white break-inside-avoid">
