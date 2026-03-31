@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
 import {
-  doc, getDoc, collection, query, where, getDocs,
+  doc, getDoc, collection, query, where, getDocs, getDocsFromServer,
   runTransaction, serverTimestamp, addDoc, orderBy,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
@@ -298,10 +298,22 @@ const MOCKUP_VENDOR_ID = "UHdf5wMhsPbwi7qFGPSloXGdbu53";
 const ADMIN_WHATSAPP = "6011136904336";
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MAIN SHOP PAGE CONTENT
+// MAIN SHOP PAGE
 // ═══════════════════════════════════════════════════════════════════════════
 
-function ShopContent({ params }: { params: Promise<{ slug: string }> }) {
+export default function ShopPage({ params }: { params: Promise<{ slug: string }> }) {
+  return (
+    <Suspense fallback={
+      <div className="fixed inset-0 bg-[#062c24] flex items-center justify-center">
+        <div className="w-16 h-16 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
+      </div>
+    }>
+      <ShopPageContent params={params} />
+    </Suspense>
+  );
+}
+
+function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   const searchParams = useSearchParams();
   const resolvedParams = use(params);
   const slug = resolvedParams.slug;
@@ -431,10 +443,10 @@ function ShopContent({ params }: { params: Promise<{ slug: string }> }) {
       } else if (!isApproved || isVacation) { setOwnerPreview(true); }
       
       const [gearSnap, availSnap, discSnap, postsSnap, reviewsSnap] = await Promise.all([
-        getDocs(query(collection(db, "gear"), where("vendorId", "==", vendorId))),
-        getDocs(collection(db, "vendors", vendorId, "availability")),
-        getDocs(collection(db, "vendors", vendorId, "discounts")),
-        getDocs(collection(db, "vendors", vendorId, "posts")),
+        getDocsFromServer(query(collection(db, "gear"), where("vendorId", "==", vendorId))),
+        getDocsFromServer(collection(db, "vendors", vendorId, "availability")),
+        getDocsFromServer(collection(db, "vendors", vendorId, "discounts")),
+        getDocsFromServer(collection(db, "vendors", vendorId, "posts")),
         getDocs(query(collection(db, "reviews"), where("vendorId", "==", vendorId), where("status", "==", "published"), orderBy("createdAt", "desc"))),
       ]);
       setAllGear(gearSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted));
@@ -1548,24 +1560,5 @@ function ShopContent({ params }: { params: Promise<{ slug: string }> }) {
         .skeleton { background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
       `}</style>
     </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// NEW DEFAULT EXPORT WITH SUSPENSE BOUNDARY
-// ═══════════════════════════════════════════════════════════════════════════
-
-export default function ShopPage({ params }: { params: Promise<{ slug: string }> }) {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-[#f0f2f1]">
-        <div className="flex flex-col items-center justify-center space-y-4">
-          <i className="fas fa-campground text-emerald-600 text-4xl animate-bounce"></i>
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loading Shop...</p>
-        </div>
-      </div>
-    }>
-      <ShopContent params={params} />
-    </Suspense>
   );
 }
