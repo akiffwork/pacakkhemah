@@ -36,6 +36,7 @@ type GearItem = {
     puRating?: string;
     layers?: string;
     weight?: string;
+    tentType?: string;
   };
 };
 
@@ -87,6 +88,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
   const [specPuRating, setSpecPuRating] = useState("");
   const [specLayers, setSpecLayers] = useState("");
   const [specWeight, setSpecWeight] = useState("");
+  const [specTentType, setSpecTentType] = useState("");
 
   // Discount form state
   const [discType, setDiscType] = useState("nightly_discount");
@@ -121,7 +123,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     setGearImages([]); setGearInc([]); setLinkedItems([]);
     setPendingFiles([]);
     setSetupAvailable(false); setSetupFee(""); setSetupDesc("");
-    setSpecSize(""); setSpecMaxPax(""); setSpecPuRating(""); setSpecLayers(""); setSpecWeight("");
+    setSpecSize(""); setSpecMaxPax(""); setSpecPuRating(""); setSpecLayers(""); setSpecWeight(""); setSpecTentType("");
     setShowGearModal(true);
   }
 
@@ -145,6 +147,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     setSpecPuRating(g.specs?.puRating || "");
     setSpecLayers(g.specs?.layers || "");
     setSpecWeight(g.specs?.weight || "");
+    setSpecTentType(g.specs?.tentType || "");
     setShowGearModal(true);
   }
 
@@ -197,6 +200,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
       if (specPuRating.trim()) specs.puRating = specPuRating.trim();
       if (specLayers.trim()) specs.layers = specLayers.trim();
       if (specWeight.trim()) specs.weight = specWeight.trim();
+      if (specTentType.trim()) specs.tentType = specTentType.trim();
       data.specs = specs;
       
       if (editingGear) {
@@ -301,6 +305,11 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     );
   }
 
+  // Get item name by ID
+  function getItemName(itemId: string): string {
+    return allGear.find(g => g.id === itemId)?.name || "Unknown";
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -363,7 +372,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {items.map(g => (
-                  <div key={g.id} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-all group">
+                  <div key={g.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-all group">
                     <div className="w-14 h-14 rounded-xl bg-white p-0.5 shadow-sm overflow-hidden flex-shrink-0 relative">
                       <img src={g.images?.[0] || g.img || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-lg" alt={g.name} />
                       {g.setup?.available && (
@@ -390,19 +399,8 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                           </p>
                         )}
                       </div>
-                      
-                      {/* FIX 2: Added Spec Pills to Admin View so you know it saved! */}
-                      {g.specs && (g.specs.maxPax || g.specs.size || g.specs.puRating || g.specs.layers || g.specs.weight) && (
-                        <div className="flex flex-wrap gap-1 mt-1.5 pt-1.5 border-t border-slate-200/50">
-                          {g.specs.maxPax ? <span className="text-[7px] font-bold text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded">{g.specs.maxPax}P</span> : null}
-                          {g.specs.size ? <span className="text-[7px] font-bold text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded">{g.specs.size}</span> : null}
-                          {g.specs.puRating ? <span className="text-[7px] font-bold text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded">{g.specs.puRating}</span> : null}
-                          {g.specs.layers ? <span className="text-[7px] font-bold text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded">{g.specs.layers === "Double Layer" ? "Double" : "Single"}</span> : null}
-                          {g.specs.weight ? <span className="text-[7px] font-bold text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded">{g.specs.weight}</span> : null}
-                        </div>
-                      )}
                     </div>
-                    <div className="flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                    <div className="flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => openEditGear(g)}
                         className="w-8 h-8 flex items-center justify-center rounded-lg bg-white text-slate-400 hover:text-emerald-600 shadow-sm transition-all">
                         <i className="fas fa-pen text-[10px]"></i>
@@ -630,7 +628,23 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                       <option value="Double Layer">Double Layer</option>
                     </select>
                   </div>
-                  <div className="col-span-2">
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Tent Type</label>
+                    <select value={specTentType} onChange={e => setSpecTentType(e.target.value)}
+                      className="w-full bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-semibold outline-none focus:border-emerald-400">
+                      <option value="">Not specified</option>
+                      <option value="Auto Tent">Auto Tent</option>
+                      <option value="Manual Tent">Manual Tent</option>
+                      <option value="Air Tent">Air Tent</option>
+                      <option value="Shelter">Shelter</option>
+                      <option value="Dome Tent">Dome Tent</option>
+                      <option value="Cabin Tent">Cabin Tent</option>
+                      <option value="Teepee">Teepee</option>
+                      <option value="Hammock Tent">Hammock Tent</option>
+                      <option value="Flysheet">Flysheet</option>
+                    </select>
+                  </div>
+                  <div>
                     <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Weight</label>
                     <input value={specWeight} onChange={e => setSpecWeight(e.target.value)}
                       className="w-full bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-semibold outline-none focus:border-emerald-400"

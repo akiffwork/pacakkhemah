@@ -85,6 +85,7 @@ type GearItem = {
     puRating?: string;
     layers?: string;
     weight?: string;
+    tentType?: string;
   };
 };
 
@@ -1093,8 +1094,9 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                       <div className="p-3">
                         <p className="text-[10px] font-black uppercase truncate text-[#062c24]">{item.name}</p>
                         {/* Spec pills */}
-                        {item.specs && (item.specs.maxPax || item.specs.size || item.specs.puRating || item.specs.layers || item.specs.weight) && (
+                        {item.specs && (item.specs.maxPax || item.specs.size || item.specs.puRating || item.specs.layers || item.specs.weight || item.specs.tentType) && (
                           <div className="flex flex-wrap gap-1 mt-1">
+                            {item.specs.tentType ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.tentType}</span> : null}
                             {item.specs.maxPax ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.maxPax}P</span> : null}
                             {item.specs.puRating ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.puRating}</span> : null}
                             {item.specs.layers ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.layers === "Double Layer" ? "Double" : "Single"}</span> : null}
@@ -1246,8 +1248,14 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
               <p className="text-emerald-600 font-black text-xl mb-3">RM {selectedItem.price}<span className="text-xs text-slate-400 font-bold">/night</span></p>
               {selectedItem.desc && <p className="text-slate-500 text-sm mb-4 leading-relaxed">{selectedItem.desc}</p>}
               {/* Specs Grid */}
-              {selectedItem.specs && (selectedItem.specs.maxPax || selectedItem.specs.size || selectedItem.specs.puRating || selectedItem.specs.layers || selectedItem.specs.weight) && (
+              {selectedItem.specs && (selectedItem.specs.maxPax || selectedItem.specs.size || selectedItem.specs.puRating || selectedItem.specs.layers || selectedItem.specs.weight || selectedItem.specs.tentType) && (
                 <div className="mb-4 grid grid-cols-2 gap-2">
+                  {selectedItem.specs.tentType ? (
+                    <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-2.5">
+                      <div className="w-7 h-7 bg-teal-100 text-teal-600 rounded-lg flex items-center justify-center shrink-0"><i className="fas fa-campground text-[9px]"></i></div>
+                      <div><p className="text-[8px] font-bold text-slate-400 uppercase">Tent Type</p><p className="text-xs font-black text-[#062c24]">{selectedItem.specs.tentType}</p></div>
+                    </div>
+                  ) : null}
                   {selectedItem.specs.maxPax ? (
                     <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-2.5">
                       <div className="w-7 h-7 bg-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center shrink-0"><i className="fas fa-users text-[9px]"></i></div>
