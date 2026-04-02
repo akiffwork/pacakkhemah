@@ -4,6 +4,15 @@ import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
 
+type GearSpecs = {
+  size?: string;
+  maxPax?: number;
+  puRating?: string;
+  layerType?: string;
+  weight?: string;
+  tentType?: string;
+};
+
 type GearItem = {
   id: string;
   name: string;
@@ -14,6 +23,14 @@ type GearItem = {
   type?: string;
   deleted?: boolean;
   linkedItems?: { itemId: string; qty: number }[];
+  specs?: GearSpecs;
+  // Some vendors store specs at root level
+  size?: string;
+  maxPax?: number;
+  puRating?: string;
+  layerType?: string;
+  weight?: string;
+  tentType?: string;
 };
 
 type VendorInfo = {
@@ -28,12 +45,67 @@ type VendorInfo = {
 
 type Props = { vendorId: string; onClose: () => void };
 
+// Resolves specs from either item.specs.* or item.* (root-level fallback)
+function resolveSpecs(item: GearItem): GearSpecs {
+  return {
+    size: item.specs?.size || item.size,
+    maxPax: item.specs?.maxPax ?? item.maxPax,
+    puRating: item.specs?.puRating || item.puRating,
+    layerType: item.specs?.layerType || item.layerType,
+    weight: item.specs?.weight || item.weight,
+    tentType: item.specs?.tentType || item.tentType,
+  };
+}
+
+// Spec chip definitions — icon + label formatter
+const SPEC_CHIPS: {
+  key: keyof GearSpecs;
+  icon: string;
+  label: (v: string | number) => string;
+}[] = [
+  { key: "maxPax",    icon: "fa-users",        label: (v) => `${v} pax` },
+  { key: "size",      icon: "fa-ruler-combined",label: (v) => `${v}` },
+  { key: "weight",    icon: "fa-weight-hanging", label: (v) => `${v}` },
+  { key: "puRating",  icon: "fa-tint",          label: (v) => `${v}` },
+  { key: "layerType", icon: "fa-layer-group",   label: (v) => `${v}` },
+  { key: "tentType",  icon: "fa-campground",    label: (v) => `${v}` },
+];
+
+function SpecChips({ specs, compact = false }: { specs: GearSpecs; compact?: boolean }) {
+  const chips = SPEC_CHIPS.filter(({ key }) => {
+    const val = specs[key];
+    return val !== undefined && val !== null && val !== "";
+  });
+
+  if (!chips.length) return null;
+
+  return (
+    <div className={`flex flex-wrap gap-1 ${compact ? "mt-1" : "mt-1.5"}`}>
+      {chips.map(({ key, icon, label }) => {
+        const val = specs[key]!;
+        return (
+          <span
+            key={key}
+            className={`inline-flex items-center gap-1 bg-slate-100 text-slate-600 rounded font-semibold leading-none ${
+              compact ? "text-[8px] px-1.5 py-1" : "text-[9px] px-1.5 py-1"
+            }`}
+          >
+            <i className={`fas ${icon} text-emerald-600`} style={{ fontSize: compact ? "7px" : "8px" }}></i>
+            {label(val)}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function GearFlyerModal({ vendorId, onClose }: Props) {
   const [vendor, setVendor] = useState<VendorInfo | null>(null);
   const [allGear, setAllGear] = useState<GearItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [showPreview, setShowPreview] = useState(false);
+  const [showPrice, setShowPrice] = useState(true);
 
   useEffect(() => {
     async function load() {
@@ -61,7 +133,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
       return next;
     });
   }
-  
+
   function selectAll() { setSelectedIds(new Set(allGear.map(g => g.id))); }
   function selectNone() { setSelectedIds(new Set()); }
 
@@ -101,7 +173,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
           }
         `}</style>
 
-        {/* Toolbar - Hidden when printing */}
+        {/* Toolbar */}
         <div id="flyer-toolbar" className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center z-50 print:hidden shadow-md">
           <button onClick={() => setShowPreview(false)} className="text-slate-500 hover:text-[#062c24] font-bold text-sm flex items-center gap-2 transition-colors">
             <i className="fas fa-arrow-left"></i> Back to Editor
@@ -118,7 +190,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
 
         {/* A4 Paper Layout */}
         <div id="flyer-paper" className="w-[210mm] min-h-[297mm] mx-auto bg-white my-8 shadow-2xl flex flex-col relative print:my-0 print:w-full print:shadow-none overflow-hidden">
-          
+
           {/* HEADER */}
           <div className="bg-[#062c24] flex items-center p-8 text-white break-inside-avoid">
             {vendor.image && (
@@ -136,10 +208,10 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
               </div>
             </div>
           </div>
-          
+
           {/* SUBTITLE */}
           <div className="bg-slate-100 py-3 text-center text-[10px] font-black text-[#062c24] tracking-[0.2em] uppercase border-b border-slate-200 break-inside-avoid">
-             Senarai Gear Untuk DiseWA &nbsp;/&nbsp; Gear Rental Catalogue
+            Senarai Gear Untuk DiSewa &nbsp;/&nbsp; Gear Rental Catalogue
           </div>
 
           {/* GRID OF ITEMS */}
@@ -147,11 +219,16 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
             {selectedItems.map((item) => {
               const imgUrl = item.images?.[0] || item.img;
               const isPkg = item.type === "package" && item.linkedItems && item.linkedItems.length > 0;
+              const specs = resolveSpecs(item);
+              const hasSpecs = SPEC_CHIPS.some(({ key }) => {
+                const val = specs[key];
+                return val !== undefined && val !== null && val !== "";
+              });
 
               return (
                 <div key={item.id} className="border border-slate-200 rounded-xl bg-white overflow-hidden flex flex-col break-inside-avoid shadow-sm h-full">
-                  
-                  {/* Item Image (4:3 aspect ratio, cover, no stretching) */}
+
+                  {/* Item Image */}
                   <div className="aspect-[4/3] w-full relative bg-slate-50 border-b border-slate-100">
                     {imgUrl ? (
                       <img src={imgUrl} crossOrigin="anonymous" className="w-full h-full object-cover" alt={item.name} />
@@ -159,17 +236,27 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
                       <div className="w-full h-full flex items-center justify-center text-slate-300"><i className="fas fa-image text-2xl"></i></div>
                     )}
                   </div>
-                  
+
                   {/* Item Info */}
-                  <div className="p-4 flex flex-col flex-1 gap-3">
+                  <div className="p-3 flex flex-col flex-1 gap-2">
+                    {/* Name */}
                     <div>
-                      <h4 className="font-black text-[13px] text-[#062c24] uppercase leading-tight">{item.name}</h4>
-                      <p className="text-emerald-600 font-bold text-xs mt-1">RM {item.price}/night</p>
+                      <h4 className="font-black text-[12px] text-[#062c24] uppercase leading-tight">{item.name}</h4>
+
+                      {/* Spec Chips */}
+                      {hasSpecs && <SpecChips specs={specs} compact />}
+
+                      {/* Price (optional) */}
+                      {showPrice && (
+                        <p className="text-emerald-600 font-bold text-[11px] mt-1.5">
+                          RM {item.price}/malam
+                        </p>
+                      )}
                     </div>
 
                     {/* Package Thumbnails */}
                     {isPkg && (
-                      <div className="flex flex-wrap gap-1.5 mt-auto pt-2 border-t border-slate-100">
+                      <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100">
                         {item.linkedItems!.map((li, idx) => {
                           const linkedItem = allGear.find(g => g.id === li.itemId);
                           const linkedImg = linkedItem?.images?.[0] || linkedItem?.img;
@@ -181,8 +268,8 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
                     )}
 
                     {/* Button */}
-                    <div className={isPkg ? "mt-1" : "mt-auto pt-2"}>
-                      <div className="w-full bg-[#062c24] text-white py-2.5 rounded-lg text-center text-[11px] font-black tracking-widest uppercase">
+                    <div className="mt-auto pt-1">
+                      <div className="w-full bg-[#062c24] text-white py-2 rounded-lg text-center text-[10px] font-black tracking-widest uppercase">
                         Shop Now
                       </div>
                     </div>
@@ -217,7 +304,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
   return (
     <div className="fixed inset-0 bg-[#062c24]/90 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-        
+
         {/* Header */}
         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-white z-10">
           <div className="flex items-center gap-3">
@@ -234,14 +321,31 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
           </button>
         </div>
 
-        {/* Selection Controls */}
-        <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-          <span className="text-[10px] font-black text-slate-500 uppercase">{selectedIds.size} / {allGear.length} items</span>
-          <div className="flex gap-2">
-            <button onClick={selectAll} className="text-[10px] font-bold text-emerald-600 hover:underline uppercase">Select All</button>
-            <span className="text-slate-300">|</span>
-            <button onClick={selectNone} className="text-[10px] font-bold text-slate-400 hover:underline uppercase">Clear</button>
+        {/* Controls Row: count + select all/none + price toggle */}
+        <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-black text-slate-500 uppercase">{selectedIds.size} / {allGear.length} items</span>
+            <div className="flex gap-2">
+              <button onClick={selectAll} className="text-[10px] font-bold text-emerald-600 hover:underline uppercase">Select All</button>
+              <span className="text-slate-300">|</span>
+              <button onClick={selectNone} className="text-[10px] font-bold text-slate-400 hover:underline uppercase">Clear</button>
+            </div>
           </div>
+
+          {/* Price Toggle */}
+          <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
+            <span className="text-[10px] font-black text-slate-500 uppercase">Show Price</span>
+            <button
+              type="button"
+              onClick={() => setShowPrice(p => !p)}
+              className={`relative w-9 h-5 rounded-full transition-colors duration-200 focus:outline-none ${showPrice ? "bg-emerald-500" : "bg-slate-300"}`}
+              aria-pressed={showPrice}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200 ${showPrice ? "translate-x-4" : "translate-x-0"}`}
+              />
+            </button>
+          </label>
         </div>
 
         {/* Item List */}
@@ -255,6 +359,11 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
                 <div className="space-y-2">
                   {items.map(item => {
                     const isPkg = item.type === "package" && item.linkedItems && item.linkedItems.length > 0;
+                    const specs = resolveSpecs(item);
+                    const hasSpecs = SPEC_CHIPS.some(({ key }) => {
+                      const val = specs[key];
+                      return val !== undefined && val !== null && val !== "";
+                    });
                     return (
                       <label key={item.id}
                         className={`flex items-center gap-4 p-3 rounded-2xl border cursor-pointer transition-all ${
@@ -271,8 +380,28 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-[#062c24] truncate">{item.name}</p>
+                          {/* Spec chips preview in list */}
+                          {hasSpecs && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {SPEC_CHIPS.filter(({ key }) => {
+                                const val = specs[key];
+                                return val !== undefined && val !== null && val !== "";
+                              }).slice(0, 3).map(({ key, icon, label }) => (
+                                <span key={key} className="inline-flex items-center gap-1 bg-slate-100 text-slate-500 text-[9px] px-1.5 py-0.5 rounded font-semibold">
+                                  <i className={`fas ${icon} text-emerald-500`} style={{ fontSize: "7px" }}></i>
+                                  {label(specs[key]!)}
+                                </span>
+                              ))}
+                              {SPEC_CHIPS.filter(({ key }) => {
+                                const val = specs[key];
+                                return val !== undefined && val !== null && val !== "";
+                              }).length > 3 && (
+                                <span className="text-[9px] text-slate-400 font-semibold px-1">+more</span>
+                              )}
+                            </div>
+                          )}
                           <div className="flex items-center gap-2 mt-0.5">
-                            <p className="text-[11px] text-emerald-600 font-bold">RM {item.price}/night</p>
+                            <p className="text-[11px] text-emerald-600 font-bold">RM {item.price}/malam</p>
                             {isPkg && <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold">{item.linkedItems!.length} items</span>}
                           </div>
                         </div>

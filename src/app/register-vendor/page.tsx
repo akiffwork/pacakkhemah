@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
 import { doc, getDoc, setDoc, serverTimestamp, collection, getCountFromServer, query, where } from "firebase/firestore";
 import {
@@ -29,6 +30,21 @@ function getPasswordStrength(pwd: string): { score: number; label: string; color
 const MOCKUP_VENDOR_ID = "UHdf5wMhsPbwi7qFGPSloXGdbu53";
 
 export default function RegisterVendorPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#f0f2f1] flex items-center justify-center">
+        <i className="fas fa-spinner fa-spin text-emerald-600 text-2xl"></i>
+      </div>
+    }>
+      <RegisterContent />
+    </Suspense>
+  );
+}
+
+function RegisterContent() {
+  const searchParams = useSearchParams();
+  const refCode = searchParams.get("ref") || "";
+
   const [lang, setLang] = useState<Lang>("my");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
@@ -67,7 +83,7 @@ export default function RegisterVendorPage() {
   }
 
   async function createVendorShell(user: User, whatsappPhone?: string) {
-    await setDoc(doc(db, "vendors", user.uid), {
+    const vendorData: Record<string, any> = {
       owner_uid: user.uid,
       name: user.displayName || "New Vendor",
       email: user.email,
@@ -78,7 +94,13 @@ export default function RegisterVendorPage() {
       joinedAt: serverTimestamp(),
       setup_complete: false,
       security_deposit: 50,
-    });
+    };
+    // Save referral code if present
+    if (refCode.trim()) {
+      vendorData.referredBy = refCode.trim().toUpperCase();
+      vendorData.referralRewarded = false;
+    }
+    await setDoc(doc(db, "vendors", user.uid), vendorData);
   }
 
   async function handleEmailReg() {
@@ -94,7 +116,7 @@ export default function RegisterVendorPage() {
       fetch("/api/notify-telegram", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vendorName: cred.user.displayName || "New Vendor", email: cred.user.email, phone: cleanPhone, method: "Email" }),
+        body: JSON.stringify({ vendorName: cred.user.displayName || "New Vendor", email: cred.user.email, phone: cleanPhone, method: "Email", referralCode: refCode || null }),
       }).catch(() => {});
       setDisplayEmail(email);
       setSuccess(true);
@@ -116,7 +138,7 @@ export default function RegisterVendorPage() {
         fetch("/api/notify-telegram", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ vendorName: user.displayName || "New Vendor", email: user.email, phone: cleanPhone, method: "Google" }),
+          body: JSON.stringify({ vendorName: user.displayName || "New Vendor", email: user.email, phone: cleanPhone, method: "Google", referralCode: refCode || null }),
         }).catch(() => {});
         alert(tx("Account created! Please wait for admin approval.", "Akaun berjaya dicipta! Sila tunggu kelulusan admin."));
       }
@@ -425,6 +447,12 @@ export default function RegisterVendorPage() {
                 </div>
                 <h2 className="text-2xl font-black text-[#062c24] uppercase mb-2">{tx("Register Now", "Daftar Sekarang")}</h2>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{tx("Free. Always free.", "Percuma. Sentiasa percuma.")}</p>
+                {refCode && (
+                  <div className="mt-3 inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-4 py-2 rounded-full">
+                    <i className="fas fa-gift text-emerald-500 text-xs"></i>
+                    <span className="text-[10px] font-black text-emerald-700 uppercase">{tx("Referred by", "Dirujuk oleh")}: {refCode}</span>
+                  </div>
+                )}
               </div>
 
               <div className="bg-white rounded-[2.5rem] p-8 shadow-xl border border-slate-100">
