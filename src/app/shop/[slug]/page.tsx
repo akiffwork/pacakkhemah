@@ -445,17 +445,19 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         if (!hasCredits) { setBlockState("nocredits"); return; }
       } else if (!isApproved || isVacation) { setOwnerPreview(true); }
       
-      const [gearSnap, availSnap, discSnap, postsSnap, reviewsSnap, weeklyOffSnap] = await Promise.all([
+      const [gearSnap, availSnap, discSnap, postsSnap, reviewsSnap] = await Promise.all([
         getDocsFromServer(query(collection(db, "gear"), where("vendorId", "==", vendorId))),
         getDocsFromServer(collection(db, "vendors", vendorId, "availability")),
         getDocsFromServer(collection(db, "vendors", vendorId, "discounts")),
         getDocsFromServer(collection(db, "vendors", vendorId, "posts")),
         getDocs(query(collection(db, "reviews"), where("vendorId", "==", vendorId), where("status", "==", "published"), orderBy("createdAt", "desc"))),
-        getDoc(doc(db, "vendors", vendorId, "settings", "weeklyOff")),
       ]);
       setAllGear(gearSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted));
       setAvailRules(availSnap.docs.map(d => d.data() as AvailRule));
-      setWeeklyOff(weeklyOffSnap.exists() ? weeklyOffSnap.data() as Record<number, boolean> : {});
+      try {
+        const weeklyOffSnap = await getDoc(doc(db, "vendors", vendorId, "settings", "weeklyOff"));
+        setWeeklyOff(weeklyOffSnap.exists() ? weeklyOffSnap.data() as Record<number, boolean> : {});
+      } catch { setWeeklyOff({}); }
       setDiscounts(discSnap.docs.map(d => d.data() as Discount).filter(d => !d.deleted));
       setPosts(postsSnap.docs.map(d => ({ id: d.id, ...d.data() } as VendorPost)).sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
