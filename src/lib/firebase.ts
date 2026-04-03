@@ -2,6 +2,7 @@ import { initializeApp, getApps } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth, browserLocalPersistence, setPersistence } from "firebase/auth";
 import { getStorage } from "firebase/storage";
+import { getMessaging, isSupported } from "firebase/messaging";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -18,9 +19,14 @@ export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
-// Explicitly persist auth session in localStorage so it survives
-// page navigation and Next.js SSR hydration cycles.
-// The typeof window check prevents this from running during SSR.
+// Messaging — only available in browser with notification support
+export const getMessagingInstance = async () => {
+  if (typeof window === "undefined") return null;
+  const supported = await isSupported();
+  if (!supported) return null;
+  return getMessaging(app);
+};
+
 if (typeof window !== "undefined") {
   setPersistence(auth, browserLocalPersistence).catch(console.error);
 }
