@@ -400,7 +400,11 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                 </div>
                 <div>
                   <p className="font-bold text-[#062c24]">{selectedOrder.customerName || "Customer"}</p>
-                  <p className="text-xs text-slate-500">{selectedOrder.customerPhone}</p>
+                  {selectedOrder.customerPhone ? (
+                    <p className="text-xs text-slate-500"><i className="fab fa-whatsapp text-emerald-500 mr-1"></i>{selectedOrder.customerPhone}</p>
+                  ) : (
+                    <p className="text-xs text-slate-400 italic">Awaiting agreement sign</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -508,14 +512,20 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
 
             {/* Contact Customer */}
             <div className="mt-4 pt-4 border-t border-slate-100">
-              <a
-                href={`https://wa.me/${selectedOrder.customerPhone}`}
-                target="_blank"
-                rel="noreferrer"
-                className="w-full py-3 rounded-xl font-black uppercase text-xs bg-emerald-100 text-emerald-700 hover:bg-emerald-200 flex items-center justify-center gap-2"
-              >
-                <i className="fab fa-whatsapp"></i>Contact Customer
-              </a>
+              {selectedOrder.customerPhone ? (
+                <a
+                  href={`https://wa.me/${selectedOrder.customerPhone.replace(/\D/g, "")}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full py-3 rounded-xl font-black uppercase text-xs bg-emerald-100 text-emerald-700 hover:bg-emerald-200 flex items-center justify-center gap-2"
+                >
+                  <i className="fab fa-whatsapp"></i>Contact Customer
+                </a>
+              ) : (
+                <div className="w-full py-3 rounded-xl font-black uppercase text-xs bg-slate-100 text-slate-400 flex items-center justify-center gap-2">
+                  <i className="fab fa-whatsapp"></i>No Phone Number Yet
+                </div>
+              )}
             </div>
           </div>
         </div>

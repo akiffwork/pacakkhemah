@@ -33,6 +33,7 @@ function AgreementContent() {
 
   // Form state
   const [custName, setCustName] = useState("");
+  const [custPhone, setCustPhone] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [frontFile, setFrontFile] = useState<File | null>(null);
   const [backFile, setBackFile] = useState<File | null>(null);
@@ -79,6 +80,7 @@ function AgreementContent() {
 
   async function submitAgreement() {
     if (!custName.trim()) return alert("Please enter your full name.");
+    if (!custPhone.trim()) return alert("Please enter your WhatsApp number.");
     if (!frontFile || !backFile) return alert("Please upload BOTH Front and Back of your ID.");
     if (!agreed) return alert("You must agree to the terms to proceed.");
 
@@ -99,6 +101,7 @@ function AgreementContent() {
       await addDoc(collection(db, "agreements"), {
         vendorId,
         customerName: custName,
+        customerPhone: custPhone.replace(/\D/g, ""),
         icFrontPath: snapFront.metadata.fullPath,
         icBackPath: snapBack.metadata.fullPath,
         bookingDetails: booking || "Manual/Chat Booking",
@@ -114,6 +117,7 @@ function AgreementContent() {
           await updateDoc(doc(db, "orders", booking.orderId), {
             status: "confirmed",
             customerName: custName,
+            customerPhone: custPhone.replace(/\D/g, ""),
             agreementSigned: true,
             agreementSignedAt: serverTimestamp(),
           });
@@ -211,8 +215,18 @@ function AgreementContent() {
                     value={custName}
                     onChange={e => setCustName(e.target.value.toUpperCase())}
                     placeholder="FULL NAME AS PER IC"
-                    className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-50 transition-all uppercase"
+                    className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-50 transition-all uppercase mb-2"
                   />
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"><i className="fab fa-whatsapp text-emerald-500"></i></span>
+                    <input
+                      type="tel"
+                      value={custPhone}
+                      onChange={e => setCustPhone(e.target.value)}
+                      placeholder="60xxxxxxxxxx"
+                      className="w-full bg-white border border-slate-200 p-3 pl-8 rounded-xl font-bold text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-50 transition-all"
+                    />
+                  </div>
                 </div>
               </div>
               <div className="mt-5 p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-3 items-start">
