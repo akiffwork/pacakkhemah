@@ -34,7 +34,7 @@ export const metadata: Metadata = {
   creator: "Pacak Khemah",
 
   // PWA
-  manifest: "/manifest.json",
+  manifest: "/manifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
