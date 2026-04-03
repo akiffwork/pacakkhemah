@@ -21,10 +21,11 @@ export function useFCM(vendorId: string | null) {
         const permission = await Notification.requestPermission();
         if (permission !== "granted") return;
 
-        // Register service worker
+        // Register service worker and wait for it to be active
         const registration = await navigator.serviceWorker.register(
           "/firebase-messaging-sw.js"
         );
+        await navigator.serviceWorker.ready;
 
         // Get FCM token
         const token = await getToken(messaging, {

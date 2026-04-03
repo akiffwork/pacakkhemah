@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import {
-  collection, query, where, onSnapshot, doc, updateDoc, deleteDoc,
+  collection, query, where, onSnapshot, doc, updateDoc,
   orderBy, serverTimestamp,
 } from "firebase/firestore";
 import { v4 as uuidv4 } from "uuid";
@@ -61,7 +61,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
     );
 
     const unsub = onSnapshot(q, (snap) => {
-      setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order)));
+      setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order)).filter(o => !(o as any).deleted));
       setLoading(false);
     });
 
@@ -92,7 +92,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
   async function deleteOrder(orderId: string) {
     if (!confirm("Delete this order? This action cannot be undone.")) return;
     try {
-      await deleteDoc(doc(db, "orders", orderId));
+      await updateDoc(doc(db, "orders", orderId), { deleted: true });
       setShowModal(false);
       setSelectedOrder(null);
       alert("Order deleted successfully!");
