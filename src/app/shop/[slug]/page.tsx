@@ -354,6 +354,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   const [deliveryDistance, setDeliveryDistance] = useState("");
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<TimeSlot | null>(null);
   const [useCombo, setUseCombo] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   
   const cpRef = useRef<any>(null);
   const opRef = useRef<any>(null);
@@ -615,6 +616,9 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   // ═══════════════════════════════════════════════════════════════════════════
 
   async function sendWhatsAppOrder() {
+    if (isSending) return;
+    setIsSending(true);
+    try {
     const pickupDate = (cpRef.current as any)?._input?.value;
     const returnDate = (opRef.current as any)?._input?.value;
     
@@ -770,6 +774,9 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
     }
     
     window.open(`https://wa.me/${isMockupShop ? ADMIN_WHATSAPP : vendorData?.phone}?text=${msg}`, "_blank");
+    } finally {
+      setIsSending(false);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1517,9 +1524,10 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
             </div>
 
             <div className="p-5 bg-slate-50 border-t border-slate-100 space-y-4">
-              <button onClick={canOrder ? sendWhatsAppOrder : undefined} disabled={!canOrder}
-                className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl transition-all ${canOrder ? "bg-[#062c24] text-white hover:bg-emerald-900 active:scale-95" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}>
-                {!cart.length ? "Add Items to Start" 
+              <button onClick={canOrder && !isSending ? sendWhatsAppOrder : undefined} disabled={!canOrder || isSending}
+                className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl transition-all ${canOrder && !isSending ? "bg-[#062c24] text-white hover:bg-emerald-900 active:scale-95" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}>
+                {isSending ? "Processing..." 
+                  : !cart.length ? "Add Items to Start" 
                   : !selectedDates[0] || !selectedDates[1] ? "Select Pickup & Return Dates" 
                   : needsAddress ? "Enter Delivery Address"
                   : needsDistance ? "Enter Delivery Distance"
