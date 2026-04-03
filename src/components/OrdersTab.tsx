@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import {
-  collection, query, where, onSnapshot, doc, updateDoc,
+  collection, query, where, onSnapshot, doc, updateDoc, deleteDoc,
   orderBy, serverTimestamp,
 } from "firebase/firestore";
 import { v4 as uuidv4 } from "uuid";
@@ -87,6 +87,15 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
 
     await updateDoc(doc(db, "orders", orderId), updates);
     setShowModal(false);
+  }
+
+  async function deleteOrder(orderId: string) {
+    if (!confirm("Delete this order? This action cannot be undone.")) return;
+    try {
+      await deleteDoc(doc(db, "orders", orderId));
+      setShowModal(false);
+      setSelectedOrder(null);
+    } catch (e) { console.error("Delete order error:", e); }
   }
 
   // Generate review link
@@ -527,6 +536,14 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                 </div>
               )}
             </div>
+
+            {/* Delete Order */}
+            <button
+              onClick={() => deleteOrder(selectedOrder.id)}
+              className="w-full mt-2 py-3 rounded-xl font-black uppercase text-[10px] bg-white border border-red-200 text-red-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center gap-2 transition-all"
+            >
+              <i className="fas fa-trash-alt"></i>Delete Order
+            </button>
           </div>
         </div>
       )}
