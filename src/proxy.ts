@@ -5,9 +5,9 @@ export function proxy(request: NextRequest) {
   const isVendorSubdomain = hostname.startsWith("vendor.");
   const pathname = request.nextUrl.pathname;
 
-  // On vendor subdomain, redirect root to /dashboard
+  // On vendor subdomain, redirect root to /store
   if (isVendorSubdomain && pathname === "/") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(new URL("/store", request.url));
   }
 
   return NextResponse.next();

@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     name: "Pacak Khemah Vendor",
     short_name: "PK Vendor",
     description: "Urus sewa gear camping anda",
-    start_url: "/dashboard",
+    start_url: "/store",
     display: "standalone",
     background_color: "#062c24",
     theme_color: "#062c24",
@@ -47,17 +47,17 @@ export async function GET(request: NextRequest) {
     shortcuts: [
       {
         name: "Dashboard",
-        url: "/dashboard",
+        url: "/store",
         icons: [{ src: "/icons/vendor/icon-96x96.png", sizes: "96x96" }],
       },
       {
         name: "Kalendar",
-        url: "/dashboard/calendar",
+        url: "/store/calendar",
         icons: [{ src: "/icons/vendor/icon-96x96.png", sizes: "96x96" }],
       },
       {
         name: "Inventory",
-        url: "/dashboard/inventory",
+        url: "/store/inventory",
         icons: [{ src: "/icons/vendor/icon-96x96.png", sizes: "96x96" }],
       },
     ],
