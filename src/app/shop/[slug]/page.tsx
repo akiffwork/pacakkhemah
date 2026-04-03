@@ -698,6 +698,37 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
 
     // Analytics & credits - Skip for mock-up shops
     if (!isMockupShop) {
+      // Visitor fingerprint for repeat lead detection
+      let visitorId = localStorage.getItem("pk_visitor_id");
+      if (!visitorId) {
+        visitorId = crypto.randomUUID();
+        localStorage.setItem("pk_visitor_id", visitorId);
+      }
+      const visitKey = `pk_visited_${vendorId}`;
+      const hasVisitedBefore = !!localStorage.getItem(visitKey);
+      localStorage.setItem(visitKey, "1");
+
+      // Always log analytics lead for every order
+      try {
+        await addDoc(collection(db, "analytics"), {
+          vendorId, vendorName: vendorData?.name, totalAmount: total,
+          timestamp: serverTimestamp(), type: "whatsapp_lead",
+          visitorId,
+          isRepeatVisitor: hasVisitedBefore,
+          fulfillmentType,
+          deliveryAddress: fulfillmentType === "delivery" ? deliveryAddress : null,
+          deliveryZone: selectedZone?.name || null,
+          timeSlot: selectedTimeSlot?.label || null,
+          bookingDates: { start: pickupDate, end: returnDate },
+          cartItems: cart.map(i => ({ 
+            id: i.id, name: i.name, qty: i.qty, price: i.price,
+            addSetup: i.addSetup || false,
+            setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0
+          })),
+        });
+      } catch (e) { console.error("Analytics write error:", e); }
+
+      // Credit deduction - 1 per unique customer per 24hrs
       const storageKey = `click_${vendorId}`;
       const lastClick = localStorage.getItem(storageKey);
       if (!lastClick || Date.now() - Number(lastClick) > 86400000) {
@@ -708,24 +739,10 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
             const c = vDoc.data()?.credits || 0;
             if (c > 0) {
               t.update(vRef, { credits: c - 1 });
-              t.set(doc(collection(db, "analytics")), {
-                vendorId, vendorName: vendorData?.name, totalAmount: total,
-                timestamp: serverTimestamp(), type: "whatsapp_lead",
-                fulfillmentType,
-                deliveryAddress: fulfillmentType === "delivery" ? deliveryAddress : null,
-                deliveryZone: selectedZone?.name || null,
-                timeSlot: selectedTimeSlot?.label || null,
-                bookingDates: { start: pickupDate, end: returnDate },
-                cartItems: cart.map(i => ({ 
-                  id: i.id, name: i.name, qty: i.qty, price: i.price,
-                  addSetup: i.addSetup || false,
-                  setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0
-                })),
-              });
             }
           });
           localStorage.setItem(storageKey, String(Date.now()));
-        } catch (e) { console.error(e); }
+        } catch (e) { console.error("Credit deduction error:", e); }
       }
 
       // ═══ Create order in orders collection ═══
