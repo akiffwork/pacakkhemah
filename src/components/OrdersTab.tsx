@@ -95,6 +95,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
       await deleteDoc(doc(db, "orders", orderId));
       setShowModal(false);
       setSelectedOrder(null);
+      alert("Order deleted successfully!");
     } catch (e) { console.error("Delete order error:", e); }
   }
 

@@ -20,6 +20,7 @@ import ReferralsTab from "@/components/ReferralsTab";
 import WelcomeTour from "@/components/vendor/WelcomeTour";
 import FirstItemTour from "@/components/vendor/FirstItemTour";
 import FirstOrderTour from "@/components/vendor/FirstOrderTour";
+import { useFCM } from "@/hooks/useFCM";
 
 type VendorData = {
   name: string;
@@ -322,9 +323,11 @@ function StorePageContent() {
   const [user, setUser] = useState<User | null>(null);
   const [vendorData, setVendorData] = useState<VendorData | null>(null);
   const [vendorId, setVendorId] = useState<string | null>(null);
+  useFCM(vendorId); // ← add this line
   const [loading, setLoading] = useState(true);
   const [noVendor, setNoVendor] = useState(false);
   const [isAdminOverride, setIsAdminOverride] = useState(false);
+
 
   const ADMIN_EMAIL = "akiff.work@gmail.com";
   const adminOverrideId = searchParams.get("admin_override");
