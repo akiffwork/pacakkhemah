@@ -324,6 +324,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   const [vendorData, setVendorData] = useState<VendorData | null>(null);
   const [allGear, setAllGear] = useState<GearItem[]>([]);
   const [availRules, setAvailRules] = useState<AvailRule[]>([]);
+  const [weeklyOff, setWeeklyOff] = useState<Record<number, boolean>>({});
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [posts, setPosts] = useState<VendorPost[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -444,15 +445,17 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         if (!hasCredits) { setBlockState("nocredits"); return; }
       } else if (!isApproved || isVacation) { setOwnerPreview(true); }
       
-      const [gearSnap, availSnap, discSnap, postsSnap, reviewsSnap] = await Promise.all([
+      const [gearSnap, availSnap, discSnap, postsSnap, reviewsSnap, weeklyOffSnap] = await Promise.all([
         getDocsFromServer(query(collection(db, "gear"), where("vendorId", "==", vendorId))),
         getDocsFromServer(collection(db, "vendors", vendorId, "availability")),
         getDocsFromServer(collection(db, "vendors", vendorId, "discounts")),
         getDocsFromServer(collection(db, "vendors", vendorId, "posts")),
         getDocs(query(collection(db, "reviews"), where("vendorId", "==", vendorId), where("status", "==", "published"), orderBy("createdAt", "desc"))),
+        getDoc(doc(db, "vendors", vendorId, "settings", "weeklyOff")),
       ]);
       setAllGear(gearSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted));
       setAvailRules(availSnap.docs.map(d => d.data() as AvailRule));
+      setWeeklyOff(weeklyOffSnap.exists() ? weeklyOffSnap.data() as Record<number, boolean> : {});
       setDiscounts(discSnap.docs.map(d => d.data() as Discount).filter(d => !d.deleted));
       setPosts(postsSnap.docs.map(d => ({ id: d.id, ...d.data() } as VendorPost)).sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
@@ -466,7 +469,9 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
 
   useEffect(() => {
     if (!vendorData) return;
-    const blocked = availRules.filter(r => r.type === "block").map(r => ({ from: r.start, to: r.end || r.start }));
+    const blocked: any[] = availRules.filter(r => r.type === "block").map(r => ({ from: r.start, to: r.end || r.start }));
+    const offDays = Object.entries(weeklyOff).filter(([, v]) => v).map(([k]) => Number(k));
+    if (offDays.length) blocked.push((date: Date) => offDays.includes(date.getDay()));
     cpRef.current = flatpickr("#checkin-date", {
       minDate: "today", dateFormat: "Y-m-d", disable: blocked,
       onChange: ([d]) => { setSelectedDates(prev => [d, prev[1]]); opRef.current?.set("minDate", d); },
@@ -476,7 +481,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
       onChange: ([d]) => setSelectedDates(prev => [prev[0], d]),
     });
     return () => { cpRef.current?.destroy(); opRef.current?.destroy(); };
-  }, [vendorData, availRules]);
+  }, [vendorData, availRules, weeklyOff]);
 
   const specialOffer = discounts.find(d => d.type === "nightly_discount" && d.is_public !== false);
 
@@ -733,15 +738,17 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
       const lastClick = localStorage.getItem(storageKey);
       if (!lastClick || Date.now() - Number(lastClick) > 86400000) {
         try {
+          let deducted = false;
           await runTransaction(db, async (t) => {
             const vRef = doc(db, "vendors", vendorId!);
             const vDoc = await t.get(vRef);
             const c = vDoc.data()?.credits || 0;
             if (c > 0) {
               t.update(vRef, { credits: c - 1 });
+              deducted = true;
             }
           });
-          localStorage.setItem(storageKey, String(Date.now()));
+          if (deducted) localStorage.setItem(storageKey, String(Date.now()));
         } catch (e) { console.error("Credit deduction error:", e); }
       }
 
@@ -1345,7 +1352,17 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                   <div className="flex flex-wrap gap-1.5">{selectedItem.inc.map(inc => (<span key={inc} className="bg-white border border-emerald-100 text-emerald-700 px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase">{inc}</span>))}</div>
                 </div>
               )}
-              <button onClick={() => addToCart(selectedItem)} className="w-full bg-[#062c24] text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all">Add to Cart</button>
+              {(() => {
+                const avail = getAvailableStock(selectedItem.id);
+                const inCart = cart.find(i => i.id === selectedItem.id)?.qty || 0;
+                const canAdd = avail > inCart;
+                return (
+                  <button onClick={() => canAdd && addToCart(selectedItem)} disabled={!canAdd}
+                    className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl transition-all ${canAdd ? "bg-[#062c24] text-white hover:bg-emerald-800 active:scale-95" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
+                    {canAdd ? "Add to Cart" : avail === 0 ? "Sold Out" : "Max Added"}
+                  </button>
+                );
+              })()}
             </div>
           </div>
         </div>
