@@ -32,6 +32,21 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "Pacak Khemah" }],
   creator: "Pacak Khemah",
+
+  // PWA
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Pacak Khemah",
+  },
+  formatDetection: { telephone: false },
+  other: {
+    "mobile-web-app-capable": "yes",
+    "msapplication-TileColor": "#062c24",
+    "msapplication-tap-highlight": "no",
+  },
+
   openGraph: {
     type: "website",
     locale: "ms_MY",
@@ -73,6 +88,9 @@ export default function RootLayout({
           rel="stylesheet"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
         />
+        {/* PWA iOS icons */}
+        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+        <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
       </head>
       <body className={inter.className}>
         {children}
@@ -84,13 +102,11 @@ export default function RootLayout({
           crossOrigin="anonymous"
         />
 
-        {/* Google Analytics Library (This was missing!) */}
-        <Script 
-          src="https://www.googletagmanager.com/gtag/js?id=G-129EPBWVDH" 
-          strategy="afterInteractive" 
+        {/* Google Analytics */}
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-129EPBWVDH"
+          strategy="afterInteractive"
         />
-
-        {/* Google Analytics Configuration */}
         <Script id="google-analytics" strategy="afterInteractive">
           {`
             window.dataLayer = window.dataLayer || [];
