@@ -12,6 +12,7 @@ export function useFCM(vendorId: string | null) {
     if (!vendorId) return;
 
     async function registerFCM() {
+      if (!vendorId) return;
       try {
         const messaging = await getMessagingInstance();
         if (!messaging) return;
