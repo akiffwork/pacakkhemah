@@ -16,13 +16,14 @@ import { onAuthStateChanged } from "firebase/auth";
 type GearItem = {
   id: string; name: string; stock: number;
   img?: string; category?: string; type?: string; deleted?: boolean;
+  linkedItems?: { itemId: string; qty: number }[];
 };
 
 type Booking = {
   id: string; itemId?: string; qty?: number;
   start: string; end: string; type?: string;
   customer?: string; phone?: string; reason?: string;
-  blockId?: string;
+  blockId?: string; orderId?: string;
 };
 
 type GroupedEntry = {
@@ -491,6 +492,21 @@ export default function CalendarPage() {
   const selectedEntries = selectedDate ? getEntriesForDate(selectedDate) : [];
   const categories = Array.from(new Set(allGear.map(g => g.category || (g.type === "package" ? "Packages" : "Add-ons")))).sort();
   const totalAddSteps = addType === "booking" ? 3 : 2;
+
+  function getMaxStock(item: GearItem): number {
+    // Package: min of (child available / child qty required), capped by package stock
+    if (item.linkedItems && item.linkedItems.length > 0) {
+      let minPkg = Infinity;
+      for (const li of item.linkedItems) {
+        if (li.qty <= 0) continue;
+        const child = allGear.find(g => g.id === li.itemId);
+        if (!child) return 0;
+        minPkg = Math.min(minPkg, Math.floor(child.stock / li.qty));
+      }
+      return Math.min(minPkg === Infinity ? 0 : minPkg, item.stock);
+    }
+    return item.stock;
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // LOADING
@@ -977,7 +993,9 @@ export default function CalendarPage() {
                                   />
                                   <div className="min-w-0 overflow-hidden">
                                     <p className="text-[12px] font-bold text-[#062c24] truncate">{item.name}</p>
-                                    <p className="text-[10px] text-slate-400">Stock: {item.stock}</p>
+                                    <p className="text-[10px] text-slate-400">
+                                      Stock: {getMaxStock(item)}{item.linkedItems?.length ? ` (${item.linkedItems.length} items)` : ""}
+                                    </p>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 flex-shrink-0">
@@ -989,7 +1007,7 @@ export default function CalendarPage() {
                                     {quantities[item.id] || 0}
                                   </span>
                                   <button
-                                    onClick={() => setQuantities(p => ({ ...p, [item.id]: Math.min(item.stock, (p[item.id] || 0) + 1) }))}
+                                    onClick={() => setQuantities(p => ({ ...p, [item.id]: Math.min(getMaxStock(item), (p[item.id] || 0) + 1) }))}
                                     className="w-7 h-7 rounded bg-white text-slate-400 hover:text-emerald-500 font-bold shadow-sm text-sm"
                                   >+</button>
                                 </div>

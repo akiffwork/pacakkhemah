@@ -491,12 +491,35 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   // CART FUNCTIONS
   // ═══════════════════════════════════════════════════════════════════════════
 
+  function getItemStock(itemId: string): number {
+    const item = allGear.find(g => g.id === itemId);
+    if (!item) return 0;
+    if (!selectedDates[0] || !selectedDates[1]) return item.stock || 0;
+    const overlapping = availRules.filter(r => r.itemId === itemId && new Date(r.start) <= selectedDates[1]! && new Date(r.end || r.start) >= selectedDates[0]!);
+    return Math.max(0, (item.stock || 0) - overlapping.reduce((s, r) => s + (r.qty || 0), 0));
+  }
+
   function getAvailableStock(itemId: string) {
     if (!selectedDates[0] || !selectedDates[1]) return 999;
     const item = allGear.find(g => g.id === itemId);
     if (!item) return 0;
-    const overlapping = availRules.filter(r => r.itemId === itemId && new Date(r.start) <= selectedDates[1]! && new Date(r.end || r.start) >= selectedDates[0]!);
-    return Math.max(0, (item.stock || 0) - overlapping.reduce((s, r) => s + (r.qty || 0), 0));
+
+    // Package: check all linked child items
+    if (item.linkedItems && item.linkedItems.length > 0) {
+      let minPackages = Infinity;
+      for (const li of item.linkedItems) {
+        if (li.qty <= 0) continue;
+        const childStock = getItemStock(li.itemId);
+        const canFulfill = Math.floor(childStock / li.qty);
+        minPackages = Math.min(minPackages, canFulfill);
+      }
+      if (minPackages === Infinity) minPackages = 0;
+      // Cap by package's own stock
+      return Math.min(minPackages, item.stock || 0);
+    }
+
+    // Regular item
+    return getItemStock(itemId);
   }
 
   function addToCart(item: GearItem) {
