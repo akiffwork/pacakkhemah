@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, addDoc, collection, serverTimestamp, updateDoc, increment } from "firebase/firestore";
+import { doc, getDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { getStorage, ref, uploadBytes } from "firebase/storage";
+import { generateAgreementPDF, buildAgreementMeta } from "@/lib/agreementPDF";
 
 type VendorData = { name: string; rules?: string[] };
 type BookingData = {
@@ -23,6 +24,7 @@ const DEFAULT_RULES = [
 function AgreementContent() {
   const searchParams = useSearchParams();
   const vendorId = searchParams.get("v");
+  const orderIdParam = searchParams.get("o");
 
   const [vendor, setVendor] = useState<VendorData | null>(null);
   const [booking, setBooking] = useState<BookingData | null>(null);
@@ -52,6 +54,31 @@ function AgreementContent() {
         if (!vSnap.exists()) { setError("Vendor link expired or invalid."); setLoading(false); return; }
         setVendor(vSnap.data() as VendorData);
 
+        // Priority 1: orderId from URL param → fetch order from Firestore
+        if (orderIdParam) {
+          try {
+            const orderSnap = await getDoc(doc(db, "orders", orderIdParam));
+            if (orderSnap.exists()) {
+              const o = orderSnap.data();
+              setBooking({
+                vendorId: vendorId!,
+                orderId: orderIdParam,
+                items: (o.items || []).map((i: any) => ({ name: i.name, qty: i.qty })),
+                dates: o.bookingDates || { start: "TBD", end: "TBD" },
+                total: o.totalAmount || 0,
+              });
+              setLoading(false);
+              return;
+            }
+          } catch {
+            // Permission denied — still preserve orderId for Cloud Function linking
+            setBooking({ vendorId: vendorId!, orderId: orderIdParam, items: [], dates: { start: "TBD", end: "TBD" }, total: 0 });
+            setLoading(false);
+            return;
+          }
+        }
+
+        // Priority 2: localStorage (same-browser flow)
         try {
           const stored = localStorage.getItem("current_booking");
           if (stored) {
@@ -67,7 +94,7 @@ function AgreementContent() {
       }
     }
     init();
-  }, [vendorId]);
+  }, [vendorId, orderIdParam]);
 
   function handleFileChange(file: File, side: "front" | "back") {
     const reader = new FileReader();
@@ -111,26 +138,10 @@ function AgreementContent() {
         userAgent: navigator.userAgent,
       });
 
-      // Update order status to confirmed if orderId exists
-      if (booking?.orderId) {
-        try {
-          await updateDoc(doc(db, "orders", booking.orderId), {
-            status: "confirmed",
-            customerName: custName,
-            customerPhone: custPhone.replace(/\D/g, ""),
-            agreementSigned: true,
-            agreementSignedAt: serverTimestamp(),
-          });
-        } catch (e) { console.error("Order update error:", e); }
-      }
-
-      // Increment vendor order tally
-      try {
-        await updateDoc(doc(db, "vendors", vendorId!), {
-          order_count: increment(1),
-          total_orders: increment(1),
-        });
-      } catch (e) { console.error("Tally update error:", e); }
+      // Agreement saved — Cloud Function handles:
+      // 1. Linking to order (updates status, customerName, customerPhone)
+      // 2. Incrementing vendor order tally
+      // 3. Sending push notification
 
       setSubmitted(true);
     } catch (e) {
@@ -152,6 +163,18 @@ function AgreementContent() {
     </div>
   );
 
+  function downloadPDF() {
+    const now = new Date();
+    const meta = buildAgreementMeta(now, `${now.getHours()}${now.getMinutes()}`);
+
+    generateAgreementPDF(
+      { name: vendor?.name || "—" },
+      { customerName: custName || "—", customerPhone: custPhone || undefined, ...meta },
+      booking ? { items: booking.items, dates: booking.dates, total: booking.total } : null,
+      vendor?.rules,
+    );
+  }
+
   // Success state
   if (submitted) return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
@@ -163,10 +186,16 @@ function AgreementContent() {
         <p className="text-xs text-slate-500 font-medium max-w-xs mx-auto mb-8">
           Your identity has been verified and the booking is now legally bound.
         </p>
-        <button onClick={() => window.close()}
-          className="bg-slate-100 text-slate-500 px-8 py-3 rounded-xl text-[10px] font-bold uppercase hover:bg-slate-200 transition-all">
-          Close Window
-        </button>
+        <div className="space-y-3">
+          <button onClick={downloadPDF}
+            className="w-full bg-[#062c24] text-white px-8 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-900 transition-all flex items-center justify-center gap-2 shadow-lg">
+            <i className="fas fa-file-pdf"></i> Download Agreement PDF
+          </button>
+          <button onClick={() => window.close()}
+            className="w-full bg-slate-100 text-slate-500 px-8 py-3 rounded-xl text-[10px] font-bold uppercase hover:bg-slate-200 transition-all">
+            Close Window
+          </button>
+        </div>
       </div>
     </div>
   );

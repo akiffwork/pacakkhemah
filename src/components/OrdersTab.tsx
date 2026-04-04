@@ -19,6 +19,7 @@ type Order = {
   status: "pending" | "confirmed" | "completed" | "cancelled";
   agreementSigned?: boolean;
   agreementSignedAt?: any;
+  agreementId?: string;
   reviewToken?: string;
   reviewTokenUsed?: boolean;
   reviewTokenSentAt?: any;
@@ -30,6 +31,14 @@ type Order = {
 type OrdersTabProps = {
   vendorId: string;
   vendorName: string;
+};
+
+type UnlinkedAgreement = {
+  id: string;
+  customerName: string;
+  customerPhone?: string;
+  timestamp?: any;
+  orderId?: string | null;
 };
 
 const statusColors = {
@@ -54,6 +63,8 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
   const [showModal, setShowModal] = useState(false);
   const [sendingReviewLink, setSendingReviewLink] = useState(false);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [unlinkedAgreements, setUnlinkedAgreements] = useState<UnlinkedAgreement[]>([]);
+  const [showLinkPicker, setShowLinkPicker] = useState(false);
 
   // Real-time orders listener
   useEffect(() => {
@@ -70,6 +81,64 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
 
     return () => unsub();
   }, [vendorId]);
+
+  // Real-time unlinked agreements listener
+  useEffect(() => {
+    const q = query(
+      collection(db, "agreements"),
+      where("vendorId", "==", vendorId),
+      orderBy("timestamp", "desc")
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setUnlinkedAgreements(
+        snap.docs
+          .map(d => ({ id: d.id, ...d.data() } as UnlinkedAgreement))
+          .filter(a => !a.orderId)
+      );
+    });
+    return () => unsub();
+  }, [vendorId]);
+
+  // Generate agreement link with orderId
+  function getAgreementLink(orderId: string) {
+    if (typeof window === "undefined") return "";
+    return `${window.location.origin}/agreement?v=${vendorId}&o=${orderId}`;
+  }
+
+  // Share agreement link via WhatsApp
+  function sendAgreementWhatsApp(order: Order) {
+    const link = getAgreementLink(order.id);
+    const msg = `Sila lengkapkan pengesahan identiti untuk tempahan anda:\n\n${link}\n\n1. Masukkan nama penuh\n2. Masukkan nombor WhatsApp\n3. Muat naik gambar IC (depan & belakang)\n4. Tandatangan waiver\n\nTerima kasih!`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+  }
+
+  // Manual link: attach an unlinked agreement to this order
+  async function linkAgreementToOrder(agreementId: string, order: Order) {
+    try {
+      const agSnap = unlinkedAgreements.find(a => a.id === agreementId);
+      if (!agSnap) return;
+
+      // Update order with customer info from agreement
+      await updateDoc(doc(db, "orders", order.id), {
+        customerName: agSnap.customerName,
+        customerPhone: agSnap.customerPhone || "",
+        agreementSigned: true,
+        agreementSignedAt: serverTimestamp(),
+        agreementId,
+      });
+
+      // Update agreement with orderId
+      await updateDoc(doc(db, "agreements", agreementId), {
+        orderId: order.id,
+      });
+
+      setShowLinkPicker(false);
+      alert("Agreement linked successfully!");
+    } catch (e) {
+      console.error("Link error:", e);
+      alert("Failed to link agreement.");
+    }
+  }
 
   // Filter orders
   const filteredOrders = filter === "all" 
@@ -547,6 +616,67 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                 <div className="text-center py-4 bg-emerald-50 rounded-xl">
                   <i className="fas fa-check-circle text-emerald-500 text-2xl mb-2"></i>
                   <p className="text-sm font-bold text-emerald-700">Customer has reviewed!</p>
+                </div>
+              )}
+            </div>
+
+            {/* Agreement Section */}
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Agreement</p>
+              
+              {selectedOrder.agreementSigned ? (
+                <div className="bg-emerald-50 rounded-xl p-4 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600">
+                    <i className="fas fa-file-signature"></i>
+                  </div>
+                  <div>
+                    <p className="text-xs font-black text-emerald-700">Agreement Signed</p>
+                    <p className="text-[10px] text-emerald-600">
+                      {selectedOrder.customerName} • {selectedOrder.agreementSignedAt?.toDate?.()?.toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" }) || ""}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {/* Send agreement link via WhatsApp */}
+                  <button
+                    onClick={() => sendAgreementWhatsApp(selectedOrder)}
+                    className="w-full py-3 rounded-xl font-black uppercase text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200 flex items-center justify-center gap-2 transition-all"
+                  >
+                    <i className="fas fa-paper-plane"></i> Send Agreement Link
+                  </button>
+
+                  {/* Manual link from unlinked agreements */}
+                  {unlinkedAgreements.length > 0 && (
+                    <>
+                      <button
+                        onClick={() => setShowLinkPicker(!showLinkPicker)}
+                        className="w-full py-3 rounded-xl font-black uppercase text-[10px] bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center gap-2 transition-all"
+                      >
+                        <i className="fas fa-link"></i> Link Existing Agreement ({unlinkedAgreements.length})
+                      </button>
+                      {showLinkPicker && (
+                        <div className="bg-slate-50 rounded-xl p-3 space-y-2 max-h-40 overflow-y-auto border border-slate-200">
+                          {unlinkedAgreements.map(a => (
+                            <button
+                              key={a.id}
+                              onClick={() => linkAgreementToOrder(a.id, selectedOrder)}
+                              className="w-full flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 hover:border-indigo-300 transition-all text-left"
+                            >
+                              <div>
+                                <p className="text-xs font-bold text-[#062c24]">{a.customerName}</p>
+                                <p className="text-[9px] text-slate-400">
+                                  {a.timestamp?.toDate?.()?.toLocaleDateString("en-MY", { day: "numeric", month: "short" }) || ""}
+                                  {a.customerPhone ? ` • ${a.customerPhone}` : ""}
+                                </p>
+                              </div>
+                              <i className="fas fa-arrow-right text-slate-300 text-xs"></i>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
             </div>

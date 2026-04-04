@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
 import { getStorage, ref, getDownloadURL } from "firebase/storage";
+import { generateAgreementPDF, buildAgreementMeta } from "@/lib/agreementPDF";
 
 type DocumentsTabProps = {
   vendorId: string;
@@ -29,14 +30,6 @@ type Agreement = {
   orderId?: string;
   status?: string;
 };
-
-const DEFAULT_RULES = [
-  "Equipment must be returned in the same condition as received.",
-  "Renter is liable for full replacement cost of lost or damaged items.",
-  "Late return will incur additional charges per day as agreed.",
-  "The renter must inspect all equipment upon collection and report any defects immediately.",
-  "Subletting or transferring the rented equipment to a third party is strictly prohibited.",
-];
 
 export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps) {
   const [agreements, setAgreements] = useState<Agreement[]>([]);
@@ -99,120 +92,16 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
       } catch { /* IC images may not be accessible */ }
 
       const booking = getBooking(agreement);
-      const rules = vendorData.rules?.length ? vendorData.rules : DEFAULT_RULES;
       const ts = agreement.timestamp?.toDate() || new Date();
-      const refNo = `PK-${ts.getFullYear()}${String(ts.getMonth()+1).padStart(2,"0")}${String(ts.getDate()).padStart(2,"0")}-${agreement.id.substring(0, 6).toUpperCase()}`;
-      const signedDate = ts.toLocaleDateString("en-MY", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+      const meta = buildAgreementMeta(ts, agreement.id);
 
-      const itemsRows = booking?.items?.length
-        ? booking.items.map(i => `<tr><td style="padding:10px 16px;border-bottom:1px solid #e9ecef;font-size:12px;color:#1a1a2e;">${i.name}</td><td style="padding:10px 16px;border-bottom:1px solid #e9ecef;text-align:center;font-size:12px;font-weight:700;color:#062c24;">x${i.qty}</td></tr>`).join("")
-        : `<tr><td colspan="2" style="padding:14px 16px;color:#999;font-style:italic;font-size:11px;">Items as discussed via WhatsApp / Chat Record</td></tr>`;
-
-      const rulesRows = rules.map((r, i) => `<tr><td style="padding:5px 0;vertical-align:top;width:24px;font-weight:800;color:#062c24;font-size:11px;">${i+1}.</td><td style="padding:5px 0;font-size:11px;color:#444;line-height:1.6;">${r}</td></tr>`).join("");
-
-      const icSection = (fUrl && bUrl) ? `
-        <div style="margin-top:28px;">
-          <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#062c24;letter-spacing:2px;margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid #e9ecef;">5. Identity Verification</div>
-          <div style="display:flex;gap:16px;">
-            <div style="flex:1;text-align:center;">
-              <p style="font-size:8px;font-weight:700;color:#999;text-transform:uppercase;margin-bottom:6px;">Front IC / MyKad</p>
-              <img src="${fUrl}" style="width:100%;border-radius:8px;border:1px solid #ddd;" crossorigin="anonymous">
-            </div>
-            <div style="flex:1;text-align:center;">
-              <p style="font-size:8px;font-weight:700;color:#999;text-transform:uppercase;margin-bottom:6px;">Back IC / MyKad</p>
-              <img src="${bUrl}" style="width:100%;border-radius:8px;border:1px solid #ddd;" crossorigin="anonymous">
-            </div>
-          </div>
-        </div>` : "";
-
-      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Agreement ${refNo}</title>
-<style>
-  @page{size:A4;margin:0}*{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#1a1a2e}
-  @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-</style></head><body>
-<div style="min-height:297mm;position:relative;">
-  <div style="background:linear-gradient(135deg,#062c24 0%,#0a4a3e 50%,#047857 100%);padding:32px 40px 28px;color:white;position:relative;overflow:hidden;">
-    <div style="position:absolute;top:-30px;right:-30px;width:120px;height:120px;background:rgba(255,255,255,0.05);border-radius:50%;"></div>
-    <div style="position:absolute;bottom:-40px;right:60px;width:80px;height:80px;background:rgba(255,255,255,0.03);border-radius:50%;"></div>
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-      <div>
-        <div style="font-size:24px;font-weight:900;letter-spacing:3px;text-transform:uppercase;">PACAK KHEMAH</div>
-        <div style="font-size:9px;font-weight:600;color:rgba(255,255,255,0.6);letter-spacing:3px;text-transform:uppercase;margin-top:3px;">Camping Gear Rental Platform</div>
-      </div>
-      <div style="text-align:right;">
-        <div style="font-size:8px;font-weight:700;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:2px;">Reference</div>
-        <div style="font-size:13px;font-weight:800;margin-top:2px;letter-spacing:1px;">${refNo}</div>
-      </div>
-    </div>
-    <div style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.15);display:flex;justify-content:space-between;align-items:center;">
-      <div style="font-size:14px;font-weight:800;letter-spacing:1px;text-transform:uppercase;">Equipment Rental Agreement</div>
-      <div style="font-size:9px;color:rgba(255,255,255,0.5);font-weight:600;">${signedDate}</div>
-    </div>
-  </div>
-  <div style="padding:28px 40px 40px;">
-    <div style="margin-bottom:24px;">
-      <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#062c24;letter-spacing:2px;margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid #e9ecef;">1. Contracting Parties</div>
-      <div style="display:flex;gap:20px;">
-        <div style="flex:1;background:#f8faf9;padding:16px;border-radius:8px;border:1px solid #e9ecef;">
-          <div style="font-size:8px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">The Vendor (Owner)</div>
-          <div style="font-size:16px;font-weight:900;color:#062c24;">${vendorData.name}</div>
-          ${vendorData.phone ? `<div style="font-size:10px;color:#666;margin-top:3px;">${vendorData.phone}</div>` : ""}
-          ${vendorData.city ? `<div style="font-size:10px;color:#666;margin-top:1px;">${vendorData.city}</div>` : ""}
-        </div>
-        <div style="flex:1;background:#f8faf9;padding:16px;border-radius:8px;border:1px solid #e9ecef;">
-          <div style="font-size:8px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">The Customer (Renter)</div>
-          <div style="font-size:16px;font-weight:900;color:#062c24;">${agreement.customerName}</div>
-          ${agreement.customerPhone ? `<div style="font-size:10px;color:#666;margin-top:3px;">${agreement.customerPhone}</div>` : ""}
-        </div>
-      </div>
-    </div>
-    <div style="margin-bottom:24px;">
-      <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#062c24;letter-spacing:2px;margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid #e9ecef;">2. Subject of Rental</div>
-      <table style="width:100%;border-collapse:collapse;border:1px solid #e9ecef;overflow:hidden;">
-        <thead><tr style="background:#f8faf9;"><th style="padding:10px 16px;text-align:left;font-size:9px;font-weight:800;color:#999;text-transform:uppercase;letter-spacing:1px;border-bottom:2px solid #e9ecef;">Item</th><th style="padding:10px 16px;text-align:center;font-size:9px;font-weight:800;color:#999;text-transform:uppercase;letter-spacing:1px;border-bottom:2px solid #e9ecef;width:80px;">Qty</th></tr></thead>
-        <tbody>${itemsRows}</tbody>
-      </table>
-      <div style="display:flex;justify-content:space-between;background:#f8faf9;padding:14px 16px;border-radius:8px;margin-top:10px;border:1px solid #e9ecef;">
-        <div><div style="font-size:8px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;">Rental Period</div><div style="font-size:13px;font-weight:800;color:#062c24;margin-top:3px;">${booking?.dates?.start || "TBD"} &rarr; ${booking?.dates?.end || "TBD"}</div></div>
-        <div style="text-align:right;"><div style="font-size:8px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;">Total Value</div><div style="font-size:20px;font-weight:900;color:#059669;margin-top:1px;">${booking?.total ? `RM ${booking.total}` : "&mdash;"}</div></div>
-      </div>
-    </div>
-    <div style="margin-bottom:24px;">
-      <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#062c24;letter-spacing:2px;margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid #e9ecef;">3. Terms & Conditions</div>
-      <table style="width:100%;">${rulesRows}</table>
-    </div>
-    <div style="margin-bottom:20px;">
-      <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#062c24;letter-spacing:2px;margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid #e9ecef;">4. Declaration & Acknowledgement</div>
-      <div style="background:#f0fdf4;border:1px solid #bbf7d0;padding:14px 18px;border-radius:8px;">
-        <p style="font-size:11px;color:#166534;font-weight:600;line-height:1.7;">I, <strong>${agreement.customerName}</strong>, hereby acknowledge that I have read, understood, and agreed to the Terms & Conditions stated above. I certify that the identification documents provided are genuine and belong to me. I understand that my ID will be stored securely for verification purposes by the Vendor. I accept full responsibility for the rented equipment during the rental period.</p>
-      </div>
-    </div>
-    ${icSection}
-    <div style="display:flex;gap:24px;margin-top:32px;">
-      <div style="flex:1;padding-top:10px;border-top:2px solid #062c24;">
-        <div style="font-size:8px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;">Vendor</div>
-        <div style="font-size:14px;font-weight:900;color:#062c24;margin-top:4px;">${vendorData.name}</div>
-      </div>
-      <div style="flex:1;padding-top:10px;border-top:2px solid #062c24;">
-        <div style="font-size:8px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;">Customer</div>
-        <div style="font-size:14px;font-weight:900;color:#062c24;margin-top:4px;">${agreement.customerName}</div>
-        <div style="font-size:9px;color:#999;margin-top:2px;">Digitally signed: ${signedDate}</div>
-      </div>
-    </div>
-    <div style="margin-top:28px;background:#fffbeb;border:1px solid #fde68a;padding:12px 16px;border-radius:8px;">
-      <p style="font-size:9px;color:#92400e;font-weight:600;line-height:1.6;"><strong>LEGAL NOTICE:</strong> This agreement is entered into solely between the Vendor and the Customer named above. "Pacak Khemah" (pacakkhemah.com) serves as a technology platform provider and is NOT a party to this rental contract. Any disputes arising from this agreement shall be resolved between the contracting parties.</p>
-    </div>
-    <div style="margin-top:24px;padding-top:14px;border-top:1px solid #e9ecef;text-align:center;">
-      <p style="font-size:8px;color:#bbb;font-weight:600;">Generated by Pacak Khemah &bull; pacakkhemah.com &bull; Computer-generated document &bull; No physical signature required</p>
-    </div>
-  </div>
-</div>
-<script>window.onload=()=>{window.print();}<\/script>
-</body></html>`;
-
-      const w = window.open("", "_blank");
-      if (w) { w.document.write(html); w.document.close(); }
+      generateAgreementPDF(
+        { name: vendorData.name, phone: vendorData.phone, city: vendorData.city },
+        { customerName: agreement.customerName, customerPhone: agreement.customerPhone, ...meta },
+        booking ? { items: booking.items, dates: booking.dates, total: booking.total } : null,
+        vendorData.rules,
+        (fUrl && bUrl) ? { frontUrl: fUrl, backUrl: bUrl } : undefined,
+      );
     } catch (e) {
       console.error(e);
       alert("Could not generate PDF. Please try again.");
