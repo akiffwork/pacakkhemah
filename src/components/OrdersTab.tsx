@@ -100,15 +100,26 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
     return () => unsub();
   }, [vendorId]);
 
-  // Generate agreement link with orderId
-  function getAgreementLink(orderId: string) {
+  // Generate agreement link with orderId and embedded booking data
+  function getAgreementLink(order: Order) {
     if (typeof window === "undefined") return "";
-    return `${window.location.origin}/agreement?v=${vendorId}&o=${orderId}`;
+    const base = `${window.location.origin}/agreement?v=${vendorId}&o=${order.id}`;
+    try {
+      const summary = {
+        items: order.items.map(i => ({ name: i.name, qty: i.qty, price: i.price })),
+        dates: order.bookingDates,
+        total: (order as any).manualPrice || order.totalAmount,
+      };
+      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(summary))));
+      return `${base}&d=${encoded}`;
+    } catch {
+      return base;
+    }
   }
 
   // Share agreement link via WhatsApp
   function sendAgreementWhatsApp(order: Order) {
-    const link = getAgreementLink(order.id);
+    const link = getAgreementLink(order);
     const msg = `Sila lengkapkan pengesahan identiti untuk tempahan anda:\n\n${link}\n\n1. Masukkan nama penuh\n2. Masukkan nombor WhatsApp\n3. Muat naik gambar IC (depan & belakang)\n4. Tandatangan waiver\n\nTerima kasih!`;
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
   }

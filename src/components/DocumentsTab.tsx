@@ -14,7 +14,7 @@ type DocumentsTabProps = {
 type BookingDetails = {
   vendorId: string;
   orderId?: string;
-  items: { name: string; qty: number }[];
+  items: { name: string; qty: number; price?: number }[];
   dates: { start: string; end: string };
   total: number;
 };

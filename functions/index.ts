@@ -96,6 +96,29 @@ export const onAgreementSigned = onDocumentCreated(
       } catch (e) {
         console.error(`Failed to link order ${orderId}:`, e);
       }
+
+      // Update calendar availability entries with customer info
+      try {
+        const availSnap = await db
+          .collection(`vendors/${vendorId}/availability`)
+          .where("orderId", "==", orderId)
+          .get();
+
+        const batch = db.batch();
+        availSnap.docs.forEach((doc) => {
+          batch.update(doc.ref, {
+            customer: customerName || "",
+            phone: customerPhone || "",
+          });
+        });
+
+        if (!availSnap.empty) {
+          await batch.commit();
+          console.log(`Updated ${availSnap.size} availability entries for order ${orderId}`);
+        }
+      } catch (e) {
+        console.error("Availability sync error:", e);
+      }
     }
 
     // Increment vendor order tally

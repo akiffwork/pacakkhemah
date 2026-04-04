@@ -11,7 +11,7 @@ type VendorData = { name: string; rules?: string[] };
 type BookingData = {
   vendorId: string;
   orderId?: string;
-  items: { name: string; qty: number }[];
+  items: { name: string; qty: number; price?: number }[];
   dates: { start: string; end: string };
   total: number;
 };
@@ -25,6 +25,7 @@ function AgreementContent() {
   const searchParams = useSearchParams();
   const vendorId = searchParams.get("v");
   const orderIdParam = searchParams.get("o");
+  const dataParam = searchParams.get("d");
 
   const [vendor, setVendor] = useState<VendorData | null>(null);
   const [booking, setBooking] = useState<BookingData | null>(null);
@@ -54,7 +55,23 @@ function AgreementContent() {
         if (!vSnap.exists()) { setError("Vendor link expired or invalid."); setLoading(false); return; }
         setVendor(vSnap.data() as VendorData);
 
-        // Priority 1: orderId from URL param → fetch order from Firestore
+        // Priority 1: Encoded booking data in URL (works for all users, no auth needed)
+        if (dataParam && orderIdParam) {
+          try {
+            const decoded = JSON.parse(decodeURIComponent(escape(atob(dataParam))));
+            setBooking({
+              vendorId: vendorId!,
+              orderId: orderIdParam,
+              items: decoded.items || [],
+              dates: decoded.dates || { start: "TBD", end: "TBD" },
+              total: decoded.total || 0,
+            });
+            setLoading(false);
+            return;
+          } catch { /* fall through */ }
+        }
+
+        // Priority 2: orderId from URL param → try fetch order from Firestore
         if (orderIdParam) {
           try {
             const orderSnap = await getDoc(doc(db, "orders", orderIdParam));
@@ -65,7 +82,7 @@ function AgreementContent() {
                 orderId: orderIdParam,
                 items: (o.items || []).map((i: any) => ({ name: i.name, qty: i.qty })),
                 dates: o.bookingDates || { start: "TBD", end: "TBD" },
-                total: o.totalAmount || 0,
+                total: o.manualPrice || o.totalAmount || 0,
               });
               setLoading(false);
               return;
@@ -78,7 +95,7 @@ function AgreementContent() {
           }
         }
 
-        // Priority 2: localStorage (same-browser flow)
+        // Priority 3: localStorage (same-browser flow)
         try {
           const stored = localStorage.getItem("current_booking");
           if (stored) {
@@ -94,7 +111,7 @@ function AgreementContent() {
       }
     }
     init();
-  }, [vendorId, orderIdParam]);
+  }, [vendorId, orderIdParam, dataParam]);
 
   function handleFileChange(file: File, side: "front" | "back") {
     const reader = new FileReader();
@@ -272,15 +289,20 @@ function AgreementContent() {
                 2. Subject of Rental
               </h2>
               <div className="border border-slate-200 rounded-3xl overflow-hidden">
-                <div className="bg-slate-50 px-5 py-3 flex justify-between text-[10px] font-black text-slate-400 uppercase border-b border-slate-200">
-                  <span>Item</span><span>Qty</span>
+                <div className="bg-slate-50 px-5 py-3 grid grid-cols-12 text-[10px] font-black text-slate-400 uppercase border-b border-slate-200">
+                  <span className="col-span-6">Item</span>
+                  <span className="col-span-2 text-center">Qty</span>
+                  <span className="col-span-4 text-right">Amount</span>
                 </div>
                 <div className="p-5 space-y-3 bg-white text-sm font-bold text-[#062c24]">
                   {booking?.items?.length ? (
                     booking.items.map((item, i) => (
-                      <div key={i} className="flex justify-between border-b border-slate-50 pb-2 last:border-0">
-                        <span>{item.name}</span>
-                        <span className="text-emerald-600">x{item.qty}</span>
+                      <div key={i} className="grid grid-cols-12 border-b border-slate-50 pb-2 last:border-0">
+                        <span className="col-span-6 truncate">{item.name}</span>
+                        <span className="col-span-2 text-center text-emerald-600">x{item.qty}</span>
+                        <span className="col-span-4 text-right text-slate-500 text-xs">
+                          {item.price ? `RM ${item.price * item.qty}` : "—"}
+                        </span>
                       </div>
                     ))
                   ) : (

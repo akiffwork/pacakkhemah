@@ -11,7 +11,7 @@ type PDFVendor = {
 };
 
 type PDFBooking = {
-  items?: { name: string; qty: number }[];
+  items?: { name: string; qty: number; price?: number }[];
   dates?: { start: string; end: string };
   total?: number;
 };
@@ -76,7 +76,7 @@ function buildPage1(vendor: PDFVendor, agreement: PDFAgreement, booking: PDFBook
       <tr>
         <td style="padding:8px 12px;border:1px solid #ddd;font-size:11px;">${i.name}</td>
         <td style="padding:8px 12px;border:1px solid #ddd;text-align:center;font-size:11px;">${i.qty}</td>
-        <td style="padding:8px 12px;border:1px solid #ddd;text-align:right;font-size:11px;"></td>
+        <td style="padding:8px 12px;border:1px solid #ddd;text-align:right;font-size:11px;">${i.price ? `RM${i.price * i.qty}` : ""}</td>
       </tr>`).join("")
     : `<tr><td colspan="3" style="padding:12px;border:1px solid #ddd;color:#999;font-style:italic;font-size:11px;">Items as discussed via WhatsApp / Chat Record</td></tr>`;
 
