@@ -20,6 +20,7 @@ type Order = {
   agreementSigned?: boolean;
   agreementSignedAt?: any;
   agreementId?: string;
+  calendarLinked?: boolean;
   reviewToken?: string;
   reviewTokenUsed?: boolean;
   reviewTokenSentAt?: any;
@@ -387,6 +388,11 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                         <i className="fas fa-file-signature mr-1"></i> Unsigned
                       </span>
                     )}
+                    {order.calendarLinked && (
+                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-blue-50 text-blue-600">
+                        <i className="fas fa-calendar-check mr-1"></i> Booked
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-3 text-sm">
@@ -495,6 +501,11 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
               ) : (
                 <span className="px-3 py-1.5 rounded-lg text-xs font-black uppercase bg-slate-100 text-slate-400">
                   <i className="fas fa-file-signature mr-1"></i> Awaiting Agreement
+                </span>
+              )}
+              {selectedOrder.calendarLinked && (
+                <span className="px-3 py-1.5 rounded-lg text-xs font-black uppercase bg-blue-50 text-blue-600">
+                  <i className="fas fa-calendar-check mr-1"></i> Calendar Booked
                 </span>
               )}
             </div>
@@ -617,6 +628,33 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                   <i className="fas fa-check-circle text-emerald-500 text-2xl mb-2"></i>
                   <p className="text-sm font-bold text-emerald-700">Customer has reviewed!</p>
                 </div>
+              )}
+            </div>
+
+            {/* Calendar Booking */}
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Calendar Booking</p>
+              
+              {selectedOrder.calendarLinked ? (
+                <div className="bg-blue-50 rounded-xl p-4 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
+                    <i className="fas fa-calendar-check"></i>
+                  </div>
+                  <div>
+                    <p className="text-xs font-black text-blue-700">Booking Created</p>
+                    <p className="text-[10px] text-blue-600">
+                      Items blocked on calendar
+                      {(selectedOrder as any).calendarDates?.start ? ` • ${(selectedOrder as any).calendarDates.start} → ${(selectedOrder as any).calendarDates.end}` : ""}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <a
+                  href={`/calendar?order=${selectedOrder.id}`}
+                  className="w-full py-3 rounded-xl font-black uppercase text-xs bg-blue-500 text-white hover:bg-blue-600 flex items-center justify-center gap-2 transition-all"
+                >
+                  <i className="fas fa-calendar-plus"></i> Create Booking on Calendar
+                </a>
               )}
             </div>
 

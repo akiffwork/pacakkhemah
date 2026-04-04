@@ -172,6 +172,8 @@ export default function CalendarPage() {
   const [custPhone, setCustPhone] = useState("");
   const [blockReason, setBlockReason] = useState("");
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [linkedOrderId, setLinkedOrderId] = useState<string | null>(null);
+  const [linkedOrderItems, setLinkedOrderItems] = useState<{ name: string; qty: number; price: number }[]>([]);
 
   // ── Toast ──
   const [toast, setToast] = useState<string | null>(null);
@@ -183,6 +185,7 @@ export default function CalendarPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const overrideVid = params.get("v");
+    const orderParam = params.get("order");
 
     const unsub = onAuthStateChanged(auth, async (u) => {
       if (!u) { window.location.href = "/store"; return; }
@@ -191,6 +194,7 @@ export default function CalendarPage() {
         if (overrideVid) {
           setVendorId(overrideVid);
           await loadData(overrideVid);
+          if (orderParam) await prefillFromOrder(orderParam, overrideVid);
           return;
         }
         const snap = await getDocs(query(collection(db, "vendors"), where("owner_uid", "==", u.uid)));
@@ -198,6 +202,7 @@ export default function CalendarPage() {
           const vid = snap.docs[0].id;
           setVendorId(vid);
           await loadData(vid);
+          if (orderParam) await prefillFromOrder(orderParam, vid);
         } else {
           setLoading(false);
         }
@@ -212,7 +217,8 @@ export default function CalendarPage() {
   async function loadData(vid: string) {
     try {
       const gSnap = await getDocs(query(collection(db, "gear"), where("vendorId", "==", vid)));
-      setAllGear(gSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted));
+      const gear = gSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted);
+      setAllGear(gear);
 
       const aSnap = await getDocs(collection(db, "vendors", vid, "availability"));
       setBookings(aSnap.docs.map(d => ({ id: d.id, ...d.data() } as Booking)).filter(b => b.start && b.end));
@@ -223,10 +229,47 @@ export default function CalendarPage() {
       } catch {
         setWeeklyOff({});
       }
+      return gear;
     } catch (e) {
       console.error("Error loading data:", e);
+      return [];
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function prefillFromOrder(orderId: string, vid: string) {
+    try {
+      const orderSnap = await getDoc(doc(db, "orders", orderId));
+      if (!orderSnap.exists()) return;
+      const order = orderSnap.data();
+      if (order.vendorId !== vid) return;
+
+      setLinkedOrderId(orderId);
+      setLinkedOrderItems(order.items || []);
+
+      // Pre-fill dates
+      if (order.bookingDates?.start) {
+        setDateRange([order.bookingDates.start, order.bookingDates.end || order.bookingDates.start]);
+      }
+
+      // Pre-fill customer
+      if (order.customerName) setCustName(order.customerName);
+      if (order.customerPhone) setCustPhone(order.customerPhone);
+
+      // Pre-fill quantities — match order items to gear by ID
+      const qts: Record<string, number> = {};
+      for (const item of (order.items || [])) {
+        if (item.id) qts[item.id] = item.qty || 1;
+      }
+      setQuantities(qts);
+
+      // Open wizard automatically
+      setAddType("booking");
+      setAddStep(1);
+      setShowAddModal(true);
+    } catch (e) {
+      console.error("Error loading order:", e);
     }
   }
 
@@ -328,6 +371,7 @@ export default function CalendarPage() {
           batch.set(ref, {
             itemId, qty, start, end, type: "booking",
             customer: custName.trim(), phone: custPhone.trim(),
+            ...(linkedOrderId ? { orderId: linkedOrderId } : {}),
             createdAt: new Date().toISOString(),
           });
         }
@@ -336,6 +380,17 @@ export default function CalendarPage() {
 
     try {
       await batch.commit();
+
+      // Update order with calendar link
+      if (linkedOrderId) {
+        try {
+          await updateDoc(doc(db, "orders", linkedOrderId), {
+            calendarLinked: true,
+            calendarDates: { start, end },
+          });
+        } catch (e) { console.error("Order link error:", e); }
+      }
+
       await loadData(vendorId);
       resetForm();
       setShowAddModal(false);
@@ -411,6 +466,7 @@ export default function CalendarPage() {
     setAddStep(1); setAddType("booking");
     setDateRange(["", ""]); setCustName(""); setCustPhone("");
     setBlockReason(""); setQuantities({});
+    setLinkedOrderId(null); setLinkedOrderItems([]);
   }
 
   function showToast(msg: string) {
@@ -762,6 +818,11 @@ export default function CalendarPage() {
                 <span className="text-[14px] font-bold text-[#062c24] truncate">
                   {addType === "booking" ? "New Booking" : "Time Off"} · {addStep}/{totalAddSteps}
                 </span>
+                {linkedOrderId && (
+                  <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0">
+                    Linked Order
+                  </span>
+                )}
               </div>
               <button
                 onClick={() => { setShowAddModal(false); resetForm(); }}
@@ -827,6 +888,23 @@ export default function CalendarPage() {
                       </div>
                     </div>
                   </div>
+                  {/* Linked order summary */}
+                  {linkedOrderId && linkedOrderItems.length > 0 && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                      <p className="text-[9px] font-bold text-blue-600 uppercase tracking-widest mb-2">
+                        <i className="fas fa-link mr-1"></i>From WhatsApp Order
+                      </p>
+                      <div className="space-y-1">
+                        {linkedOrderItems.map((item, i) => (
+                          <div key={i} className="flex justify-between text-[12px]">
+                            <span className="font-semibold text-blue-900">{item.name}</span>
+                            <span className="font-bold text-blue-700">x{item.qty}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-blue-500 mt-2">Items pre-filled in Step 3. You can adjust.</p>
+                    </div>
+                  )}
                 </div>
               )}
 
