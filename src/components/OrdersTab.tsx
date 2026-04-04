@@ -17,11 +17,14 @@ type Order = {
   pickupLocation: string;
   bookingDates: { start: string; end: string };
   status: "pending" | "confirmed" | "completed" | "cancelled";
+  agreementSigned?: boolean;
+  agreementSignedAt?: any;
   reviewToken?: string;
   reviewTokenUsed?: boolean;
   reviewTokenSentAt?: any;
   createdAt: any;
   completedAt?: any;
+  deleted?: boolean;
 };
 
 type OrdersTabProps = {
@@ -61,7 +64,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
     );
 
     const unsub = onSnapshot(q, (snap) => {
-      setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order)).filter(o => !(o as any).deleted));
+      setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order)).filter(o => !o.deleted));
       setLoading(false);
     });
 
@@ -306,12 +309,29 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                         <i className="fas fa-check mr-1"></i> Reviewed
                       </span>
                     )}
+                    {order.agreementSigned ? (
+                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-emerald-50 text-emerald-600">
+                        <i className="fas fa-file-signature mr-1"></i> Signed
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-slate-100 text-slate-400">
+                        <i className="fas fa-file-signature mr-1"></i> Unsigned
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-3 text-sm">
-                    <span className="font-black text-[#062c24]">
-                      {order.customerName || order.customerPhone}
+                    <span className={`font-black ${order.customerName ? "text-[#062c24]" : "text-slate-400 italic"}`}>
+                      {order.customerName || "Customer (awaiting agreement)"}
                     </span>
+                    {order.customerPhone && (
+                      <>
+                        <span className="text-slate-300">•</span>
+                        <span className="text-emerald-600 text-xs font-bold">
+                          <i className="fab fa-whatsapp mr-0.5"></i>{order.customerPhone}
+                        </span>
+                      </>
+                    )}
                     <span className="text-slate-300">•</span>
                     <span className="text-slate-500">
                       {order.bookingDates.start} → {order.bookingDates.end}
@@ -394,22 +414,33 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
             </div>
 
             {/* Status Badge */}
-            <div className="mb-4">
+            <div className="mb-4 flex flex-wrap gap-2">
               <span className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase ${statusColors[selectedOrder.status]}`}>
                 <i className={`fas ${statusIcons[selectedOrder.status]} mr-1`}></i>
                 {selectedOrder.status}
               </span>
+              {selectedOrder.agreementSigned ? (
+                <span className="px-3 py-1.5 rounded-lg text-xs font-black uppercase bg-emerald-50 text-emerald-600">
+                  <i className="fas fa-file-signature mr-1"></i> Agreement Signed
+                </span>
+              ) : (
+                <span className="px-3 py-1.5 rounded-lg text-xs font-black uppercase bg-slate-100 text-slate-400">
+                  <i className="fas fa-file-signature mr-1"></i> Awaiting Agreement
+                </span>
+              )}
             </div>
 
             {/* Customer Info */}
             <div className="bg-slate-50 rounded-xl p-4 mb-4">
               <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Customer</p>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${selectedOrder.customerName ? "bg-emerald-100 text-emerald-600" : "bg-slate-200 text-slate-400"}`}>
                   <i className="fas fa-user"></i>
                 </div>
                 <div>
-                  <p className="font-bold text-[#062c24]">{selectedOrder.customerName || "Customer"}</p>
+                  <p className={`font-bold ${selectedOrder.customerName ? "text-[#062c24]" : "text-slate-400 italic"}`}>
+                    {selectedOrder.customerName || "Customer (awaiting agreement)"}
+                  </p>
                   {selectedOrder.customerPhone ? (
                     <p className="text-xs text-slate-500"><i className="fab fa-whatsapp text-emerald-500 mr-1"></i>{selectedOrder.customerPhone}</p>
                   ) : (
