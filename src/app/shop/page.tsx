@@ -524,7 +524,18 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
       setTimeout(() => setItemShareToast(false), 2000);
     } catch { /* ignore */ }
   }
-
+useEffect(() => {
+    const itemParam = searchParams.get("item");
+    if (itemParam && allGear.length > 0) {
+      const item = allGear.find(g => g.id === itemParam);
+      if (item) {
+        setSelectedItem(item);
+        setShowItemModal(true);
+        // Clean up the URL so it doesn't re-open if they refresh
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+    }
+  }, [allGear, searchParams]);
   const specialOffer = discounts.find(d => d.type === "nightly_discount" && d.is_public !== false);
 
   // ═══════════════════════════════════════════════════════════════════════════
