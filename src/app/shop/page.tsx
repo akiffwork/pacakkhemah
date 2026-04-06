@@ -50,7 +50,7 @@ type ServicesConfig = {
 };
 
 type VendorData = {
-  name: string; tagline?: string; tagline_my?: string; image?: string;
+  name: string; slug?: string; tagline?: string; tagline_my?: string; image?: string;
   ig?: string; tiktok?: string; fb?: string; phone?: string; threads?: string;
   pickup?: string[]; city?: string; areas?: string[]; rules?: string[];
   steps?: { title: string; my: string; desc?: string; desc_my?: string }[];
