@@ -65,22 +65,71 @@ exports.onNewOrder = (0, firestore_1.onDocumentCreated)("analytics/{docId}", asy
 });
 // Trigger on agreement signed
 exports.onAgreementSigned = (0, firestore_1.onDocumentCreated)("agreements/{docId}", async (event) => {
-    var _a, _b;
+    var _a, _b, _c;
     const data = (_a = event.data) === null || _a === void 0 ? void 0 : _a.data();
     if (!data)
         return;
-    const { vendorId, customerName, startDate, endDate } = data;
+    const { vendorId, customerName, customerPhone, orderId, startDate, endDate } = data;
     if (!vendorId)
         return;
+    // Link agreement to order (server-side — customers can't write to orders)
+    if (orderId) {
+        try {
+            await db.doc(`orders/${orderId}`).update({
+                status: "confirmed",
+                customerName: customerName || "",
+                customerPhone: customerPhone || "",
+                agreementSigned: true,
+                agreementSignedAt: new Date(),
+                agreementId: ((_b = event.data) === null || _b === void 0 ? void 0 : _b.id) || null,
+            });
+            console.log(`Order ${orderId} linked to agreement`);
+        }
+        catch (e) {
+            console.error(`Failed to link order ${orderId}:`, e);
+        }
+        // Update calendar availability entries with customer info
+        try {
+            const availSnap = await db
+                .collection(`vendors/${vendorId}/availability`)
+                .where("orderId", "==", orderId)
+                .get();
+            const batch = db.batch();
+            availSnap.docs.forEach((doc) => {
+                batch.update(doc.ref, {
+                    customer: customerName || "",
+                    phone: customerPhone || "",
+                });
+            });
+            if (!availSnap.empty) {
+                await batch.commit();
+                console.log(`Updated ${availSnap.size} availability entries for order ${orderId}`);
+            }
+        }
+        catch (e) {
+            console.error("Availability sync error:", e);
+        }
+    }
+    // Increment vendor order tally
+    try {
+        await db.doc(`vendors/${vendorId}`).update({
+            order_count: firestore_2.FieldValue.increment(1),
+            total_orders: firestore_2.FieldValue.increment(1),
+        });
+    }
+    catch (e) {
+        console.error("Tally update error:", e);
+    }
+    // Send push notification
     const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
-    const fcmToken = (_b = vendorSnap.data()) === null || _b === void 0 ? void 0 : _b.fcmToken;
+    const fcmToken = (_c = vendorSnap.data()) === null || _c === void 0 ? void 0 : _c.fcmToken;
     if (!fcmToken)
         return;
     await (0, messaging_1.getMessaging)().send({
         token: fcmToken,
         notification: {
             title: "✅ Perjanjian Ditandatangani!",
-            body: `${customerName || "Pelanggan"} telah menandatangani perjanjian sewa (${startDate} – ${endDate})`,
+            body: `${customerName || "Pelanggan"} telah menandatangani perjanjian sewa`,
         },
         data: {
             url: "/store",
