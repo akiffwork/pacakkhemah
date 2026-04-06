@@ -5,9 +5,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
 import {
-  doc, getDoc, getDocs, collection, query, where,
+  doc, getDoc, collection, query, where, getDocs, getDocsFromServer,
   runTransaction, serverTimestamp, addDoc, orderBy,
-  onSnapshot
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import flatpickr from "flatpickr";
@@ -61,9 +60,10 @@ type VendorData = {
   allow_stacking?: boolean;
   rating?: number; reviewCount?: number;
   services?: ServicesConfig;
+  // NEW: Badge & Mock-up fields
   badges?: Badge[];
   is_mockup?: boolean;
-  avg_response_time?: number;
+  avg_response_time?: number; // in minutes
   total_orders?: number;
 };
 
@@ -85,6 +85,7 @@ type GearItem = {
     puRating?: string;
     layers?: string;
     weight?: string;
+    tentType?: string;
   };
 };
 
@@ -92,7 +93,10 @@ type CartItem = GearItem & { qty: number; addSetup?: boolean };
 type AvailRule = { itemId?: string; type?: string; start: string; end?: string; qty?: number };
 type Discount = { type: string; trigger_nights?: number; discount_percent: number; code?: string; deleted?: boolean; is_public?: boolean };
 type VendorPost = { id: string; content: string; image?: string; pinned?: boolean; createdAt: any };
-type Review = { id: string; customerName: string; rating: number; comment?: string | null; createdAt: any; isVerified?: boolean };
+type Review = {
+  id: string; customerName: string; rating: number; comment?: string | null; createdAt: any; isVerified?: boolean;
+  ratings?: { gearCondition?: number; communication?: number; value?: number; convenience?: number; overall?: number };
+};
 
 type FulfillmentType = "pickup" | "delivery";
 
@@ -158,6 +162,7 @@ function ImageCarousel({ images }: { images: string[] }) {
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}>
+      {/* Images */}
       <div className="flex transition-transform duration-300 ease-out h-full"
         style={{ transform: `translateX(-${current * 100}%)` }}>
         {images.map((img, i) => (
@@ -165,6 +170,7 @@ function ImageCarousel({ images }: { images: string[] }) {
         ))}
       </div>
       
+      {/* Arrow buttons */}
       {images.length > 1 && (
         <>
           <button onClick={() => goTo(current - 1)} 
@@ -178,6 +184,7 @@ function ImageCarousel({ images }: { images: string[] }) {
         </>
       )}
       
+      {/* Dots indicator */}
       {images.length > 1 && (
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
           {images.map((_, i) => (
@@ -187,12 +194,17 @@ function ImageCarousel({ images }: { images: string[] }) {
         </div>
       )}
       
+      {/* Image counter */}
       <div className="absolute bottom-3 right-3 bg-black/50 text-white text-[9px] font-bold px-2 py-1 rounded-full z-10">
         {current + 1} / {images.length}
       </div>
     </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BADGE SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════
 
 const BADGE_CONFIG: Record<Badge, { label: string; icon: string; bg: string; text: string; border: string }> = {
   verified: {
@@ -234,7 +246,11 @@ const BADGE_CONFIG: Record<Badge, { label: string; icon: string; bg: string; tex
 
 function BadgeIcon({ badge, size = "sm" }: { badge: Badge; size?: "sm" | "md" | "lg" }) {
   const config = BADGE_CONFIG[badge];
-  const sizeClasses = { sm: "w-5 h-5 p-0.5", md: "w-6 h-6 p-1", lg: "w-8 h-8 p-1.5" };
+  const sizeClasses = {
+    sm: "w-5 h-5 p-0.5",
+    md: "w-6 h-6 p-1",
+    lg: "w-8 h-8 p-1.5",
+  };
   
   return (
     <div className={`${sizeClasses[size]} ${config.bg} ${config.text} rounded-full border ${config.border} flex items-center justify-center`} title={config.label}>
@@ -272,7 +288,8 @@ function MockupBanner() {
             </div>
           </div>
           <Link href="/register-vendor" className="bg-white text-indigo-600 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-all shadow-lg flex items-center gap-2">
-            <i className="fas fa-rocket"></i> Register Now
+            <i className="fas fa-rocket"></i>
+            Register Now
           </Link>
         </div>
       </div>
@@ -280,8 +297,13 @@ function MockupBanner() {
   );
 }
 
+// Mock-up vendor ID constant
 const MOCKUP_VENDOR_ID = "UHdf5wMhsPbwi7qFGPSloXGdbu53";
 const ADMIN_WHATSAPP = "6011136904336";
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MAIN SHOP PAGE
+// ═══════════════════════════════════════════════════════════════════════════
 
 export default function ShopPage({ params }: { params: Promise<{ slug: string }> }) {
   return (
@@ -300,10 +322,12 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = use(params);
   const slug = resolvedParams.slug;
   
+  // Core state
   const [vendorId, setVendorId] = useState<string | null>(null);
   const [vendorData, setVendorData] = useState<VendorData | null>(null);
   const [allGear, setAllGear] = useState<GearItem[]>([]);
   const [availRules, setAvailRules] = useState<AvailRule[]>([]);
+  const [weeklyOff, setWeeklyOff] = useState<Record<number, boolean>>({});
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [posts, setPosts] = useState<VendorPost[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -315,11 +339,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   const [promoMsg, setPromoMsg] = useState<{ text: string; success: boolean } | null>(null);
   const [showCart, setShowCart] = useState(false);
   const [showItemModal, setShowItemModal] = useState(false);
-  
-  // FIX: Make the modal live-sync with updates by keeping the ID instead of the object
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const selectedItem = allGear.find(g => g.id === selectedItemId) || null;
-  
+  const [selectedItem, setSelectedItem] = useState<GearItem | null>(null);
   const [selectedHub, setSelectedHub] = useState("");
   const [termsAgreed, setTermsAgreed] = useState(false);
   const [blockState, setBlockState] = useState<null | "unapproved" | "vacation" | "nocredits">(null);
@@ -331,15 +351,21 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [mainTab, setMainTab] = useState<"gear" | "updates" | "reviews">("gear");
   
+  // ═══ NEW: Fulfillment state ═══
   const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>("pickup");
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [selectedZone, setSelectedZone] = useState<DeliveryZone | null>(null);
   const [deliveryDistance, setDeliveryDistance] = useState("");
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<TimeSlot | null>(null);
   const [useCombo, setUseCombo] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   
   const cpRef = useRef<any>(null);
   const opRef = useRef<any>(null);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EFFECTS
+  // ═══════════════════════════════════════════════════════════════════════════
 
   useEffect(() => {
     if (showShareToast) { const t = setTimeout(() => setShowShareToast(false), 2000); return () => clearTimeout(t); }
@@ -348,10 +374,15 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   useEffect(() => {
     const v = searchParams.get("v");
     if (v) { 
+      // Direct vendor ID from query param
       setVendorId(v); 
     } else if (slug === "_") {
+      // Special route /shop/_/vendorId - get vendorId from next path segment
+      // This is handled by the redirect page, but just in case
       window.location.href = "/directory";
     } else if (slug) { 
+      // Check if slug is actually a vendorId (for /shop/_/[vendorId] route)
+      // Or lookup by slug name
       lookupSlugOrId(slug); 
     } else { 
       window.location.href = "/directory"; 
@@ -360,114 +391,92 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
 
   async function lookupSlugOrId(slugOrId: string) {
     try {
+      // First try to find by slug
       const snap = await getDocs(query(collection(db, "vendors"), where("slug", "==", slugOrId)));
       if (!snap.empty) {
         setVendorId(snap.docs[0].id);
         return;
       }
+      
+      // If not found by slug, check if it's a direct vendor ID
       const directSnap = await getDoc(doc(db, "vendors", slugOrId));
       if (directSnap.exists()) {
         setVendorId(slugOrId);
         return;
       }
+      
+      // Not found at all
       window.location.href = "/directory";
     } catch { 
       window.location.href = "/directory"; 
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // REAL-TIME EFFECTS (CLEANED UP!)
-  // ═══════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     if (!vendorId) return;
-
-    let unsubs: (() => void)[] = [];
-
-    async function initShop() {
-      setLoading(true);
-      try {
-        const vSnap = await getDoc(doc(db, "vendors", vendorId!));
-        if (!vSnap.exists()) {
-          setLoading(false);
-          return;
-        }
-        
-        const vData = vSnap.data() as VendorData;
-        setVendorData(vData);
-        setSelectedHub((vData.pickup?.[0] || vData.city) ?? "");
-        
-        if (vData.services?.delivery?.zones?.length) setSelectedZone(vData.services.delivery.zones[0]);
-        if (vData.services?.timeSlots?.slots?.length) setSelectedTimeSlot(vData.services.timeSlots.slots[0]);
-        
-        const user = auth.currentUser;
-        const ownerCheck = !!(user && user.uid === vData.owner_uid);
-        setIsOwner(ownerCheck);
-        const isApproved = vData.status === "approved";
-        const isVacation = vData.is_vacation === true;
-        const hasCredits = (vData.credits || 0) > 0;
-        
-        if (!ownerCheck) {
-          if (!isApproved) { setBlockState("unapproved"); setLoading(false); return; }
-          if (isVacation) { setBlockState("vacation"); setLoading(false); return; }
-          if (!hasCredits) { setBlockState("nocredits"); setLoading(false); return; }
-        } else if (!isApproved || isVacation) { 
-          setOwnerPreview(true); 
-        }
-
-        // 1. Listen to Gear changes real-time
-        unsubs.push(
-          onSnapshot(query(collection(db, "gear"), where("vendorId", "==", vendorId)), snap => {
-            setAllGear(snap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted));
-          })
-        );
-        // 2. Listen to Availability changes real-time
-        unsubs.push(
-          onSnapshot(collection(db, "vendors", vendorId!, "availability"), snap => {
-            setAvailRules(snap.docs.map(d => d.data() as AvailRule));
-          })
-        );
-        // 3. Listen to Discounts changes real-time
-        unsubs.push(
-          onSnapshot(collection(db, "vendors", vendorId!, "discounts"), snap => {
-            setDiscounts(snap.docs.map(d => d.data() as Discount).filter(d => !d.deleted));
-          })
-        );
-        // 4. Listen to Posts changes real-time
-        unsubs.push(
-          onSnapshot(collection(db, "vendors", vendorId!, "posts"), snap => {
-            setPosts(snap.docs.map(d => ({ id: d.id, ...d.data() } as VendorPost)).sort((a, b) => {
-              if (a.pinned && !b.pinned) return -1;
-              if (!a.pinned && b.pinned) return 1;
-              return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
-            }));
-          })
-        );
-        // 5. Listen to Reviews changes real-time
-        unsubs.push(
-          onSnapshot(query(collection(db, "reviews"), where("vendorId", "==", vendorId), where("status", "==", "published"), orderBy("createdAt", "desc")), snap => {
-            setReviews(snap.docs.map(d => ({ id: d.id, ...d.data() } as Review)));
-          })
-        );
-
-        setLoading(false);
-      } catch (e) {
-        console.error(e);
-        setLoading(false);
-      }
-    }
-
-    const authUnsub = onAuthStateChanged(auth, () => { initShop(); });
-
-    return () => {
-      authUnsub(); 
-      unsubs.forEach(u => u()); 
-    };
+    const unsub = onAuthStateChanged(auth, () => { loadShop(); });
+    return () => unsub();
   }, [vendorId]);
+
+  async function loadShop() {
+    if (!vendorId) return;
+    try {
+      const vSnap = await getDoc(doc(db, "vendors", vendorId));
+      if (!vSnap.exists()) return;
+      const vData = vSnap.data() as VendorData;
+      setVendorData(vData);
+      setSelectedHub((vData.pickup?.[0] || vData.city) ?? "");
+      
+      // Set default zone if zones exist
+      if (vData.services?.delivery?.zones?.length) {
+        setSelectedZone(vData.services.delivery.zones[0]);
+      }
+      // Set default time slot if enabled
+      if (vData.services?.timeSlots?.slots?.length) {
+        setSelectedTimeSlot(vData.services.timeSlots.slots[0]);
+      }
+      
+      const user = auth.currentUser;
+      const ownerCheck = !!(user && user.uid === vData.owner_uid);
+      setIsOwner(ownerCheck);
+      const isApproved = vData.status === "approved";
+      const isVacation = vData.is_vacation === true;
+      const hasCredits = (vData.credits || 0) > 0;
+      if (!ownerCheck) {
+        if (!isApproved) { setBlockState("unapproved"); return; }
+        if (isVacation) { setBlockState("vacation"); return; }
+        if (!hasCredits) { setBlockState("nocredits"); return; }
+      } else if (!isApproved || isVacation) { setOwnerPreview(true); }
+      
+      const [gearSnap, availSnap, discSnap, postsSnap, reviewsSnap] = await Promise.all([
+        getDocsFromServer(query(collection(db, "gear"), where("vendorId", "==", vendorId))),
+        getDocsFromServer(collection(db, "vendors", vendorId, "availability")),
+        getDocsFromServer(collection(db, "vendors", vendorId, "discounts")),
+        getDocsFromServer(collection(db, "vendors", vendorId, "posts")),
+        getDocs(query(collection(db, "reviews"), where("vendorId", "==", vendorId), where("status", "==", "published"), orderBy("createdAt", "desc"))),
+      ]);
+      setAllGear(gearSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted));
+      setAvailRules(availSnap.docs.map(d => d.data() as AvailRule));
+      try {
+        const weeklyOffSnap = await getDoc(doc(db, "vendors", vendorId, "settings", "weeklyOff"));
+        setWeeklyOff(weeklyOffSnap.exists() ? weeklyOffSnap.data() as Record<number, boolean> : {});
+      } catch { setWeeklyOff({}); }
+      setDiscounts(discSnap.docs.map(d => d.data() as Discount).filter(d => !d.deleted));
+      setPosts(postsSnap.docs.map(d => ({ id: d.id, ...d.data() } as VendorPost)).sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+      }));
+      setReviews(reviewsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Review)));
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }
 
   useEffect(() => {
     if (!vendorData) return;
-    const blocked = availRules.filter(r => r.type === "block").map(r => ({ from: r.start, to: r.end || r.start }));
+    const blocked: any[] = availRules.filter(r => r.type === "block").map(r => ({ from: r.start, to: r.end || r.start }));
+    const offDays = Object.entries(weeklyOff).filter(([, v]) => v).map(([k]) => Number(k));
+    if (offDays.length) blocked.push((date: Date) => offDays.includes(date.getDay()));
     cpRef.current = flatpickr("#checkin-date", {
       minDate: "today", dateFormat: "Y-m-d", disable: blocked,
       onChange: ([d]) => { setSelectedDates(prev => [d, prev[1]]); opRef.current?.set("minDate", d); },
@@ -477,16 +486,43 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
       onChange: ([d]) => setSelectedDates(prev => [prev[0], d]),
     });
     return () => { cpRef.current?.destroy(); opRef.current?.destroy(); };
-  }, [vendorData, availRules]);
+  }, [vendorData, availRules, weeklyOff]);
 
   const specialOffer = discounts.find(d => d.type === "nightly_discount" && d.is_public !== false);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CART FUNCTIONS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function getItemStock(itemId: string): number {
+    const item = allGear.find(g => g.id === itemId);
+    if (!item) return 0;
+    if (!selectedDates[0] || !selectedDates[1]) return item.stock || 0;
+    const overlapping = availRules.filter(r => r.itemId === itemId && new Date(r.start) <= selectedDates[1]! && new Date(r.end || r.start) >= selectedDates[0]!);
+    return Math.max(0, (item.stock || 0) - overlapping.reduce((s, r) => s + (r.qty || 0), 0));
+  }
 
   function getAvailableStock(itemId: string) {
     if (!selectedDates[0] || !selectedDates[1]) return 999;
     const item = allGear.find(g => g.id === itemId);
     if (!item) return 0;
-    const overlapping = availRules.filter(r => r.itemId === itemId && new Date(r.start) <= selectedDates[1]! && new Date(r.end || r.start) >= selectedDates[0]!);
-    return Math.max(0, (item.stock || 0) - overlapping.reduce((s, r) => s + (r.qty || 0), 0));
+
+    // Package: check all linked child items
+    if (item.linkedItems && item.linkedItems.length > 0) {
+      let minPackages = Infinity;
+      for (const li of item.linkedItems) {
+        if (li.qty <= 0) continue;
+        const childStock = getItemStock(li.itemId);
+        const canFulfill = Math.floor(childStock / li.qty);
+        minPackages = Math.min(minPackages, canFulfill);
+      }
+      if (minPackages === Infinity) minPackages = 0;
+      // Cap by package's own stock
+      return Math.min(minPackages, item.stock || 0);
+    }
+
+    // Regular item
+    return getItemStock(itemId);
   }
 
   function addToCart(item: GearItem) {
@@ -510,6 +546,10 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
     setCart(prev => prev.map(i => i.id === id ? { ...i, addSetup: !i.addSetup } : i));
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PRICING CALCULATIONS
+  // ═══════════════════════════════════════════════════════════════════════════
+
   const services = vendorData?.services;
   const hasDelivery = services?.delivery?.enabled ?? false;
   const hasSetup = services?.setup?.enabled ?? false;
@@ -520,10 +560,12 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   const dailyTotal = cart.reduce((acc, i) => acc + i.price * i.qty, 0);
   const sub = dailyTotal * nights;
 
+  // Auto discount calculation
   let autoDisc = 0;
   const rule = discounts.filter(d => d.type === "nightly_discount" && (d.trigger_nights ?? 0) <= nights).sort((a, b) => b.discount_percent - a.discount_percent)[0];
   if (rule) { const fn = (rule.trigger_nights ?? 0) - 1; const dn = nights - fn; if (dn > 0) autoDisc = dailyTotal * dn * (rule.discount_percent / 100); }
   
+  // Promo discount
   const promoDisc = appliedPromo ? sub * (appliedPromo.discount_percent / 100) : 0;
   const allowStacking = vendorData?.allow_stacking === true;
   let finalDiscount = 0, showAuto = false, showPromo = false;
@@ -531,30 +573,45 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   else { finalDiscount = Math.max(autoDisc, promoDisc); if (finalDiscount > 0) { if (promoDisc >= autoDisc && promoDisc > 0) showPromo = true; else showAuto = true; } }
   const subAfterDisc = sub - finalDiscount;
 
+  // ═══ Delivery fee calculation ═══
   function calculateDeliveryFee(): number {
     if (fulfillmentType !== "delivery" || !services?.delivery?.enabled) return 0;
+    
+    // Check free delivery threshold
     if ((services.delivery.freeAbove ?? 0) > 0 && subAfterDisc >= services.delivery.freeAbove) return 0;
+    
     switch (services.delivery.pricingType) {
-      case "fixed": return services.delivery.fixedFee ?? 0;
+      case "fixed":
+        return services.delivery.fixedFee ?? 0;
       case "per_km":
         const km = parseFloat(deliveryDistance) || 0;
         const calculated = km * (services.delivery.perKmRate ?? 0);
         return Math.max(calculated, services.delivery.minFee ?? 0);
-      case "zones": return selectedZone?.fee ?? 0;
-      case "quote": return 0;
-      default: return 0;
+      case "zones":
+        return selectedZone?.fee ?? 0;
+      case "quote":
+        return 0; // Price TBD
+      default:
+        return 0;
     }
   }
 
+  // ═══ Setup fee calculation (per item) ═══
   function calculateSetupFee(): number {
-    if (fulfillmentType !== "delivery") return 0; 
+    if (fulfillmentType !== "delivery") return 0; // Setup only with delivery
+    
+    // If using combo, don't add individual setup fees
     if (useCombo && hasCombo) return 0;
+    
     return cart.reduce((total, item) => {
-      if (item.addSetup && item.setup?.available) return total + (item.setup.fee || 0);
+      if (item.addSetup && item.setup?.available) {
+        return total + (item.setup.fee || 0);
+      }
       return total;
     }, 0);
   }
 
+  // ═══ Combo fee (delivery + setup bundle) ═══
   function calculateComboFee(): number {
     if (!useCombo || !hasCombo || fulfillmentType !== "delivery") return 0;
     return services?.combo?.fee || 0;
@@ -563,11 +620,21 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   const deliveryFee = calculateDeliveryFee();
   const setupFee = calculateSetupFee();
   const comboFee = calculateComboFee();
+  
+  // Calculate combo savings
   const normalDeliveryPlusSetup = deliveryFee + cart.reduce((t, i) => i.addSetup && i.setup?.available ? t + (i.setup.fee || 0) : t, 0);
   const comboSavings = useCombo && hasCombo ? Math.max(0, normalDeliveryPlusSetup - comboFee) : 0;
+
+  // Final service fee
   const serviceFee = useCombo && hasCombo ? comboFee : (deliveryFee + setupFee);
+
+  // Deposit
   const dep = vendorData?.security_deposit_type === "percent" ? subAfterDisc * ((vendorData.security_deposit || 0) / 100) : (vendorData?.security_deposit || 50);
+  
+  // Total
   const total = Math.round(subAfterDisc + serviceFee + dep);
+
+  // Check if any cart item has setup selected
   const hasAnySetupSelected = cart.some(i => i.addSetup && i.setup?.available);
 
   function applyPromo() {
@@ -577,32 +644,56 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
     else { setAppliedPromo(null); setPromoMsg({ text: "Invalid Code", success: false }); }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // WHATSAPP ORDER
+  // ═══════════════════════════════════════════════════════════════════════════
+
   async function sendWhatsAppOrder() {
+    if (isSending) return;
+    setIsSending(true);
+    try {
     const pickupDate = (cpRef.current as any)?._input?.value;
     const returnDate = (opRef.current as any)?._input?.value;
     
+    // Build cart items with prices and setup
     const cartLines = cart.map(i => {
       let line = `• ${i.name} (x${i.qty}) - RM${i.price * i.qty}`;
-      if (i.addSetup && i.setup?.available) line += ` + Setup RM${i.setup.fee}`;
+      if (i.addSetup && i.setup?.available) {
+        line += ` + Setup RM${i.setup.fee}`;
+      }
       return line;
     }).join("%0A");
     
+    // Build discount text
     let discountLines = "";
     if (showAuto) discountLines += `%0AExtended Stay Discount: -RM${Math.round(autoDisc)}`;
     if (showPromo && appliedPromo) discountLines += `%0APromo Code (${appliedPromo.code}): -RM${Math.round(promoDisc)}`;
     
+    // Build fulfillment section
     let fulfillmentSection = "";
     if (fulfillmentType === "pickup") {
       fulfillmentSection = `%0A%0A📍 *PICKUP*%0ALocation: ${selectedHub}`;
     } else {
       fulfillmentSection = `%0A%0A🚚 *DELIVERY*%0AAddress: ${deliveryAddress}`;
-      if (services?.delivery?.pricingType === "zones" && selectedZone) fulfillmentSection += `%0AZone: ${selectedZone.name}`;
-      else if (services?.delivery?.pricingType === "per_km" && deliveryDistance) fulfillmentSection += `%0ADistance: ${deliveryDistance} km`;
-      else if (services?.delivery?.pricingType === "quote") fulfillmentSection += `%0A⚠️ Delivery fee to be quoted`;
-      if (selectedTimeSlot) fulfillmentSection += `%0ATime Slot: ${selectedTimeSlot.label} (${selectedTimeSlot.time})`;
-      if (useCombo && hasCombo) fulfillmentSection += `%0A🎁 Bundle: Delivery + Setup Combo`;
+      
+      if (services?.delivery?.pricingType === "zones" && selectedZone) {
+        fulfillmentSection += `%0AZone: ${selectedZone.name}`;
+      } else if (services?.delivery?.pricingType === "per_km" && deliveryDistance) {
+        fulfillmentSection += `%0ADistance: ${deliveryDistance} km`;
+      } else if (services?.delivery?.pricingType === "quote") {
+        fulfillmentSection += `%0A⚠️ Delivery fee to be quoted`;
+      }
+      
+      if (selectedTimeSlot) {
+        fulfillmentSection += `%0ATime Slot: ${selectedTimeSlot.label} (${selectedTimeSlot.time})`;
+      }
+      
+      if (useCombo && hasCombo) {
+        fulfillmentSection += `%0A🎁 Bundle: Delivery + Setup Combo`;
+      }
     }
     
+    // Build pricing section
     let pricingSection = `%0A%0A💰 *PRICING*%0ASubtotal: RM${sub}${discountLines}`;
     if (fulfillmentType === "delivery") {
       if (useCombo && hasCombo) {
@@ -616,90 +707,145 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
     }
     pricingSection += `%0ASecurity Deposit: RM${Math.round(dep)}`;
     pricingSection += `%0A%0A*TOTAL: RM${total}*`;
-    if (services?.delivery?.pricingType === "quote" && fulfillmentType === "delivery") pricingSection += ` (excl. delivery)`;
+    if (services?.delivery?.pricingType === "quote" && fulfillmentType === "delivery") {
+      pricingSection += ` (excl. delivery)`;
+    }
 
+    // Mock-up shop: Different message for demo inquiries
     const isMockupShop = vendorId === MOCKUP_VENDOR_ID || vendorData?.is_mockup === true;
+    
     let msg: string;
     if (isMockupShop) {
       msg = `Hi Pacak Khemah,%0A%0AI just tried the DEMO SHOP and I'm interested in becoming a vendor!%0A%0A📦 *DEMO ORDER PREVIEW*%0A${cartLines}` +
         `%0A%0A📅 *DATES*%0APick-up: ${pickupDate}%0AReturn: ${returnDate}%0ADuration: ${nights} night${nights > 1 ? "s" : ""}` +
-        fulfillmentSection + pricingSection + `%0A%0A----%0A🚀 I want to register my own shop like this!`;
+        fulfillmentSection +
+        pricingSection +
+        `%0A%0A----%0A🚀 I want to register my own shop like this!`;
     } else {
       msg = `Hi ${vendorData?.name}, Booking Request:%0A` +
         `%0A📦 *ITEMS*%0A${cartLines}` +
         `%0A%0A📅 *DATES*%0APick-up: ${pickupDate}%0AReturn: ${returnDate}%0ADuration: ${nights} night${nights > 1 ? "s" : ""}` +
-        fulfillmentSection + pricingSection;
+        fulfillmentSection +
+        pricingSection;
     }
 
+    // Analytics & credits - Skip for mock-up shops
     if (!isMockupShop) {
+      // Visitor fingerprint for repeat lead detection
+      let visitorId = localStorage.getItem("pk_visitor_id");
+      if (!visitorId) {
+        visitorId = crypto.randomUUID();
+        localStorage.setItem("pk_visitor_id", visitorId);
+      }
+      const visitKey = `pk_visited_${vendorId}`;
+      const hasVisitedBefore = !!localStorage.getItem(visitKey);
+      localStorage.setItem(visitKey, "1");
+
+      // Always log analytics lead for every order
+      try {
+        await addDoc(collection(db, "analytics"), {
+          vendorId, vendorName: vendorData?.name, totalAmount: total,
+          timestamp: serverTimestamp(), type: "whatsapp_lead",
+          visitorId,
+          isRepeatVisitor: hasVisitedBefore,
+          fulfillmentType,
+          deliveryAddress: fulfillmentType === "delivery" ? deliveryAddress : null,
+          deliveryZone: selectedZone?.name || null,
+          timeSlot: selectedTimeSlot?.label || null,
+          bookingDates: { start: pickupDate, end: returnDate },
+          cartItems: cart.map(i => ({ 
+            id: i.id, name: i.name, qty: i.qty, price: i.price,
+            addSetup: i.addSetup || false,
+            setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0
+          })),
+        });
+      } catch (e) { console.error("Analytics write error:", e); }
+
+      // Credit deduction - 1 per unique customer per 24hrs
       const storageKey = `click_${vendorId}`;
       const lastClick = localStorage.getItem(storageKey);
       if (!lastClick || Date.now() - Number(lastClick) > 86400000) {
         try {
+          let deducted = false;
           await runTransaction(db, async (t) => {
             const vRef = doc(db, "vendors", vendorId!);
             const vDoc = await t.get(vRef);
             const c = vDoc.data()?.credits || 0;
             if (c > 0) {
               t.update(vRef, { credits: c - 1 });
-              t.set(doc(collection(db, "analytics")), {
-                vendorId, vendorName: vendorData?.name, totalAmount: total,
-                timestamp: serverTimestamp(), type: "whatsapp_lead", fulfillmentType,
-                deliveryAddress: fulfillmentType === "delivery" ? deliveryAddress : null,
-                deliveryZone: selectedZone?.name || null, timeSlot: selectedTimeSlot?.label || null,
-                bookingDates: { start: pickupDate, end: returnDate },
-                cartItems: cart.map(i => ({ 
-                  id: i.id, name: i.name, qty: i.qty, price: i.price,
-                  addSetup: i.addSetup || false, setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0
-                })),
-              });
+              deducted = true;
             }
           });
-          localStorage.setItem(storageKey, String(Date.now()));
-        } catch (e) { console.error(e); }
+          if (deducted) localStorage.setItem(storageKey, String(Date.now()));
+        } catch (e) { console.error("Credit deduction error:", e); }
       }
 
+      // ═══ Create order in orders collection ═══
       try {
         const orderData = {
-          vendorId, vendorName: vendorData?.name || "", customerPhone: "", customerName: "",
+          vendorId,
+          vendorName: vendorData?.name || "",
+          customerPhone: "",
+          customerName: "",
           items: cart.map(i => ({
             id: i.id, name: i.name, qty: i.qty, price: i.price,
-            addSetup: i.addSetup || false, setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0,
+            addSetup: i.addSetup || false,
+            setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0,
           })),
           totalAmount: total,
           pickupLocation: fulfillmentType === "pickup" ? selectedHub : deliveryAddress,
-          fulfillmentType, deliveryZone: selectedZone?.name || null,
+          fulfillmentType,
+          deliveryZone: selectedZone?.name || null,
           timeSlot: selectedTimeSlot?.label || null,
           bookingDates: { start: pickupDate, end: returnDate },
-          status: "pending" as const, createdAt: serverTimestamp(),
+          status: "pending" as const,
+          createdAt: serverTimestamp(),
         };
         const orderRef = await addDoc(collection(db, "orders"), orderData);
 
+        // Save booking data to localStorage for agreement page
         localStorage.setItem("current_booking", JSON.stringify({
-          vendorId, orderId: orderRef.id,
+          vendorId,
+          orderId: orderRef.id,
           items: cart.map(i => ({ name: i.name, qty: i.qty })),
-          dates: { start: pickupDate, end: returnDate }, total,
+          dates: { start: pickupDate, end: returnDate },
+          total,
         }));
       } catch (e) { console.error("Order creation error:", e); }
       
       if (typeof window !== "undefined" && typeof (window as any).gtag === "function") {
         (window as any).gtag("event", "whatsapp_booking", {
-          currency: "MYR", value: total, vendor_id: vendorId, vendor_name: vendorData?.name,
-          fulfillment_type: fulfillmentType, items_count: cartCount
+          currency: "MYR",
+          value: total,
+          vendor_id: vendorId,
+          vendor_name: vendorData?.name,
+          fulfillment_type: fulfillmentType,
+          items_count: cartCount
         });
       }
     }
+    
     window.open(`https://wa.me/${isMockupShop ? ADMIN_WHATSAPP : vendorData?.phone}?text=${msg}`, "_blank");
+    } finally {
+      setIsSending(false);
+    }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HELPERS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Sort categories: Packages first, then main items, then add-ons/accessories last
   const sortCategories = (cats: string[]): string[] => {
     const packagesFirst = ["Packages", "Package", "Pakej"];
     const accessoriesLast = ["Add-ons", "Add-on", "Addon", "Accessories", "Accessory", "Aksesori", "Others", "Lain-lain"];
+    
     return cats.sort((a, b) => {
       const aIsPackage = packagesFirst.some(p => a.toLowerCase().includes(p.toLowerCase()));
       const bIsPackage = packagesFirst.some(p => b.toLowerCase().includes(p.toLowerCase()));
       const aIsAccessory = accessoriesLast.some(p => a.toLowerCase().includes(p.toLowerCase()));
       const bIsAccessory = accessoriesLast.some(p => b.toLowerCase().includes(p.toLowerCase()));
+      
       if (aIsPackage && !bIsPackage) return -1;
       if (!aIsPackage && bIsPackage) return 1;
       if (aIsAccessory && !bIsAccessory) return 1;
@@ -716,6 +862,8 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   
   const filteredGear = (cat: string) => allGear.filter(g => (g.category || (g.type === "package" ? "Packages" : "Add-ons")) === cat && g.name.toLowerCase().includes(searchTerm.toLowerCase()));
   const cartCount = cart.reduce((a, i) => a + i.qty, 0);
+  
+  // Can order validation
   const needsAddress = fulfillmentType === "delivery" && !deliveryAddress.trim();
   const needsDistance = fulfillmentType === "delivery" && services?.delivery?.pricingType === "per_km" && !deliveryDistance;
   const canOrder = cartCount > 0 && selectedDates[0] && selectedDates[1] && termsAgreed && !needsAddress && !needsDistance;
@@ -729,21 +877,28 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
 
   function getLinkedItemsData(item: GearItem): { item: GearItem; qty: number }[] {
     if (!item.linkedItems || item.linkedItems.length === 0) return [];
-    return item.linkedItems.map(li => {
-      const linkedItem = allGear.find(g => g.id === li.itemId);
-      return linkedItem ? { item: linkedItem, qty: li.qty } : null;
-    }).filter(Boolean) as { item: GearItem; qty: number }[];
+    return item.linkedItems
+      .map(li => {
+        const linkedItem = allGear.find(g => g.id === li.itemId);
+        return linkedItem ? { item: linkedItem, qty: li.qty } : null;
+      })
+      .filter(Boolean) as { item: GearItem; qty: number }[];
   }
 
   const rating = vendorData?.rating || 0;
   const reviewCount = vendorData?.reviewCount || 0;
+  
+  // Mock-up detection
   const isMockup = vendorId === MOCKUP_VENDOR_ID || vendorData?.is_mockup === true;
   const whatsappNumber = isMockup ? ADMIN_WHATSAPP : vendorData?.phone;
   
+  // Auto-calculate badges based on vendor data
   const calculatedBadges: Badge[] = [];
   if (vendorData?.status === "approved") calculatedBadges.push("verified");
   if ((vendorData?.total_orders || 0) >= 30 && rating >= 4.7) calculatedBadges.push("top_rated");
   if ((vendorData?.avg_response_time || 999) <= 120) calculatedBadges.push("fast_responder");
+  
+  // Combine auto badges with manual badges from Firestore
   const allBadges: Badge[] = [...new Set([...calculatedBadges, ...(vendorData?.badges || [])])];
 
   function handleShare(itemId?: string) {
@@ -762,12 +917,17 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
     return date.toLocaleDateString();
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════════════════════════
+
   if (blockState === "unapproved") return <BlockScreen message="Hub Building" icon="fa-hard-hat" iconBg="bg-slate-200 text-slate-400" />;
   if (blockState === "vacation") return <BlockScreen message="On Vacation" icon="fa-umbrella-beach" iconBg="bg-blue-400 text-white" />;
   if (blockState === "nocredits") return <BlockScreen message="Hub Unavailable" icon="fa-store-slash" iconBg="bg-red-500 text-white" />;
 
   return (
     <div className="pb-8 min-h-screen" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f0f2f1", color: "#0f172a" }}>
+      {/* Mock-up Banner */}
       {isMockup && <MockupBanner />}
       {isMockup && <DemoShopGuide />}
       
@@ -775,10 +935,12 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-amber-400 text-[#062c24] px-4 py-2 rounded-full text-[10px] font-black uppercase shadow-xl z-[200] animate-bounce">PREVIEW MODE</div>
       )}
 
+      {/* Hero Header */}
       <header className="bg-[#062c24] text-white relative overflow-hidden">
         <div className="absolute inset-0 opacity-40" style={{ backgroundImage: "url('/pattern-chevron.png')", backgroundSize: "300px" }} />
         <div className="absolute inset-0 bg-gradient-to-b from-[#062c24] via-[#062c24]/50 to-[#062c24]/90" />
 
+        {/* Nav row */}
         <div className="relative z-10 flex justify-between items-center px-4 pt-4">
           <Link href="/directory" className="w-10 h-10 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center hover:bg-white hover:text-[#062c24] transition-all">
             <i className="fas fa-arrow-left text-sm"></i>
@@ -795,11 +957,13 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
           </div>
         </div>
 
+        {/* Centered profile */}
         <div id="demo-hero" className="relative z-10 flex flex-col items-center text-center px-6 pt-6 pb-2">
           <div className="w-20 h-20 bg-white rounded-2xl p-1 shadow-2xl mb-4">
             <img src={vendorData?.image || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-[0.9rem]" alt="logo" />
           </div>
           
+          {/* Vendor Name + Badges */}
           <div className="flex items-center gap-2 mb-2">
             <h1 className="text-xl font-black uppercase tracking-tight">{vendorData?.name || "Loading..."}</h1>
             {allBadges.length > 0 && (
@@ -869,6 +1033,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
           </div>
         )}
 
+        {/* Main Tabs */}
         <div id="demo-tabs" className="flex bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm">
           {([
             { id: "gear" as const, label: "Gear", icon: "fa-campground", badge: 0 },
@@ -889,6 +1054,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
           ))}
         </div>
 
+        {/* GEAR TAB CONTENT */}
         {mainTab === "gear" && (
           <>
             {(vendorData?.tagline || vendorData?.tagline_my) && (
@@ -956,6 +1122,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                 </div>
               </div>
 
+              {/* Gear grid */}
               <div id="demo-gear" className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {filteredGear(activeCategory || categories[0] || "").map((item, idx) => {
                   const avail = getAvailableStock(item.id);
@@ -967,7 +1134,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                   
                   return (
                     <div key={item.id} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm stagger-in relative" style={{ animationDelay: `${idx * 50}ms` }}>
-                      <div className="aspect-square relative cursor-pointer" onClick={() => { setSelectedItemId(item.id); setShowItemModal(true); }}>
+                      <div className="aspect-square relative cursor-pointer" onClick={() => { setSelectedItem(item); setShowItemModal(true); }}>
                         <img src={item.images?.[0] || item.img || "/placeholder.jpg"} className="w-full h-full object-cover" alt={item.name} />
                         {hasMultipleImages && (
                           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
@@ -985,8 +1152,10 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                       </div>
                       <div className="p-3">
                         <p className="text-[10px] font-black uppercase truncate text-[#062c24]">{item.name}</p>
-                        {item.specs && (item.specs.maxPax || item.specs.size || item.specs.puRating || item.specs.layers || item.specs.weight) && (
+                        {/* Spec pills */}
+                        {item.specs && (item.specs.maxPax || item.specs.size || item.specs.puRating || item.specs.layers || item.specs.weight || item.specs.tentType) && (
                           <div className="flex flex-wrap gap-1 mt-1">
+                            {item.specs.tentType ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.tentType}</span> : null}
                             {item.specs.maxPax ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.maxPax}P</span> : null}
                             {item.specs.puRating ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.puRating}</span> : null}
                             {item.specs.layers ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.layers === "Double Layer" ? "Double" : "Single"}</span> : null}
@@ -1008,6 +1177,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
           </>
         )}
 
+        {/* UPDATES TAB */}
         {mainTab === "updates" && (
           <div className="space-y-3">
             {posts.length === 0 ? (
@@ -1028,11 +1198,13 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
           </div>
         )}
 
+        {/* REVIEWS TAB */}
         {mainTab === "reviews" && (
           <div className="space-y-4">
+            {/* Rating Summary */}
             {reviewCount > 0 && (
               <div className="bg-white rounded-2xl p-6 border border-slate-100">
-                <div className="flex items-center gap-6">
+                <div className="flex items-center gap-6 mb-5">
                   <div className="text-center">
                     <p className="text-4xl font-black text-[#062c24]">{rating.toFixed(1)}</p>
                     <div className="flex gap-0.5 justify-center my-1">
@@ -1059,9 +1231,38 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                     })}
                   </div>
                 </div>
+
+                {/* Category Breakdown */}
+                {(vendorData as any)?.categoryRatings && (
+                  <div className="border-t border-slate-100 pt-4">
+                    <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Performance by Category</p>
+                    <div className="space-y-2.5">
+                      {[
+                        { key: "gearCondition", label: "Gear Condition", icon: "fa-campground" },
+                        { key: "communication", label: "Communication", icon: "fa-comments" },
+                        { key: "value", label: "Value for Money", icon: "fa-coins" },
+                        { key: "convenience", label: "Pickup / Delivery", icon: "fa-truck-pickup" },
+                        { key: "overall", label: "Overall", icon: "fa-heart" },
+                      ].map(cat => {
+                        const val = (vendorData as any).categoryRatings[cat.key] || 0;
+                        return (
+                          <div key={cat.key} className="flex items-center gap-3">
+                            <i className={`fas ${cat.icon} text-[10px] text-slate-400 w-4 text-center`}></i>
+                            <span className="text-[10px] font-bold text-slate-600 w-28 truncate">{cat.label}</span>
+                            <div className="flex-1 bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                              <div className="bg-emerald-400 h-full rounded-full transition-all" style={{ width: `${(val / 5) * 100}%` }}></div>
+                            </div>
+                            <span className="text-[10px] font-black text-[#062c24] w-7 text-right">{val.toFixed(1)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
+            {/* Review Cards */}
             {reviews.length > 0 ? (
               <div className="space-y-3">
                 {reviews.map(r => (
@@ -1076,10 +1277,13 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                             {r.customerName || "Camper"}
                             {r.isVerified && <i className="fas fa-check-circle text-emerald-500 text-[9px] ml-1.5"></i>}
                           </p>
-                          <div className="flex gap-0.5 mt-0.5">
-                            {[1,2,3,4,5].map(s => (
-                              <i key={s} className={`fas fa-star text-[9px] ${s <= r.rating ? "text-amber-400" : "text-slate-200"}`}></i>
-                            ))}
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <div className="flex gap-0.5">
+                              {[1,2,3,4,5].map(s => (
+                                <i key={s} className={`fas fa-star text-[9px] ${s <= r.rating ? "text-amber-400" : "text-slate-200"}`}></i>
+                              ))}
+                            </div>
+                            <span className="text-[9px] font-bold text-slate-400">{r.rating.toFixed(1)}</span>
                           </div>
                         </div>
                       </div>
@@ -1087,6 +1291,30 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                         {r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" }) : ""}
                       </span>
                     </div>
+
+                    {/* Per-review category mini bars */}
+                    {r.ratings && (
+                      <div className="flex gap-1.5 mb-3">
+                        {[
+                          { key: "gearCondition" as const, label: "Gear" },
+                          { key: "communication" as const, label: "Comms" },
+                          { key: "value" as const, label: "Value" },
+                          { key: "convenience" as const, label: "Pickup" },
+                          { key: "overall" as const, label: "Overall" },
+                        ].map(cat => {
+                          const val = r.ratings?.[cat.key] || 0;
+                          return (
+                            <div key={cat.key} className="flex-1 text-center">
+                              <div className="bg-slate-100 rounded-md h-1.5 overflow-hidden mb-0.5">
+                                <div className={`h-full rounded-md ${val >= 4 ? "bg-emerald-400" : val >= 3 ? "bg-amber-400" : "bg-red-400"}`} style={{ width: `${(val / 5) * 100}%` }}></div>
+                              </div>
+                              <p className="text-[7px] font-bold text-slate-400">{cat.label}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
                     {r.comment && <p className="text-xs text-slate-500 leading-relaxed">{r.comment}</p>}
                   </div>
                 ))}
@@ -1102,6 +1330,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         )}
       </main>
 
+      {/* Floating Cart Button */}
       {cartCount > 0 && (
         <button id="demo-cart-btn" onClick={() => setShowCart(true)}
           className="fixed bottom-6 right-6 bg-[#062c24] text-white w-16 h-16 rounded-2xl shadow-2xl flex items-center justify-center z-[100] hover:bg-emerald-800 active:scale-95 transition-all">
@@ -1110,6 +1339,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         </button>
       )}
 
+      {/* Item Modal with Image Carousel */}
       {showItemModal && selectedItem && (
         <div className="fixed inset-0 bg-[#062c24]/95 backdrop-blur-md z-[300] flex items-center justify-center p-4">
           <div className="bg-white rounded-[2rem] w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
@@ -1131,11 +1361,15 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
               <h3 className="text-lg font-black uppercase text-[#062c24] mb-1">{selectedItem.name}</h3>
               <p className="text-emerald-600 font-black text-xl mb-3">RM {selectedItem.price}<span className="text-xs text-slate-400 font-bold">/night</span></p>
               {selectedItem.desc && <p className="text-slate-500 text-sm mb-4 leading-relaxed">{selectedItem.desc}</p>}
-              <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-xl mb-4 text-xs font-mono">
-   DEBUG CHECK: {JSON.stringify(selectedItem.specs || "NO SPECS FOUND")}
-</div>
-              {selectedItem.specs && (selectedItem.specs.maxPax || selectedItem.specs.size || selectedItem.specs.puRating || selectedItem.specs.layers || selectedItem.specs.weight) && (
+              {/* Specs Grid */}
+              {selectedItem.specs && (selectedItem.specs.maxPax || selectedItem.specs.size || selectedItem.specs.puRating || selectedItem.specs.layers || selectedItem.specs.weight || selectedItem.specs.tentType) && (
                 <div className="mb-4 grid grid-cols-2 gap-2">
+                  {selectedItem.specs.tentType ? (
+                    <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-2.5">
+                      <div className="w-7 h-7 bg-teal-100 text-teal-600 rounded-lg flex items-center justify-center shrink-0"><i className="fas fa-campground text-[9px]"></i></div>
+                      <div><p className="text-[8px] font-bold text-slate-400 uppercase">Tent Type</p><p className="text-xs font-black text-[#062c24]">{selectedItem.specs.tentType}</p></div>
+                    </div>
+                  ) : null}
                   {selectedItem.specs.maxPax ? (
                     <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-2.5">
                       <div className="w-7 h-7 bg-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center shrink-0"><i className="fas fa-users text-[9px]"></i></div>
@@ -1201,12 +1435,23 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                   <div className="flex flex-wrap gap-1.5">{selectedItem.inc.map(inc => (<span key={inc} className="bg-white border border-emerald-100 text-emerald-700 px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase">{inc}</span>))}</div>
                 </div>
               )}
-              <button onClick={() => addToCart(selectedItem)} className="w-full bg-[#062c24] text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all">Add to Cart</button>
+              {(() => {
+                const avail = getAvailableStock(selectedItem.id);
+                const inCart = cart.find(i => i.id === selectedItem.id)?.qty || 0;
+                const canAdd = avail > inCart;
+                return (
+                  <button onClick={() => canAdd && addToCart(selectedItem)} disabled={!canAdd}
+                    className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl transition-all ${canAdd ? "bg-[#062c24] text-white hover:bg-emerald-800 active:scale-95" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
+                    {canAdd ? "Add to Cart" : avail === 0 ? "Sold Out" : "Max Added"}
+                  </button>
+                );
+              })()}
             </div>
           </div>
         </div>
       )}
 
+      {/* CART MODAL */}
       {showCart && (
         <div className="fixed inset-0 bg-[#062c24]/95 backdrop-blur-md z-[300] flex items-center justify-center p-4">
           <div className="bg-white rounded-[2rem] w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
@@ -1396,9 +1641,10 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
             </div>
 
             <div className="p-5 bg-slate-50 border-t border-slate-100 space-y-4">
-              <button onClick={canOrder ? sendWhatsAppOrder : undefined} disabled={!canOrder}
-                className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl transition-all ${canOrder ? "bg-[#062c24] text-white hover:bg-emerald-900 active:scale-95" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}>
-                {!cart.length ? "Add Items to Start" 
+              <button onClick={canOrder && !isSending ? sendWhatsAppOrder : undefined} disabled={!canOrder || isSending}
+                className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl transition-all ${canOrder && !isSending ? "bg-[#062c24] text-white hover:bg-emerald-900 active:scale-95" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}>
+                {isSending ? "Processing..." 
+                  : !cart.length ? "Add Items to Start" 
                   : !selectedDates[0] || !selectedDates[1] ? "Select Pickup & Return Dates" 
                   : needsAddress ? "Enter Delivery Address"
                   : needsDistance ? "Enter Delivery Distance"
