@@ -1394,6 +1394,9 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
               ) : (
                 <img src={selectedItem.images?.[0] || selectedItem.img || "/placeholder.jpg"} className="w-full aspect-square object-cover rounded-t-[2rem]" alt={selectedItem.name} />
               )}
+              <button onClick={() => handleShare(selectedItem.id)} className="absolute top-4 right-16 w-10 h-10 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-400 hover:text-blue-500 shadow-lg z-20">
+  <i className="fas fa-share-alt"></i>
+</button>
               <button onClick={() => setShowItemModal(false)} className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 shadow-lg z-20">
                 <i className="fas fa-times"></i>
               </button>
