@@ -50,9 +50,10 @@ type ServicesConfig = {
 };
 
 type VendorData = {
-  name: string; slug?: string; tagline?: string; tagline_my?: string; image?: string;
+  name: string; tagline?: string; tagline_my?: string; image?: string;
   ig?: string; tiktok?: string; fb?: string; phone?: string; threads?: string;
   pickup?: string[]; city?: string; areas?: string[]; rules?: string[];
+  slug?: string;
   steps?: { title: string; my: string; desc?: string; desc_my?: string }[];
   status?: string; is_vacation?: boolean; credits?: number;
   owner_uid?: string; show_nav?: boolean;
@@ -93,10 +94,7 @@ type CartItem = GearItem & { qty: number; addSetup?: boolean };
 type AvailRule = { itemId?: string; type?: string; start: string; end?: string; qty?: number };
 type Discount = { type: string; trigger_nights?: number; discount_percent: number; code?: string; deleted?: boolean; is_public?: boolean };
 type VendorPost = { id: string; content: string; image?: string; pinned?: boolean; createdAt: any };
-type Review = {
-  id: string; customerName: string; rating: number; comment?: string | null; createdAt: any; isVerified?: boolean;
-  ratings?: { gearCondition?: number; communication?: number; value?: number; convenience?: number; overall?: number };
-};
+type Review = { id: string; customerName: string; rating: number; comment?: string | null; createdAt: any; isVerified?: boolean };
 
 type FulfillmentType = "pickup" | "delivery";
 
@@ -517,25 +515,13 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         return;
       } catch { /* user cancelled or not supported */ }
     }
-    // Fallback: copy to clipboard
     try {
       await navigator.clipboard.writeText(url);
       setItemShareToast(true);
       setTimeout(() => setItemShareToast(false), 2000);
     } catch { /* ignore */ }
   }
-useEffect(() => {
-    const itemParam = searchParams.get("item");
-    if (itemParam && allGear.length > 0) {
-      const item = allGear.find(g => g.id === itemParam);
-      if (item) {
-        setSelectedItem(item);
-        setShowItemModal(true);
-        // Clean up the URL so it doesn't re-open if they refresh
-        window.history.replaceState(null, "", window.location.pathname);
-      }
-    }
-  }, [allGear, searchParams]);
+
   const specialOffer = discounts.find(d => d.type === "nightly_discount" && d.is_public !== false);
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1260,7 +1246,7 @@ useEffect(() => {
             {/* Rating Summary */}
             {reviewCount > 0 && (
               <div className="bg-white rounded-2xl p-6 border border-slate-100">
-                <div className="flex items-center gap-6 mb-5">
+                <div className="flex items-center gap-6">
                   <div className="text-center">
                     <p className="text-4xl font-black text-[#062c24]">{rating.toFixed(1)}</p>
                     <div className="flex gap-0.5 justify-center my-1">
@@ -1287,34 +1273,6 @@ useEffect(() => {
                     })}
                   </div>
                 </div>
-
-                {/* Category Breakdown */}
-                {(vendorData as any)?.categoryRatings && (
-                  <div className="border-t border-slate-100 pt-4">
-                    <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Performance by Category</p>
-                    <div className="space-y-2.5">
-                      {[
-                        { key: "gearCondition", label: "Gear Condition", icon: "fa-campground" },
-                        { key: "communication", label: "Communication", icon: "fa-comments" },
-                        { key: "value", label: "Value for Money", icon: "fa-coins" },
-                        { key: "convenience", label: "Pickup / Delivery", icon: "fa-truck-pickup" },
-                        { key: "overall", label: "Overall", icon: "fa-heart" },
-                      ].map(cat => {
-                        const val = (vendorData as any).categoryRatings[cat.key] || 0;
-                        return (
-                          <div key={cat.key} className="flex items-center gap-3">
-                            <i className={`fas ${cat.icon} text-[10px] text-slate-400 w-4 text-center`}></i>
-                            <span className="text-[10px] font-bold text-slate-600 w-28 truncate">{cat.label}</span>
-                            <div className="flex-1 bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                              <div className="bg-emerald-400 h-full rounded-full transition-all" style={{ width: `${(val / 5) * 100}%` }}></div>
-                            </div>
-                            <span className="text-[10px] font-black text-[#062c24] w-7 text-right">{val.toFixed(1)}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
@@ -1333,13 +1291,10 @@ useEffect(() => {
                             {r.customerName || "Camper"}
                             {r.isVerified && <i className="fas fa-check-circle text-emerald-500 text-[9px] ml-1.5"></i>}
                           </p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <div className="flex gap-0.5">
-                              {[1,2,3,4,5].map(s => (
-                                <i key={s} className={`fas fa-star text-[9px] ${s <= r.rating ? "text-amber-400" : "text-slate-200"}`}></i>
-                              ))}
-                            </div>
-                            <span className="text-[9px] font-bold text-slate-400">{r.rating.toFixed(1)}</span>
+                          <div className="flex gap-0.5 mt-0.5">
+                            {[1,2,3,4,5].map(s => (
+                              <i key={s} className={`fas fa-star text-[9px] ${s <= r.rating ? "text-amber-400" : "text-slate-200"}`}></i>
+                            ))}
                           </div>
                         </div>
                       </div>
@@ -1347,30 +1302,6 @@ useEffect(() => {
                         {r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" }) : ""}
                       </span>
                     </div>
-
-                    {/* Per-review category mini bars */}
-                    {r.ratings && (
-                      <div className="flex gap-1.5 mb-3">
-                        {[
-                          { key: "gearCondition" as const, label: "Gear" },
-                          { key: "communication" as const, label: "Comms" },
-                          { key: "value" as const, label: "Value" },
-                          { key: "convenience" as const, label: "Pickup" },
-                          { key: "overall" as const, label: "Overall" },
-                        ].map(cat => {
-                          const val = r.ratings?.[cat.key] || 0;
-                          return (
-                            <div key={cat.key} className="flex-1 text-center">
-                              <div className="bg-slate-100 rounded-md h-1.5 overflow-hidden mb-0.5">
-                                <div className={`h-full rounded-md ${val >= 4 ? "bg-emerald-400" : val >= 3 ? "bg-amber-400" : "bg-red-400"}`} style={{ width: `${(val / 5) * 100}%` }}></div>
-                              </div>
-                              <p className="text-[7px] font-bold text-slate-400">{cat.label}</p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
                     {r.comment && <p className="text-xs text-slate-500 leading-relaxed">{r.comment}</p>}
                   </div>
                 ))}
@@ -1405,9 +1336,6 @@ useEffect(() => {
               ) : (
                 <img src={selectedItem.images?.[0] || selectedItem.img || "/placeholder.jpg"} className="w-full aspect-square object-cover rounded-t-[2rem]" alt={selectedItem.name} />
               )}
-              <button onClick={() => handleShare(selectedItem.id)} className="absolute top-4 right-16 w-10 h-10 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-400 hover:text-blue-500 shadow-lg z-20">
-  <i className="fas fa-share-alt"></i>
-</button>
               <button onClick={() => setShowItemModal(false)} className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 shadow-lg z-20">
                 <i className="fas fa-times"></i>
               </button>
