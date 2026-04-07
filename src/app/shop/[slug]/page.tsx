@@ -53,6 +53,7 @@ type VendorData = {
   name: string; tagline?: string; tagline_my?: string; image?: string;
   ig?: string; tiktok?: string; fb?: string; phone?: string; threads?: string;
   pickup?: string[]; city?: string; areas?: string[]; rules?: string[];
+  slug?: string;
   steps?: { title: string; my: string; desc?: string; desc_my?: string }[];
   status?: string; is_vacation?: boolean; credits?: number;
   owner_uid?: string; show_nav?: boolean;
@@ -345,6 +346,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   const [loading, setLoading] = useState(true);
   const [showShareToast, setShowShareToast] = useState(false);
   const [addToast, setAddToast] = useState<string | null>(null);
+  const [itemShareToast, setItemShareToast] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [mainTab, setMainTab] = useState<"gear" | "updates" | "reviews">("gear");
   
@@ -484,6 +486,41 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
     });
     return () => { cpRef.current?.destroy(); opRef.current?.destroy(); };
   }, [vendorData, availRules, weeklyOff]);
+
+  // Auto-open item modal from URL param
+  useEffect(() => {
+    const itemParam = searchParams.get("item");
+    if (itemParam && allGear.length > 0) {
+      const item = allGear.find(g => g.id === itemParam);
+      if (item) {
+        setSelectedItem(item);
+        setShowItemModal(true);
+      }
+    }
+  }, [allGear, searchParams]);
+
+  function getItemShareUrl(item: GearItem): string {
+    const base = typeof window !== "undefined" ? window.location.origin : "";
+    const shopPath = vendorData?.slug ? `/shop/${vendorData.slug}` : `/shop/${vendorId}`;
+    return `${base}${shopPath}?item=${item.id}`;
+  }
+
+  async function shareItem(item: GearItem) {
+    const url = getItemShareUrl(item);
+    const text = `${item.name} — RM${item.price}/night @ ${vendorData?.name || "Pacak Khemah"}`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: item.name, text, url });
+        return;
+      } catch { /* user cancelled or not supported */ }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setItemShareToast(true);
+      setTimeout(() => setItemShareToast(false), 2000);
+    } catch { /* ignore */ }
+  }
 
   const specialOffer = discounts.find(d => d.type === "nightly_discount" && d.is_public !== false);
 
@@ -1146,6 +1183,14 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                           {linkedItems.length > 0 && <span className="bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase"><i className="fas fa-link mr-0.5"></i>{linkedItems.length} items</span>}
                         </div>
                         {inCart > 0 && <span className="absolute top-2 right-2 bg-emerald-500 text-white text-[9px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-lg">{inCart}</span>}
+                        {!inCart && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); shareItem(item); }}
+                            className="absolute top-2 right-2 w-7 h-7 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-slate-400 hover:text-[#062c24] shadow-sm transition-all"
+                          >
+                            <i className="fas fa-share-alt text-[10px]"></i>
+                          </button>
+                        )}
                       </div>
                       <div className="p-3">
                         <p className="text-[10px] font-black uppercase truncate text-[#062c24]">{item.name}</p>
@@ -1293,6 +1338,9 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
               )}
               <button onClick={() => setShowItemModal(false)} className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 shadow-lg z-20">
                 <i className="fas fa-times"></i>
+              </button>
+              <button onClick={() => shareItem(selectedItem)} className="absolute top-4 right-16 w-10 h-10 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-400 hover:text-[#062c24] shadow-lg z-20">
+                <i className="fas fa-share-alt"></i>
               </button>
               <div className="absolute top-4 left-4 flex flex-col gap-1.5 z-20">
                 {selectedItem.type === "package" && <span className="bg-purple-500 text-white text-[9px] font-black px-2 py-1 rounded-lg uppercase shadow-lg"><i className="fas fa-box mr-1"></i>Package</span>}
@@ -1620,6 +1668,11 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
       {addToast && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[500] bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-toastIn">
           <i className="fas fa-cart-plus"></i><span className="text-[10px] font-black uppercase tracking-widest">{addToast} Added!</span>
+        </div>
+      )}
+      {itemShareToast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[500] bg-[#062c24] text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-toastIn">
+          <i className="fas fa-link text-emerald-400"></i><span className="text-[10px] font-black uppercase tracking-widest">Item Link Copied!</span>
         </div>
       )}
 
