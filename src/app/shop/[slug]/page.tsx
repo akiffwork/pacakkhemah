@@ -543,13 +543,28 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   function getItemStock(itemId: string, variantId?: string): number {
     const item = allGear.find(g => g.id === itemId);
     if (!item) return 0;
-    const baseStock = variantId && item.variants?.length
-      ? (item.variants.find(v => v.id === variantId)?.stock || 0)
-      : (item.stock || 0);
-    if (!selectedDates[0] || !selectedDates[1]) return baseStock;
+
+    const totalStock = item.stock || 0;
+
+    if (!selectedDates[0] || !selectedDates[1]) {
+      // No dates selected — show raw stock
+      return variantId && item.variants?.length
+        ? (item.variants.find(v => v.id === variantId)?.stock || 0)
+        : totalStock;
+    }
+
+    // Calculate total booked for this item across all variants
     const overlapping = availRules.filter(r => r.itemId === itemId && new Date(r.start) <= selectedDates[1]! && new Date(r.end || r.start) >= selectedDates[0]!);
-    const booked = overlapping.reduce((s, r) => s + (r.qty || 0), 0);
-    return Math.max(0, baseStock - (variantId ? Math.ceil(booked * (baseStock / Math.max(item.stock || 1, 1))) : booked));
+    const totalBooked = overlapping.reduce((s, r) => s + (r.qty || 0), 0);
+    const totalRemaining = Math.max(0, totalStock - totalBooked);
+
+    if (!variantId || !item.variants?.length) {
+      return totalRemaining;
+    }
+
+    // Variant: can't exceed its own stock OR total remaining
+    const variantStock = item.variants.find(v => v.id === variantId)?.stock || 0;
+    return Math.min(variantStock, totalRemaining);
   }
 
   function getAvailableStock(itemId: string, variantId?: string) {
@@ -1201,8 +1216,9 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                   const hasMultipleImages = (item.images?.length || 0) > 1;
                   const linkedItems = getLinkedItemsData(item);
                   const hasVars = item.hasVariants && item.variants && item.variants.length > 0;
-                  const priceRange = hasVars
-                    ? { min: Math.min(...item.variants!.map(v => v.price)), max: Math.max(...item.variants!.map(v => v.price)) }
+                  const pricedVars = hasVars ? item.variants!.filter(v => v.price > 0) : [];
+                  const priceRange = pricedVars.length > 0
+                    ? { min: Math.min(...pricedVars.map(v => v.price)), max: Math.max(...pricedVars.map(v => v.price)) }
                     : null;
                   
                   return (
