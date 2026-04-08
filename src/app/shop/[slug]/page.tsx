@@ -574,7 +574,6 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   }
 
   function getAvailableStock(itemId: string, variantId?: string) {
-    if (!selectedDates[0] || !selectedDates[1]) return 999;
     const item = allGear.find(g => g.id === itemId);
     if (!item) return 0;
 
@@ -620,12 +619,14 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
       const cartItem = cart.find(i => getCartKey(i) === key);
       if (cartItem) {
         const vid = cartItem.selectedVariant?.id;
-        const maxVariantStock = vid ? (cartItem.variants?.find(v => v.id === vid)?.stock || 0) : cartItem.stock || 0;
+        
+        // Calculate the TRUE available stock (accounting for dates and bookings)
+        const variantAvail = vid ? getAvailableStock(cartItem.id, vid) : getAvailableStock(cartItem.id);
         const totalAvail = getAvailableStock(cartItem.id);
         const totalItemInCart = cart.filter(i => i.id === cartItem.id).reduce((sum, i) => sum + i.qty, 0);
 
         // Block the '+' click if they are hitting the variant ceiling OR the overall item ceiling
-        if (cartItem.qty >= maxVariantStock || totalItemInCart >= totalAvail) {
+        if (cartItem.qty >= variantAvail || totalItemInCart >= totalAvail) {
           return; 
         }
       }
@@ -1627,18 +1628,17 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                 // 2. Qty of ALL variants of this item in the cart combined
                 const totalItemInCart = cart.filter(i => i.id === selectedItem.id).reduce((sum, i) => sum + i.qty, 0);
 
-                // 3. Max stock limits
-                const maxVariantStock = vid ? (selectedItem.variants?.find(v => v.id === vid)?.stock || 0) : selectedItem.stock || 0;
-                const totalAvail = getAvailableStock(selectedItem.id); // Checks overall date availability
+                // 3. Max stock limits USING getAvailableStock (accounts for bookings and raw limits)
+                const variantAvail = vid ? getAvailableStock(selectedItem.id, vid) : getAvailableStock(selectedItem.id);
+                const totalAvail = getAvailableStock(selectedItem.id); 
 
                 // 4. Validate both limits
-                const canAdd = !needsVariant && (variantInCart < maxVariantStock) && (totalItemInCart < totalAvail);
-                const avail = vid ? getAvailableStock(selectedItem.id, vid) : totalAvail;
+                const canAdd = !needsVariant && (variantInCart < variantAvail) && (totalItemInCart < totalAvail);
 
                 return (
                   <button onClick={() => canAdd && addToCart(selectedItem, selectedVariant || undefined)} disabled={!canAdd}
                     className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl transition-all ${canAdd ? "bg-[#062c24] text-white hover:bg-emerald-800 active:scale-95" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
-                    {needsVariant ? "Select a Variant" : canAdd ? "Add to Cart" : avail === 0 ? "Sold Out" : "Max Added"}
+                    {needsVariant ? "Select a Variant" : canAdd ? "Add to Cart" : variantAvail === 0 ? "Sold Out" : "Max Added"}
                   </button>
                 );
               })()}
