@@ -174,7 +174,7 @@ export default function CalendarPage() {
   const [blockReason, setBlockReason] = useState("");
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [linkedOrderId, setLinkedOrderId] = useState<string | null>(null);
-  const [linkedOrderItems, setLinkedOrderItems] = useState<{ name: string; qty: number; price: number }[]>([]);
+  const [linkedOrderItems, setLinkedOrderItems] = useState<{ name: string; qty: number; price: number; variantLabel?: string; variantColor?: string }[]>([]);
 
   // ── Toast ──
   const [toast, setToast] = useState<string | null>(null);
@@ -247,7 +247,11 @@ export default function CalendarPage() {
       if (order.vendorId !== vid) return;
 
       setLinkedOrderId(orderId);
-      setLinkedOrderItems(order.items || []);
+      setLinkedOrderItems((order.items || []).map((i: any) => ({
+        name: i.name, qty: i.qty, price: i.price,
+        variantLabel: i.variantLabel || undefined,
+        variantColor: i.variantColor || undefined,
+      })));
 
       // Pre-fill dates
       if (order.bookingDates?.start) {
@@ -369,10 +373,16 @@ export default function CalendarPage() {
       Object.entries(quantities).forEach(([itemId, qty]) => {
         if (qty > 0) {
           const ref = doc(collection(db, "vendors", vendorId, "availability"));
+          // Find variant info from linked order if available
+          const orderItem = linkedOrderItems.find(oi => {
+            const gearMatch = allGear.find(g => g.name === oi.name || g.id === itemId);
+            return gearMatch?.id === itemId;
+          });
           batch.set(ref, {
             itemId, qty, start, end, type: "booking",
             customer: custName.trim(), phone: custPhone.trim(),
             ...(linkedOrderId ? { orderId: linkedOrderId } : {}),
+            ...(orderItem?.variantLabel ? { variantLabel: orderItem.variantLabel } : {}),
             createdAt: new Date().toISOString(),
           });
         }
@@ -912,9 +922,15 @@ export default function CalendarPage() {
                       </p>
                       <div className="space-y-1">
                         {linkedOrderItems.map((item, i) => (
-                          <div key={i} className="flex justify-between text-[12px]">
-                            <span className="font-semibold text-blue-900">{item.name}</span>
-                            <span className="font-bold text-blue-700">x{item.qty}</span>
+                          <div key={i} className="flex justify-between items-center text-[12px]">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {item.variantColor && <span className="w-3 h-3 rounded-full border border-blue-200 shrink-0" style={{ backgroundColor: item.variantColor }}></span>}
+                              <span className="font-semibold text-blue-900 truncate">
+                                {item.name}
+                                {item.variantLabel && <span className="text-[10px] text-blue-500 ml-1">({item.variantLabel})</span>}
+                              </span>
+                            </div>
+                            <span className="font-bold text-blue-700 shrink-0 ml-2">x{item.qty}</span>
                           </div>
                         ))}
                       </div>

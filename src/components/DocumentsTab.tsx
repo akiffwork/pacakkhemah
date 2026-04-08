@@ -14,7 +14,7 @@ type DocumentsTabProps = {
 type BookingDetails = {
   vendorId: string;
   orderId?: string;
-  items: { name: string; qty: number; price?: number }[];
+  items: { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string }[];
   dates: { start: string; end: string };
   total: number;
 };
@@ -245,9 +245,15 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
                           <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Rental Items</p>
                           <div className="space-y-2">
                             {booking.items.map((item, i) => (
-                              <div key={i} className="flex justify-between text-xs">
-                                <span className="font-bold text-[#062c24]">{item.name}</span>
-                                <span className="font-black text-emerald-600">x{item.qty}</span>
+                              <div key={i} className="flex justify-between items-center text-xs">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  {item.variantColor && <span className="w-3 h-3 rounded-full border border-slate-200 shrink-0" style={{ backgroundColor: item.variantColor }}></span>}
+                                  <span className="font-bold text-[#062c24] truncate">
+                                    {item.name}
+                                    {item.variantLabel && <span className="text-[9px] text-teal-600 ml-1">({item.variantLabel})</span>}
+                                  </span>
+                                </div>
+                                <span className="font-black text-emerald-600 shrink-0 ml-2">x{item.qty}</span>
                               </div>
                             ))}
                           </div>

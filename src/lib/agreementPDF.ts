@@ -11,7 +11,7 @@ type PDFVendor = {
 };
 
 type PDFBooking = {
-  items?: { name: string; qty: number; price?: number }[];
+  items?: { name: string; qty: number; price?: number; variantLabel?: string }[];
   dates?: { start: string; end: string };
   total?: number;
 };
@@ -74,7 +74,7 @@ function buildPage1(vendor: PDFVendor, agreement: PDFAgreement, booking: PDFBook
   const itemsRows = booking?.items?.length
     ? booking.items.map(i => `
       <tr>
-        <td style="padding:8px 12px;border:1px solid #ddd;font-size:11px;">${i.name}</td>
+        <td style="padding:8px 12px;border:1px solid #ddd;font-size:11px;">${i.name}${i.variantLabel ? ` <span style="color:#0d9488;font-size:10px;">(${i.variantLabel})</span>` : ""}</td>
         <td style="padding:8px 12px;border:1px solid #ddd;text-align:center;font-size:11px;">${i.qty}</td>
         <td style="padding:8px 12px;border:1px solid #ddd;text-align:right;font-size:11px;">${i.price ? `RM${i.price * i.qty}` : ""}</td>
       </tr>`).join("")

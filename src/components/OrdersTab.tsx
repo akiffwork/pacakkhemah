@@ -12,7 +12,7 @@ type Order = {
   id: string;
   customerPhone: string;
   customerName?: string;
-  items: { name: string; qty: number; price: number }[];
+  items: { name: string; qty: number; price: number; variantId?: string; variantLabel?: string; variantColor?: string }[];
   totalAmount: number;
   pickupLocation: string;
   bookingDates: { start: string; end: string };
@@ -106,7 +106,10 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
     const base = `${window.location.origin}/agreement?v=${vendorId}&o=${order.id}`;
     try {
       const summary = {
-        items: order.items.map(i => ({ name: i.name, qty: i.qty, price: i.price })),
+        items: order.items.map(i => ({
+          name: i.name, qty: i.qty, price: i.price,
+          ...(i.variantLabel ? { variantLabel: i.variantLabel, variantColor: i.variantColor } : {}),
+        })),
         dates: order.bookingDates,
         total: (order as any).manualPrice || order.totalAmount,
       };
@@ -425,7 +428,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                   </div>
 
                   <div className="text-xs text-slate-400 mt-1">
-                    {order.items.map(i => `${i.name} x${i.qty}`).join(", ")}
+                    {order.items.map(i => `${i.name}${i.variantLabel ? ` (${i.variantLabel})` : ""} x${i.qty}`).join(", ")}
                   </div>
                 </div>
 
@@ -561,9 +564,15 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
               <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Items</p>
               <div className="space-y-2">
                 {selectedOrder.items.map((item, i) => (
-                  <div key={i} className="flex justify-between text-sm">
-                    <span className="text-slate-600">{item.name} x{item.qty}</span>
-                    <span className="font-bold">RM {item.price * item.qty}</span>
+                  <div key={i} className="flex justify-between items-center text-sm">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {item.variantColor && <span className="w-3 h-3 rounded-full border border-slate-200 shrink-0" style={{ backgroundColor: item.variantColor }}></span>}
+                      <span className="text-slate-600 truncate">
+                        {item.name} x{item.qty}
+                        {item.variantLabel && <span className="text-[9px] text-teal-600 ml-1">({item.variantLabel})</span>}
+                      </span>
+                    </div>
+                    <span className="font-bold shrink-0 ml-2">RM {item.price * item.qty}</span>
                   </div>
                 ))}
                 <div className="border-t border-slate-200 pt-2 flex justify-between">

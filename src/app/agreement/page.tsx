@@ -11,7 +11,7 @@ type VendorData = { name: string; rules?: string[] };
 type BookingData = {
   vendorId: string;
   orderId?: string;
-  items: { name: string; qty: number; price?: number }[];
+  items: { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string }[];
   dates: { start: string; end: string };
   total: number;
 };
@@ -80,7 +80,10 @@ function AgreementContent() {
               setBooking({
                 vendorId: vendorId!,
                 orderId: orderIdParam,
-                items: (o.items || []).map((i: any) => ({ name: i.name, qty: i.qty })),
+                items: (o.items || []).map((i: any) => ({
+                  name: i.name, qty: i.qty, price: i.price,
+                  variantLabel: i.variantLabel, variantColor: i.variantColor,
+                })),
                 dates: o.bookingDates || { start: "TBD", end: "TBD" },
                 total: o.manualPrice || o.totalAmount || 0,
               });
@@ -297,8 +300,14 @@ function AgreementContent() {
                 <div className="p-5 space-y-3 bg-white text-sm font-bold text-[#062c24]">
                   {booking?.items?.length ? (
                     booking.items.map((item, i) => (
-                      <div key={i} className="grid grid-cols-12 border-b border-slate-50 pb-2 last:border-0">
-                        <span className="col-span-6 truncate">{item.name}</span>
+                      <div key={i} className="grid grid-cols-12 border-b border-slate-50 pb-2 last:border-0 items-center">
+                        <div className="col-span-6 flex items-center gap-1.5 min-w-0">
+                          {item.variantColor && <span className="w-3 h-3 rounded-full border border-slate-200 shrink-0" style={{ backgroundColor: item.variantColor }}></span>}
+                          <span className="truncate">
+                            {item.name}
+                            {item.variantLabel && <span className="text-[9px] text-teal-600 ml-1">({item.variantLabel})</span>}
+                          </span>
+                        </div>
                         <span className="col-span-2 text-center text-emerald-600">x{item.qty}</span>
                         <span className="col-span-4 text-right text-slate-500 text-xs">
                           {item.price ? `RM ${item.price * item.qty}` : "—"}
