@@ -61,7 +61,6 @@ type VendorData = {
   allow_stacking?: boolean;
   rating?: number; reviewCount?: number;
   services?: ServicesConfig;
-  // NEW: Badge & Mock-up fields
   badges?: Badge[];
   is_mockup?: boolean;
   avg_response_time?: number; // in minutes
@@ -101,7 +100,7 @@ type GearItem = {
 };
 
 type CartItem = GearItem & { qty: number; addSetup?: boolean; selectedVariant?: GearVariant };
-type AvailRule = { itemId?: string; type?: string; start: string; end?: string; qty?: number };
+type AvailRule = { itemId?: string; variantId?: string; type?: string; start: string; end?: string; qty?: number };
 type Discount = { type: string; trigger_nights?: number; discount_percent: number; code?: string; deleted?: boolean; is_public?: boolean };
 type VendorPost = { id: string; content: string; image?: string; pinned?: boolean; createdAt: any };
 type Review = { id: string; customerName: string; rating: number; comment?: string | null; createdAt: any; isVerified?: boolean };
@@ -562,9 +561,16 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
       return totalRemaining;
     }
 
-    // Variant: can't exceed its own stock OR total remaining
+    // Calculate how many of THIS specific variant are booked on these dates
+    const variantBooked = overlapping
+      .filter(r => r.variantId === variantId)
+      .reduce((s, r) => s + (r.qty || 0), 0);
+
     const variantStock = item.variants.find(v => v.id === variantId)?.stock || 0;
-    return Math.min(variantStock, totalRemaining);
+    const variantRemaining = Math.max(0, variantStock - variantBooked);
+
+    // Variant: can't exceed its own stock OR total remaining
+    return Math.min(variantRemaining, totalRemaining);
   }
 
   function getAvailableStock(itemId: string, variantId?: string) {
@@ -610,6 +616,21 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   function removeFromCart(key: string) { setCart(prev => prev.filter(i => getCartKey(i) !== key)); }
   
   function updateCartQty(key: string, delta: number) {
+    if (delta > 0) {
+      const cartItem = cart.find(i => getCartKey(i) === key);
+      if (cartItem) {
+        const vid = cartItem.selectedVariant?.id;
+        const maxVariantStock = vid ? (cartItem.variants?.find(v => v.id === vid)?.stock || 0) : cartItem.stock || 0;
+        const totalAvail = getAvailableStock(cartItem.id);
+        const totalItemInCart = cart.filter(i => i.id === cartItem.id).reduce((sum, i) => sum + i.qty, 0);
+
+        // Block the '+' click if they are hitting the variant ceiling OR the overall item ceiling
+        if (cartItem.qty >= maxVariantStock || totalItemInCart >= totalAvail) {
+          return; 
+        }
+      }
+    }
+
     setCart(prev => prev.map(i => getCartKey(i) === key ? { ...i, qty: Math.max(0, i.qty + delta) } : i).filter(i => i.qty > 0));
   }
 
@@ -1598,10 +1619,22 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                 const hasVars = selectedItem.hasVariants && selectedItem.variants && selectedItem.variants.length > 0;
                 const needsVariant = hasVars && !selectedVariant;
                 const vid = selectedVariant?.id;
-                const avail = getAvailableStock(selectedItem.id, vid);
                 const cartKey = vid ? `${selectedItem.id}__${vid}` : selectedItem.id;
-                const inCart = cart.find(i => getCartKey(i) === cartKey)?.qty || 0;
-                const canAdd = !needsVariant && avail > inCart;
+                
+                // 1. Qty of THIS specific variant in the cart
+                const variantInCart = cart.find(i => getCartKey(i) === cartKey)?.qty || 0;
+                
+                // 2. Qty of ALL variants of this item in the cart combined
+                const totalItemInCart = cart.filter(i => i.id === selectedItem.id).reduce((sum, i) => sum + i.qty, 0);
+
+                // 3. Max stock limits
+                const maxVariantStock = vid ? (selectedItem.variants?.find(v => v.id === vid)?.stock || 0) : selectedItem.stock || 0;
+                const totalAvail = getAvailableStock(selectedItem.id); // Checks overall date availability
+
+                // 4. Validate both limits
+                const canAdd = !needsVariant && (variantInCart < maxVariantStock) && (totalItemInCart < totalAvail);
+                const avail = vid ? getAvailableStock(selectedItem.id, vid) : totalAvail;
+
                 return (
                   <button onClick={() => canAdd && addToCart(selectedItem, selectedVariant || undefined)} disabled={!canAdd}
                     className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl transition-all ${canAdd ? "bg-[#062c24] text-white hover:bg-emerald-800 active:scale-95" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
