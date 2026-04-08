@@ -68,6 +68,14 @@ type VendorData = {
   total_orders?: number;
 };
 
+type GearVariant = {
+  id: string;
+  color?: { label: string; hex: string };
+  size?: string;
+  price: number;
+  stock: number;
+};
+
 type GearItem = {
   id: string; name: string; price: number; img?: string;
   images?: string[];
@@ -75,6 +83,8 @@ type GearItem = {
   stock?: number; inc?: string[];
   linkedItems?: { itemId: string; qty: number }[];
   deleted?: boolean;
+  hasVariants?: boolean;
+  variants?: GearVariant[];
   setup?: {
     available: boolean;
     fee: number;
@@ -90,7 +100,7 @@ type GearItem = {
   };
 };
 
-type CartItem = GearItem & { qty: number; addSetup?: boolean };
+type CartItem = GearItem & { qty: number; addSetup?: boolean; selectedVariant?: GearVariant };
 type AvailRule = { itemId?: string; type?: string; start: string; end?: string; qty?: number };
 type Discount = { type: string; trigger_nights?: number; discount_percent: number; code?: string; deleted?: boolean; is_public?: boolean };
 type VendorPost = { id: string; content: string; image?: string; pinned?: boolean; createdAt: any };
@@ -338,6 +348,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   const [showCart, setShowCart] = useState(false);
   const [showItemModal, setShowItemModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState<GearItem | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<GearVariant | null>(null);
   const [selectedHub, setSelectedHub] = useState("");
   const [termsAgreed, setTermsAgreed] = useState(false);
   const [blockState, setBlockState] = useState<null | "unapproved" | "vacation" | "nocredits">(null);
@@ -494,6 +505,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
       const item = allGear.find(g => g.id === itemParam);
       if (item) {
         setSelectedItem(item);
+        setSelectedVariant(null);
         setShowItemModal(true);
       }
     }
@@ -528,15 +540,19 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   // CART FUNCTIONS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  function getItemStock(itemId: string): number {
+  function getItemStock(itemId: string, variantId?: string): number {
     const item = allGear.find(g => g.id === itemId);
     if (!item) return 0;
-    if (!selectedDates[0] || !selectedDates[1]) return item.stock || 0;
+    const baseStock = variantId && item.variants?.length
+      ? (item.variants.find(v => v.id === variantId)?.stock || 0)
+      : (item.stock || 0);
+    if (!selectedDates[0] || !selectedDates[1]) return baseStock;
     const overlapping = availRules.filter(r => r.itemId === itemId && new Date(r.start) <= selectedDates[1]! && new Date(r.end || r.start) >= selectedDates[0]!);
-    return Math.max(0, (item.stock || 0) - overlapping.reduce((s, r) => s + (r.qty || 0), 0));
+    const booked = overlapping.reduce((s, r) => s + (r.qty || 0), 0);
+    return Math.max(0, baseStock - (variantId ? Math.ceil(booked * (baseStock / Math.max(item.stock || 1, 1))) : booked));
   }
 
-  function getAvailableStock(itemId: string) {
+  function getAvailableStock(itemId: string, variantId?: string) {
     if (!selectedDates[0] || !selectedDates[1]) return 999;
     const item = allGear.find(g => g.id === itemId);
     if (!item) return 0;
@@ -551,33 +567,39 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         minPackages = Math.min(minPackages, canFulfill);
       }
       if (minPackages === Infinity) minPackages = 0;
-      // Cap by package's own stock
       return Math.min(minPackages, item.stock || 0);
     }
 
-    // Regular item
-    return getItemStock(itemId);
+    // Regular item (with optional variant)
+    return getItemStock(itemId, variantId);
   }
 
-  function addToCart(item: GearItem) {
+  function addToCart(item: GearItem, variant?: GearVariant) {
+    const cartKey = variant ? `${item.id}__${variant.id}` : item.id;
+    const cartPrice = variant ? variant.price : item.price;
     setCart(prev => {
-      const ex = prev.find(i => i.id === item.id);
-      if (ex) return prev.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i);
-      return [...prev, { ...item, qty: 1, addSetup: false }];
+      const ex = prev.find(i => (i.selectedVariant ? `${i.id}__${i.selectedVariant.id}` : i.id) === cartKey);
+      if (ex) return prev.map(i => (i.selectedVariant ? `${i.id}__${i.selectedVariant.id}` : i.id) === cartKey ? { ...i, qty: i.qty + 1 } : i);
+      return [...prev, { ...item, price: cartPrice, qty: 1, addSetup: false, selectedVariant: variant }];
     });
     setShowItemModal(false);
-    setAddToast(item.name);
+    setSelectedVariant(null);
+    setAddToast(variant ? `${item.name} (${[variant.color?.label, variant.size].filter(Boolean).join(", ")})` : item.name);
     setTimeout(() => setAddToast(null), 2000);
   }
 
-  function removeFromCart(id: string) { setCart(prev => prev.filter(i => i.id !== id)); }
-  
-  function updateCartQty(id: string, delta: number) {
-    setCart(prev => prev.map(i => i.id === id ? { ...i, qty: Math.max(0, i.qty + delta) } : i).filter(i => i.qty > 0));
+  function getCartKey(item: CartItem): string {
+    return item.selectedVariant ? `${item.id}__${item.selectedVariant.id}` : item.id;
   }
 
-  function toggleItemSetup(id: string) {
-    setCart(prev => prev.map(i => i.id === id ? { ...i, addSetup: !i.addSetup } : i));
+  function removeFromCart(key: string) { setCart(prev => prev.filter(i => getCartKey(i) !== key)); }
+  
+  function updateCartQty(key: string, delta: number) {
+    setCart(prev => prev.map(i => getCartKey(i) === key ? { ...i, qty: Math.max(0, i.qty + delta) } : i).filter(i => i.qty > 0));
+  }
+
+  function toggleItemSetup(cartKey: string) {
+    setCart(prev => prev.map(i => getCartKey(i) === cartKey ? { ...i, addSetup: !i.addSetup } : i));
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -691,7 +713,10 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
     
     // Build cart items with prices and setup
     const cartLines = cart.map(i => {
-      let line = `• ${i.name} (x${i.qty}) - RM${i.price * i.qty}`;
+      const variantLabel = i.selectedVariant
+        ? ` [${[i.selectedVariant.color?.label, i.selectedVariant.size].filter(Boolean).join(", ")}]`
+        : "";
+      let line = `• ${i.name}${variantLabel} (x${i.qty}) - RM${i.price * i.qty}`;
       if (i.addSetup && i.setup?.available) {
         line += ` + Setup RM${i.setup.fee}`;
       }
@@ -790,7 +815,8 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
           cartItems: cart.map(i => ({ 
             id: i.id, name: i.name, qty: i.qty, price: i.price,
             addSetup: i.addSetup || false,
-            setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0
+            setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0,
+            ...(i.selectedVariant ? { variantId: i.selectedVariant.id, variantLabel: [i.selectedVariant.color?.label, i.selectedVariant.size].filter(Boolean).join(", ") } : {}),
           })),
         });
       } catch (e) { console.error("Analytics write error:", e); }
@@ -825,6 +851,11 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
             id: i.id, name: i.name, qty: i.qty, price: i.price,
             addSetup: i.addSetup || false,
             setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0,
+            ...(i.selectedVariant ? {
+              variantId: i.selectedVariant.id,
+              variantLabel: [i.selectedVariant.color?.label, i.selectedVariant.size].filter(Boolean).join(", "),
+              variantColor: i.selectedVariant.color?.hex || null,
+            } : {}),
           })),
           totalAmount: total,
           pickupLocation: fulfillmentType === "pickup" ? selectedHub : deliveryAddress,
@@ -841,7 +872,11 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         localStorage.setItem("current_booking", JSON.stringify({
           vendorId,
           orderId: orderRef.id,
-          items: cart.map(i => ({ name: i.name, qty: i.qty })),
+          items: cart.map(i => ({
+            name: i.name + (i.selectedVariant ? ` (${[i.selectedVariant.color?.label, i.selectedVariant.size].filter(Boolean).join(", ")})` : ""),
+            qty: i.qty,
+            price: i.price,
+          })),
           dates: { start: pickupDate, end: returnDate },
           total,
         }));
@@ -1160,15 +1195,19 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
               <div id="demo-gear" className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {filteredGear(activeCategory || categories[0] || "").map((item, idx) => {
                   const avail = getAvailableStock(item.id);
-                  const inCart = cart.find(c => c.id === item.id)?.qty || 0;
+                  const inCart = cart.filter(c => c.id === item.id).reduce((s, c) => s + c.qty, 0);
                   const canAdd = avail > inCart;
                   const hasSetupOption = item.setup?.available;
                   const hasMultipleImages = (item.images?.length || 0) > 1;
                   const linkedItems = getLinkedItemsData(item);
+                  const hasVars = item.hasVariants && item.variants && item.variants.length > 0;
+                  const priceRange = hasVars
+                    ? { min: Math.min(...item.variants!.map(v => v.price)), max: Math.max(...item.variants!.map(v => v.price)) }
+                    : null;
                   
                   return (
                     <div key={item.id} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm stagger-in relative" style={{ animationDelay: `${idx * 50}ms` }}>
-                      <div className="aspect-square relative cursor-pointer" onClick={() => { setSelectedItem(item); setShowItemModal(true); }}>
+                      <div className="aspect-square relative cursor-pointer" onClick={() => { setSelectedItem(item); setSelectedVariant(null); setShowItemModal(true); }}>
                         <img src={item.images?.[0] || item.img || "/placeholder.jpg"} className="w-full h-full object-cover" alt={item.name} />
                         {hasMultipleImages && (
                           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
@@ -1186,7 +1225,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                         {!inCart && (
                           <button
                             onClick={(e) => { e.stopPropagation(); shareItem(item); }}
-                            className="absolute top-2 right-2 w-7 h-7 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-slate-400 hover:text-[#062c24] shadow-sm transition-all"
+                            className="absolute top-2 right-2 w-8 h-8 bg-black/40 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-black/60 shadow-md transition-all"
                           >
                             <i className="fas fa-share-alt text-[10px]"></i>
                           </button>
@@ -1194,8 +1233,17 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                       </div>
                       <div className="p-3">
                         <p className="text-[10px] font-black uppercase truncate text-[#062c24]">{item.name}</p>
+                        {/* Color swatches */}
+                        {hasVars && (
+                          <div className="flex gap-1 mt-1.5">
+                            {item.variants!.slice(0, 6).map(v => (
+                              <div key={v.id} className="w-4 h-4 rounded-full border border-slate-200 shadow-sm" style={{ backgroundColor: v.color?.hex || "#ccc" }} title={v.color?.label || v.size || ""} />
+                            ))}
+                            {item.variants!.length > 6 && <span className="text-[8px] text-slate-400 font-bold self-center">+{item.variants!.length - 6}</span>}
+                          </div>
+                        )}
                         {/* Spec pills */}
-                        {item.specs && (item.specs.maxPax || item.specs.size || item.specs.puRating || item.specs.layers || item.specs.weight || item.specs.tentType) && (
+                        {!hasVars && item.specs && (item.specs.maxPax || item.specs.size || item.specs.puRating || item.specs.layers || item.specs.weight || item.specs.tentType) && (
                           <div className="flex flex-wrap gap-1 mt-1">
                             {item.specs.tentType ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.tentType}</span> : null}
                             {item.specs.maxPax ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.maxPax}P</span> : null}
@@ -1205,11 +1253,25 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                             {item.specs.weight ? <span className="text-[7px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{item.specs.weight}</span> : null}
                           </div>
                         )}
-                        <p className="text-[10px] font-bold text-emerald-600 mt-1">RM {item.price}/night</p>
-                        <button onClick={() => canAdd && addToCart(item)} disabled={!canAdd}
-                          className={`w-full mt-2 py-2.5 rounded-xl text-[9px] font-black uppercase transition-all ${canAdd ? "bg-[#062c24] text-white hover:bg-emerald-800 active:scale-95" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
-                          {canAdd ? "Add to Cart" : avail === 0 ? "Sold Out" : "Max Added"}
-                        </button>
+                        {/* Price */}
+                        <p className="text-[10px] font-bold text-emerald-600 mt-1">
+                          {priceRange && priceRange.min !== priceRange.max
+                            ? `RM ${priceRange.min} – ${priceRange.max}/night`
+                            : `RM ${item.price}/night`
+                          }
+                        </p>
+                        {/* Add to cart / Select variant */}
+                        {hasVars ? (
+                          <button onClick={() => { setSelectedItem(item); setSelectedVariant(null); setShowItemModal(true); }}
+                            className="w-full mt-2 py-2.5 rounded-xl text-[9px] font-black uppercase transition-all bg-[#062c24] text-white hover:bg-emerald-800 active:scale-95">
+                            Select Variant
+                          </button>
+                        ) : (
+                          <button onClick={() => canAdd && addToCart(item)} disabled={!canAdd}
+                            className={`w-full mt-2 py-2.5 rounded-xl text-[9px] font-black uppercase transition-all ${canAdd ? "bg-[#062c24] text-white hover:bg-emerald-800 active:scale-95" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
+                            {canAdd ? "Add to Cart" : avail === 0 ? "Sold Out" : "Max Added"}
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -1349,8 +1411,99 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
             </div>
             <div className="p-6">
               <h3 className="text-lg font-black uppercase text-[#062c24] mb-1">{selectedItem.name}</h3>
-              <p className="text-emerald-600 font-black text-xl mb-3">RM {selectedItem.price}<span className="text-xs text-slate-400 font-bold">/night</span></p>
+              <p className="text-emerald-600 font-black text-xl mb-3">
+                RM {selectedVariant ? selectedVariant.price : selectedItem.price}
+                <span className="text-xs text-slate-400 font-bold">/night</span>
+                {selectedVariant && (
+                  <span className="text-xs font-bold text-slate-400 ml-2">
+                    ({[selectedVariant.color?.label, selectedVariant.size].filter(Boolean).join(", ")})
+                  </span>
+                )}
+              </p>
               {selectedItem.desc && <p className="text-slate-500 text-sm mb-4 leading-relaxed">{selectedItem.desc}</p>}
+
+              {/* Variant Selector */}
+              {selectedItem.hasVariants && selectedItem.variants && selectedItem.variants.length > 0 && (() => {
+                const colors = [...new Map(selectedItem.variants!.filter(v => v.color?.label).map(v => [v.color!.label, v.color!])).values()];
+                const sizes = [...new Set(selectedItem.variants!.filter(v => v.size).map(v => v.size!))];
+                const selectedColor = selectedVariant?.color?.label || null;
+                const selectedSize = selectedVariant?.size || null;
+
+                function pickVariant(color: string | null, size: string | null) {
+                  const match = selectedItem!.variants!.find(v =>
+                    (!color || v.color?.label === color) &&
+                    (!size || v.size === size)
+                  );
+                  setSelectedVariant(match || null);
+                }
+
+                return (
+                  <div className="mb-4 space-y-3">
+                    {/* Color swatches */}
+                    {colors.length > 0 && (
+                      <div>
+                        <p className="text-[9px] font-black text-slate-400 uppercase mb-2">
+                          Colour {selectedColor && <span className="text-[#062c24] normal-case">— {selectedColor}</span>}
+                        </p>
+                        <div className="flex gap-2 flex-wrap">
+                          {colors.map(c => {
+                            const isActive = selectedColor === c.label;
+                            const variantForColor = selectedItem!.variants!.find(v => v.color?.label === c.label && (!selectedSize || v.size === selectedSize));
+                            const outOfStock = variantForColor ? getAvailableStock(selectedItem!.id, variantForColor.id) === 0 : false;
+                            return (
+                              <button
+                                key={c.label}
+                                onClick={() => pickVariant(c.label, selectedSize)}
+                                className={`relative w-9 h-9 rounded-full border-2 transition-all ${
+                                  isActive ? "border-[#062c24] scale-110 shadow-md" : "border-slate-200 hover:border-slate-400"
+                                } ${outOfStock ? "opacity-40" : ""}`}
+                                style={{ backgroundColor: c.hex }}
+                                title={c.label}
+                              >
+                                {isActive && <span className="absolute inset-0 flex items-center justify-center text-white text-[10px] drop-shadow"><i className="fas fa-check"></i></span>}
+                                {outOfStock && <span className="absolute inset-0 flex items-center justify-center"><span className="w-full h-0.5 bg-red-500 rotate-45 absolute"></span></span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {/* Size pills */}
+                    {sizes.length > 0 && (
+                      <div>
+                        <p className="text-[9px] font-black text-slate-400 uppercase mb-2">
+                          Size {selectedSize && <span className="text-[#062c24] normal-case">— {selectedSize}</span>}
+                        </p>
+                        <div className="flex gap-2 flex-wrap">
+                          {sizes.map(s => {
+                            const isActive = selectedSize === s;
+                            const variantForSize = selectedItem!.variants!.find(v => v.size === s && (!selectedColor || v.color?.label === selectedColor));
+                            const outOfStock = variantForSize ? getAvailableStock(selectedItem!.id, variantForSize.id) === 0 : false;
+                            return (
+                              <button
+                                key={s}
+                                onClick={() => pickVariant(selectedColor, s)}
+                                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase border-2 transition-all ${
+                                  isActive ? "border-[#062c24] bg-[#062c24] text-white" : "border-slate-200 text-slate-600 hover:border-slate-400"
+                                } ${outOfStock ? "opacity-40 line-through" : ""}`}
+                              >
+                                {s}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {/* Stock indicator */}
+                    {selectedVariant && (
+                      <p className="text-[10px] font-bold text-slate-400">
+                        <i className="fas fa-box mr-1"></i>
+                        {getAvailableStock(selectedItem!.id, selectedVariant.id)} available
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
               {/* Specs Grid */}
               {selectedItem.specs && (selectedItem.specs.maxPax || selectedItem.specs.size || selectedItem.specs.puRating || selectedItem.specs.layers || selectedItem.specs.weight || selectedItem.specs.tentType) && (
                 <div className="mb-4 grid grid-cols-2 gap-2">
@@ -1426,13 +1579,17 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                 </div>
               )}
               {(() => {
-                const avail = getAvailableStock(selectedItem.id);
-                const inCart = cart.find(i => i.id === selectedItem.id)?.qty || 0;
-                const canAdd = avail > inCart;
+                const hasVars = selectedItem.hasVariants && selectedItem.variants && selectedItem.variants.length > 0;
+                const needsVariant = hasVars && !selectedVariant;
+                const vid = selectedVariant?.id;
+                const avail = getAvailableStock(selectedItem.id, vid);
+                const cartKey = vid ? `${selectedItem.id}__${vid}` : selectedItem.id;
+                const inCart = cart.find(i => getCartKey(i) === cartKey)?.qty || 0;
+                const canAdd = !needsVariant && avail > inCart;
                 return (
-                  <button onClick={() => canAdd && addToCart(selectedItem)} disabled={!canAdd}
+                  <button onClick={() => canAdd && addToCart(selectedItem, selectedVariant || undefined)} disabled={!canAdd}
                     className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl transition-all ${canAdd ? "bg-[#062c24] text-white hover:bg-emerald-800 active:scale-95" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
-                    {canAdd ? "Add to Cart" : avail === 0 ? "Sold Out" : "Max Added"}
+                    {needsVariant ? "Select a Variant" : canAdd ? "Add to Cart" : avail === 0 ? "Sold Out" : "Max Added"}
                   </button>
                 );
               })()}
@@ -1452,27 +1609,39 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
             
             <div className="flex-1 overflow-y-auto p-5 space-y-5" style={{ scrollbarWidth: "none" }}>
               <div className="space-y-2">
-                {cart.map(item => (
-                  <div key={item.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1 min-w-0 mr-3">
-                        <p className="text-[10px] font-black uppercase truncate">{item.name}</p>
-                        <p className="text-[9px] font-bold text-slate-400">RM {item.price} × {item.qty} = RM {item.price * item.qty}</p>
+                {cart.map(item => {
+                  const key = getCartKey(item);
+                  const variantLabel = item.selectedVariant
+                    ? [item.selectedVariant.color?.label, item.selectedVariant.size].filter(Boolean).join(", ")
+                    : null;
+                  return (
+                    <div key={key} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0 mr-3">
+                          <div className="flex items-center gap-1.5">
+                            {item.selectedVariant?.color?.hex && (
+                              <span className="w-3.5 h-3.5 rounded-full border border-slate-200 shrink-0" style={{ backgroundColor: item.selectedVariant.color.hex }}></span>
+                            )}
+                            <p className="text-[10px] font-black uppercase truncate">{item.name}</p>
+                          </div>
+                          {variantLabel && <p className="text-[8px] font-bold text-teal-600 mt-0.5">{variantLabel}</p>}
+                          <p className="text-[9px] font-bold text-slate-400">RM {item.price} × {item.qty} = RM {item.price * item.qty}</p>
+                        </div>
+                        <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-100 p-1">
+                          <button onClick={() => updateCartQty(key, -1)} className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors font-black">−</button>
+                          <span className="text-xs font-black text-[#062c24] w-5 text-center">{item.qty}</span>
+                          <button onClick={() => updateCartQty(key, 1)} className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors font-black">+</button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-100 p-1">
-                        <button onClick={() => updateCartQty(item.id, -1)} className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors font-black">−</button>
-                        <span className="text-xs font-black text-[#062c24] w-5 text-center">{item.qty}</span>
-                        <button onClick={() => updateCartQty(item.id, 1)} className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors font-black">+</button>
-                      </div>
+                      {fulfillmentType === "delivery" && item.setup?.available && !useCombo && (
+                        <label className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-100 cursor-pointer">
+                          <input type="checkbox" checked={item.addSetup || false} onChange={() => toggleItemSetup(getCartKey(item))} className="w-4 h-4 accent-blue-500 rounded" />
+                          <span className="text-[9px] font-bold text-blue-600 uppercase"><i className="fas fa-tools mr-1"></i>Add Setup +RM{item.setup.fee}</span>
+                        </label>
+                      )}
                     </div>
-                    {fulfillmentType === "delivery" && item.setup?.available && !useCombo && (
-                      <label className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-100 cursor-pointer">
-                        <input type="checkbox" checked={item.addSetup || false} onChange={() => toggleItemSetup(item.id)} className="w-4 h-4 accent-blue-500 rounded" />
-                        <span className="text-[9px] font-bold text-blue-600 uppercase"><i className="fas fa-tools mr-1"></i>Add Setup +RM{item.setup.fee}</span>
-                      </label>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {hasDelivery && (

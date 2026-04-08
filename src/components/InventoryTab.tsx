@@ -12,6 +12,14 @@ import GearFlyerModal from "@/components/GearFlyerModal";
 
 type InventoryTabProps = { vendorId: string };
 
+type GearVariant = {
+  id: string;
+  color?: { label: string; hex: string };
+  size?: string;
+  price: number;
+  stock: number;
+};
+
 type GearItem = {
   id: string; 
   name: string; 
@@ -25,6 +33,8 @@ type GearItem = {
   inc?: string[]; // Text-based includes (legacy)
   linkedItems?: { itemId: string; qty: number }[]; // Linked add-on items for packages
   deleted?: boolean;
+  hasVariants?: boolean;
+  variants?: GearVariant[];
   setup?: {
     available: boolean;
     fee: number;
@@ -90,6 +100,10 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
   const [specWeight, setSpecWeight] = useState("");
   const [specTentType, setSpecTentType] = useState("");
 
+  // Variant form state
+  const [hasVariants, setHasVariants] = useState(false);
+  const [variants, setVariants] = useState<GearVariant[]>([]);
+
   // Discount form state
   const [discType, setDiscType] = useState("nightly_discount");
   const [discPercent, setDiscPercent] = useState("");
@@ -124,6 +138,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     setPendingFiles([]);
     setSetupAvailable(false); setSetupFee(""); setSetupDesc("");
     setSpecSize(""); setSpecMaxPax(""); setSpecPuRating(""); setSpecLayers(""); setSpecWeight(""); setSpecTentType("");
+    setHasVariants(false); setVariants([]);
     setShowGearModal(true);
   }
 
@@ -148,6 +163,8 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     setSpecLayers(g.specs?.layers || "");
     setSpecWeight(g.specs?.weight || "");
     setSpecTentType(g.specs?.tentType || "");
+    setHasVariants(g.hasVariants || false);
+    setVariants(g.variants || []);
     setShowGearModal(true);
   }
 
@@ -165,6 +182,11 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
       }
       
       const allImages = [...gearImages, ...newUrls];
+
+      // Calculate stock and price from variants if enabled
+      const cleanVariants = hasVariants ? variants.filter(v => v.stock > 0 || v.color?.label || v.size) : [];
+      const variantStock = cleanVariants.length > 0 ? cleanVariants.reduce((s, v) => s + v.stock, 0) : null;
+      const variantMinPrice = cleanVariants.length > 0 ? Math.min(...cleanVariants.map(v => v.price)) : null;
       
       const data: any = {
         vendorId, 
@@ -173,12 +195,14 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
         type: gearType,
         name: gearName, 
         desc: gearDesc,
-        price: Number(gearPrice) || 0, 
-        stock: Number(gearStock) || 0,
-        img: allImages[0] || "", // First image as main (legacy support)
+        price: variantMinPrice ?? (Number(gearPrice) || 0), 
+        stock: variantStock ?? (Number(gearStock) || 0),
+        img: allImages[0] || "",
         images: allImages,
         inc: gearInc.filter(Boolean), 
         deleted: false,
+        hasVariants: hasVariants && cleanVariants.length > 0,
+        variants: hasVariants && cleanVariants.length > 0 ? cleanVariants : [],
       };
       
       // Add linked items for packages
@@ -248,6 +272,30 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
 
   function removeLinkedItem(index: number) {
     setLinkedItems(prev => prev.filter((_, i) => i !== index));
+  }
+
+  function addVariant() {
+    setVariants(prev => [...prev, {
+      id: `v${Date.now()}`,
+      color: { label: "", hex: "#062c24" },
+      size: "",
+      price: Number(gearPrice) || 0,
+      stock: 1,
+    }]);
+  }
+
+  function updateVariant(index: number, updates: Partial<GearVariant>) {
+    setVariants(prev => prev.map((v, i) => i === index ? { ...v, ...updates } : v));
+  }
+
+  function updateVariantColor(index: number, field: "label" | "hex", value: string) {
+    setVariants(prev => prev.map((v, i) =>
+      i === index ? { ...v, color: { ...v.color!, [field]: value } } : v
+    ));
+  }
+
+  function removeVariant(index: number) {
+    setVariants(prev => prev.filter((_, i) => i !== index));
   }
 
   // --- DISCOUNT ACTIONS ---
@@ -476,35 +524,135 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                 <p className={helperCls}>Group similar items together</p>
               </div>
 
-              {/* Name & Stock */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={labelCls}>Item Name *</label>
-                  <input value={gearName} onChange={e => setGearName(e.target.value)} className={inputCls} placeholder="e.g. Naturehike 2P Tent" />
-                </div>
-                <div>
-                  <label className={labelCls}>Total Stock *</label>
-                  <input type="number" value={gearStock} onChange={e => setGearStock(e.target.value)} className={inputCls} placeholder="e.g. 5" />
-                  <p className={helperCls}>How many you own</p>
-                </div>
+              {/* Name */}
+              <div>
+                <label className={labelCls}>Item Name *</label>
+                <input value={gearName} onChange={e => setGearName(e.target.value)} className={inputCls} placeholder="e.g. Naturehike 2P Tent" />
               </div>
 
               {/* Description */}
               <div>
                 <label className={labelCls}>Description</label>
-                <textarea 
-                  value={gearDesc} 
-                  onChange={e => setGearDesc(e.target.value)} 
-                  rows={2} 
-                  className={`${inputCls} resize-none`} 
+                <textarea
+                  value={gearDesc}
+                  onChange={e => setGearDesc(e.target.value)}
+                  rows={2}
+                  className={`${inputCls} resize-none`}
                   placeholder="Brief description for customers..."
                 />
               </div>
 
-              {/* Price */}
-              <div>
-                <label className={labelCls}>Price (RM per night) *</label>
-                <input type="number" value={gearPrice} onChange={e => setGearPrice(e.target.value)} className={inputCls} placeholder="e.g. 50" />
+              {/* Stock & Price — hidden when variants enabled */}
+              {!hasVariants && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelCls}>Total Stock *</label>
+                    <input type="number" value={gearStock} onChange={e => setGearStock(e.target.value)} className={inputCls} placeholder="e.g. 5" />
+                    <p className={helperCls}>How many you own</p>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Price (RM/night) *</label>
+                    <input type="number" value={gearPrice} onChange={e => setGearPrice(e.target.value)} className={inputCls} placeholder="e.g. 50" />
+                  </div>
+                </div>
+              )}
+
+              {/* Variants Toggle */}
+              <div className={`p-4 rounded-xl border transition-all ${hasVariants ? "bg-teal-50 border-teal-200" : "bg-slate-50 border-slate-100"}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <label className="text-[10px] font-black text-teal-700 uppercase flex items-center gap-2">
+                      <i className="fas fa-palette"></i> Colour / Size Variants
+                    </label>
+                    <p className="text-[9px] text-teal-600">Different colours or sizes with individual stock and pricing</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={hasVariants}
+                    onChange={e => setHasVariants(e.target.checked)}
+                    className="w-5 h-5 accent-teal-500"
+                  />
+                </div>
+
+                {hasVariants && (
+                  <div className="space-y-3 pt-3 border-t border-teal-100">
+                    {variants.length === 0 ? (
+                      <p className="text-[10px] text-teal-400 text-center py-2">No variants yet. Add your first one below.</p>
+                    ) : (
+                      variants.map((v, i) => (
+                        <div key={v.id} className="bg-white rounded-xl p-3 border border-teal-100 space-y-2.5">
+                          {/* Colour row */}
+                          <div className="flex gap-2 items-center">
+                            <input
+                              type="color"
+                              value={v.color?.hex || "#062c24"}
+                              onChange={e => updateVariantColor(i, "hex", e.target.value)}
+                              className="w-8 h-8 rounded-lg border border-slate-200 cursor-pointer p-0.5"
+                            />
+                            <input
+                              value={v.color?.label || ""}
+                              onChange={e => updateVariantColor(i, "label", e.target.value)}
+                              className="flex-1 bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-semibold outline-none focus:border-teal-400"
+                              placeholder="Colour name (e.g. Army Green)"
+                            />
+                            <button onClick={() => removeVariant(i)} className="text-red-400 hover:text-red-600 p-1">
+                              <i className="fas fa-times"></i>
+                            </button>
+                          </div>
+                          {/* Size + Price + Stock row */}
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label className="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">Size</label>
+                              <input
+                                value={v.size || ""}
+                                onChange={e => updateVariant(i, { size: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-semibold outline-none focus:border-teal-400"
+                                placeholder="S / M / L"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">Price (RM)</label>
+                              <input
+                                type="number"
+                                value={v.price || ""}
+                                onChange={e => updateVariant(i, { price: Number(e.target.value) || 0 })}
+                                className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-semibold outline-none focus:border-teal-400"
+                                placeholder="170"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">Stock</label>
+                              <input
+                                type="number"
+                                value={v.stock || ""}
+                                onChange={e => updateVariant(i, { stock: Number(e.target.value) || 0 })}
+                                className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-semibold outline-none focus:border-teal-400"
+                                placeholder="2"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                    <button onClick={addVariant}
+                      className="w-full py-2.5 rounded-xl text-[10px] font-black uppercase border-2 border-dashed border-teal-300 text-teal-600 hover:bg-teal-50 transition-all">
+                      <i className="fas fa-plus mr-1"></i> Add Variant
+                    </button>
+
+                    {/* Auto-calculated summary */}
+                    {variants.length > 0 && (
+                      <div className="bg-teal-100/50 rounded-lg p-2.5 flex justify-between text-[10px] font-bold text-teal-700">
+                        <span>Total Stock: {variants.reduce((s, v) => s + v.stock, 0)}</span>
+                        <span>
+                          Price: RM{Math.min(...variants.map(v => v.price))}
+                          {Math.min(...variants.map(v => v.price)) !== Math.max(...variants.map(v => v.price))
+                            ? ` – RM${Math.max(...variants.map(v => v.price))}`
+                            : ""}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Photos - Multiple */}
