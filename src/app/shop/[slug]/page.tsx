@@ -1342,6 +1342,18 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                             className="w-full mt-2 py-2.5 rounded-xl text-[9px] font-black uppercase transition-all bg-[#062c24] text-white hover:bg-emerald-800 active:scale-95">
                             Select Variant
                           </button>
+                        ) : inCart > 0 ? (
+                          <div className="flex items-center mt-2 gap-1">
+                            <button onClick={(e) => { e.stopPropagation(); updateCartQty(item.id, -1); }}
+                              className="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-500 flex items-center justify-center text-sm font-black transition-colors">
+                              {inCart === 1 ? <i className="fas fa-trash text-[9px]"></i> : "−"}
+                            </button>
+                            <span className="flex-1 text-center text-xs font-black text-[#062c24]">{inCart}</span>
+                            <button onClick={(e) => { e.stopPropagation(); canAdd && addToCart(item); }} disabled={!canAdd}
+                              className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black transition-colors ${canAdd ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100" : "bg-slate-50 text-slate-300 cursor-not-allowed"}`}>
+                              +
+                            </button>
+                          </div>
                         ) : (
                           <button onClick={() => canAdd && addToCart(item)} disabled={!canAdd}
                             className={`w-full mt-2 py-2.5 rounded-xl text-[9px] font-black uppercase transition-all ${canAdd ? "bg-[#062c24] text-white hover:bg-emerald-800 active:scale-95" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
