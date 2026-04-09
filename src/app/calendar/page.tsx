@@ -13,10 +13,20 @@ import { onAuthStateChanged } from "firebase/auth";
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════
 
+type GearVariant = {
+  id: string;
+  color?: { label: string; hex: string };
+  size?: string;
+  price: number;
+  stock: number;
+};
+
 type GearItem = {
   id: string; name: string; stock: number;
   img?: string; category?: string; type?: string; deleted?: boolean;
   linkedItems?: { itemId: string; qty: number }[];
+  hasVariants?: boolean;
+  variants?: GearVariant[];
 };
 
 type Booking = {
@@ -24,6 +34,7 @@ type Booking = {
   start: string; end: string; type?: string;
   customer?: string; phone?: string; reason?: string;
   blockId?: string; orderId?: string;
+  variantId?: string; variantLabel?: string;
 };
 
 type GroupedEntry = {
@@ -34,7 +45,7 @@ type GroupedEntry = {
   reason?: string;
   start: string;
   end: string;
-  items: { bookingId: string; name: string; qty: number; category: string }[];
+  items: { bookingId: string; name: string; qty: number; category: string; variantId?: string; variantLabel?: string; variantColor?: string }[];
   nights: number;
   blockId?: string;
 };
@@ -262,10 +273,13 @@ export default function CalendarPage() {
       if (order.customerName) setCustName(order.customerName);
       if (order.customerPhone) setCustPhone(order.customerPhone);
 
-      // Pre-fill quantities — match order items to gear by ID
+      // Pre-fill quantities — match order items to gear by ID (with variant support)
       const qts: Record<string, number> = {};
       for (const item of (order.items || [])) {
-        if (item.id) qts[item.id] = item.qty || 1;
+        if (item.id) {
+          const key = item.variantId ? `${item.id}__${item.variantId}` : item.id;
+          qts[key] = item.qty || 1;
+        }
       }
       setQuantities(qts);
 
@@ -322,11 +336,15 @@ export default function CalendarPage() {
       }
       const item = allGear.find(g => g.id === b.itemId);
       if (item) {
+        const variant = b.variantId ? item.variants?.find(v => v.id === b.variantId) : undefined;
         groups[key].items.push({
           bookingId: b.id,
           name: item.name,
           qty: b.qty || 1,
           category: item.category || (item.type === "package" ? "Packages" : "Add-ons"),
+          variantId: b.variantId,
+          variantLabel: variant ? [variant.color?.label, variant.size].filter(Boolean).join(", ") : b.variantLabel,
+          variantColor: variant?.color?.hex,
         });
       }
     });
@@ -355,34 +373,65 @@ export default function CalendarPage() {
     const batch = writeBatch(db);
 
     if (addType === "block") {
-      const blockId = generateId();
-      allGear.forEach(gear => {
-        const ref = doc(collection(db, "vendors", vendorId, "availability"));
-        batch.set(ref, {
-          itemId: gear.id, qty: gear.stock,
-          start, end, type: "block",
-          reason: blockReason || "Time Off",
-          blockId, createdAt: new Date().toISOString(),
+      const hasItems = Object.values(quantities).some(q => q > 0);
+      if (!hasItems) {
+        // Fallback: block ALL items at full stock (legacy behavior)
+        const blockId = generateId();
+        allGear.forEach(gear => {
+          const ref = doc(collection(db, "vendors", vendorId, "availability"));
+          batch.set(ref, {
+            itemId: gear.id, qty: gear.stock,
+            start, end, type: "block",
+            reason: blockReason || "Time Off",
+            blockId, createdAt: new Date().toISOString(),
+          });
+          // Also block each variant individually
+          if (gear.hasVariants && gear.variants?.length) {
+            gear.variants.forEach(v => {
+              const vRef = doc(collection(db, "vendors", vendorId, "availability"));
+              batch.set(vRef, {
+                itemId: gear.id, variantId: v.id, qty: v.stock,
+                start, end, type: "block",
+                reason: blockReason || "Time Off",
+                blockId, createdAt: new Date().toISOString(),
+              });
+            });
+          }
         });
-      });
+      } else {
+        // Block selected items/variants
+        const blockId = generateId();
+        Object.entries(quantities).forEach(([key, qty]) => {
+          if (qty <= 0) return;
+          const [itemId, variantId] = key.split("__");
+          const ref = doc(collection(db, "vendors", vendorId, "availability"));
+          batch.set(ref, {
+            itemId, qty, start, end, type: "block",
+            ...(variantId ? { variantId } : {}),
+            reason: blockReason || "Time Off",
+            blockId, createdAt: new Date().toISOString(),
+          });
+        });
+      }
     } else {
       const hasItems = Object.values(quantities).some(q => q > 0);
       if (!hasItems) { showToast("Please select at least 1 item"); return; }
       if (!custName.trim()) { showToast("Please enter customer name"); return; }
 
-      Object.entries(quantities).forEach(([itemId, qty]) => {
+      Object.entries(quantities).forEach(([key, qty]) => {
         if (qty > 0) {
+          const [itemId, variantId] = key.split("__");
           const ref = doc(collection(db, "vendors", vendorId, "availability"));
-          // Find variant info from linked order if available
-          const orderItem = linkedOrderItems.find(oi => {
-            const gearMatch = allGear.find(g => g.name === oi.name || g.id === itemId);
-            return gearMatch?.id === itemId;
-          });
+          const item = allGear.find(g => g.id === itemId);
+          const variant = variantId ? item?.variants?.find(v => v.id === variantId) : undefined;
+          const variantLabel = variant ? [variant.color?.label, variant.size].filter(Boolean).join(", ") : undefined;
+
           batch.set(ref, {
             itemId, qty, start, end, type: "booking",
             customer: custName.trim(), phone: custPhone.trim(),
+            ...(variantId ? { variantId } : {}),
+            ...(variantLabel ? { variantLabel } : {}),
             ...(linkedOrderId ? { orderId: linkedOrderId } : {}),
-            ...(orderItem?.variantLabel ? { variantLabel: orderItem.variantLabel } : {}),
             createdAt: new Date().toISOString(),
           });
         }
@@ -501,7 +550,7 @@ export default function CalendarPage() {
   // ── Derived ──
   const selectedEntries = selectedDate ? getEntriesForDate(selectedDate) : [];
   const categories = Array.from(new Set(allGear.map(g => g.category || (g.type === "package" ? "Packages" : "Add-ons")))).sort();
-  const totalAddSteps = addType === "booking" ? 3 : 2;
+  const totalAddSteps = 3;
 
   function getMaxStock(item: GearItem): number {
     // Package: min of (child available / child qty required), capped by package stock
@@ -762,7 +811,7 @@ export default function CalendarPage() {
                               </p>
                               <p className="text-[11px] text-slate-400 truncate mt-0.5">
                                 {entry.type === "block"
-                                  ? `All items · ${entry.nights} day${entry.nights > 1 ? "s" : ""}`
+                                  ? `${entry.items.length} item${entry.items.length !== 1 ? "s" : ""} · ${entry.nights} day${entry.nights > 1 ? "s" : ""}`
                                   : `${entry.phone || "No phone"} · ${entry.items.length} item${entry.items.length !== 1 ? "s" : ""} · ${entry.nights} night${entry.nights > 1 ? "s" : ""}`
                                 }
                               </p>
@@ -961,8 +1010,96 @@ export default function CalendarPage() {
                 </div>
               )}
 
-              {/* Step 2 Block — Reason */}
+              {/* Step 2 Block — Select items/variants to block */}
               {addStep === 2 && addType === "block" && (
+                <div className="space-y-3">
+                  <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Select Items to Block</p>
+                  <div className="bg-red-50 rounded-xl p-3 flex items-start gap-3">
+                    <span className="text-base flex-shrink-0">💡</span>
+                    <p className="text-[11px] text-red-600 leading-relaxed">
+                      Select specific items/variants to block, or leave empty to <strong>block all inventory</strong>.
+                    </p>
+                  </div>
+                  {allGear.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-sm font-bold text-slate-400">No gear items yet</p>
+                    </div>
+                  ) : (
+                    categories.map(cat => {
+                      const items = allGear.filter(g => (g.category || (g.type === "package" ? "Packages" : "Add-ons")) === cat);
+                      return (
+                        <details key={cat} className="bg-slate-50 rounded-xl overflow-hidden" open>
+                          <summary className="px-3 py-2 flex justify-between items-center cursor-pointer">
+                            <span className="text-[10px] font-bold text-[#062c24] uppercase tracking-wide">{cat}</span>
+                          </summary>
+                          <div className="bg-white divide-y divide-slate-50">
+                            {items.map(item => {
+                              const hasVars = item.hasVariants && item.variants && item.variants.length > 0;
+                              return (
+                                <div key={item.id} className="p-3">
+                                  {!hasVars ? (
+                                    <div className="flex items-center justify-between gap-2 min-w-0">
+                                      <div className="flex items-center gap-3 flex-1 min-w-0 overflow-hidden">
+                                        <img src={item.img || "/pacak-khemah.png"} className="w-8 h-8 rounded-lg object-cover bg-slate-100 flex-shrink-0" alt="" />
+                                        <div className="min-w-0 overflow-hidden">
+                                          <p className="text-[12px] font-bold text-[#062c24] truncate">{item.name}</p>
+                                          <p className="text-[10px] text-slate-400">Stock: {item.stock}</p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 flex-shrink-0">
+                                        <button onClick={() => setQuantities(p => ({ ...p, [item.id]: Math.max(0, (p[item.id] || 0) - 1) }))}
+                                          className="w-7 h-7 rounded bg-white text-slate-400 hover:text-red-500 font-bold shadow-sm text-sm">−</button>
+                                        <span className="w-7 text-center text-[12px] font-bold text-[#062c24]">{quantities[item.id] || 0}</span>
+                                        <button onClick={() => setQuantities(p => ({ ...p, [item.id]: Math.min(item.stock, (p[item.id] || 0) + 1) }))}
+                                          className="w-7 h-7 rounded bg-white text-slate-400 hover:text-emerald-500 font-bold shadow-sm text-sm">+</button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      <div className="flex items-center gap-3 mb-2">
+                                        <img src={item.img || "/pacak-khemah.png"} className="w-8 h-8 rounded-lg object-cover bg-slate-100 flex-shrink-0" alt="" />
+                                        <div className="min-w-0 overflow-hidden">
+                                          <p className="text-[12px] font-bold text-[#062c24] truncate">{item.name}</p>
+                                          <p className="text-[10px] text-slate-400">{item.variants!.length} variants</p>
+                                        </div>
+                                      </div>
+                                      <div className="ml-11 space-y-1.5">
+                                        {item.variants!.map(v => {
+                                          const vKey = `${item.id}__${v.id}`;
+                                          const label = [v.color?.label, v.size].filter(Boolean).join(", ") || v.id;
+                                          return (
+                                            <div key={v.id} className="flex items-center justify-between gap-2 bg-slate-50 rounded-lg px-2 py-1.5">
+                                              <div className="flex items-center gap-2 min-w-0">
+                                                {v.color?.hex && <span className="w-3.5 h-3.5 rounded-full border border-slate-200 flex-shrink-0" style={{ backgroundColor: v.color.hex }}></span>}
+                                                <span className="text-[11px] font-bold text-slate-600 truncate">{label}</span>
+                                                <span className="text-[9px] text-slate-400 flex-shrink-0">({v.stock})</span>
+                                              </div>
+                                              <div className="flex items-center gap-1 bg-white rounded-md p-0.5 flex-shrink-0">
+                                                <button onClick={() => setQuantities(p => ({ ...p, [vKey]: Math.max(0, (p[vKey] || 0) - 1) }))}
+                                                  className="w-6 h-6 rounded bg-slate-50 text-slate-400 hover:text-red-500 font-bold text-xs">−</button>
+                                                <span className="w-5 text-center text-[11px] font-bold text-[#062c24]">{quantities[vKey] || 0}</span>
+                                                <button onClick={() => setQuantities(p => ({ ...p, [vKey]: Math.min(v.stock, (p[vKey] || 0) + 1) }))}
+                                                  className="w-6 h-6 rounded bg-slate-50 text-slate-400 hover:text-emerald-500 font-bold text-xs">+</button>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </details>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+
+              {/* Step 3 Block — Reason */}
+              {addStep === 3 && addType === "block" && (
                 <div className="space-y-3">
                   <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Reason (Optional)</p>
                   <input
@@ -972,16 +1109,18 @@ export default function CalendarPage() {
                     placeholder="e.g. Maintenance, Holiday, Personal"
                     className="w-full p-4 bg-red-50 border border-red-200 rounded-xl text-sm font-semibold text-red-700 outline-none focus:border-red-400 placeholder:text-red-300 transition-colors"
                   />
-                  <div className="bg-slate-50 rounded-xl p-4 flex items-start gap-3">
-                    <span className="text-base flex-shrink-0">💤</span>
-                    <p className="text-[12px] text-slate-500 leading-relaxed">
-                      All inventory items will be automatically blocked for these dates.
-                    </p>
-                  </div>
+                  {!Object.values(quantities).some(q => q > 0) && (
+                    <div className="bg-slate-50 rounded-xl p-4 flex items-start gap-3">
+                      <span className="text-base flex-shrink-0">💤</span>
+                      <p className="text-[12px] text-slate-500 leading-relaxed">
+                        No items selected — <strong>all inventory</strong> will be blocked for these dates.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Step 3 Booking — Select items */}
+              {/* Step 3 Booking — Select items/variants */}
               {addStep === 3 && addType === "booking" && (
                 <div className="space-y-3">
                   <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Select Items</p>
@@ -999,36 +1138,65 @@ export default function CalendarPage() {
                             <span className="text-[10px] font-bold text-[#062c24] uppercase tracking-wide">{cat}</span>
                           </summary>
                           <div className="bg-white divide-y divide-slate-50">
-                            {items.map(item => (
-                              <div key={item.id} className="flex items-center justify-between p-3 gap-2 min-w-0">
-                                <div className="flex items-center gap-3 flex-1 min-w-0 overflow-hidden">
-                                  <img
-                                    src={item.img || "/pacak-khemah.png"}
-                                    className="w-8 h-8 rounded-lg object-cover bg-slate-100 flex-shrink-0"
-                                    alt=""
-                                  />
-                                  <div className="min-w-0 overflow-hidden">
-                                    <p className="text-[12px] font-bold text-[#062c24] truncate">{item.name}</p>
-                                    <p className="text-[10px] text-slate-400">
-                                      Stock: {getMaxStock(item)}{item.linkedItems?.length ? ` (${item.linkedItems.length} items)` : ""}
-                                    </p>
-                                  </div>
+                            {items.map(item => {
+                              const hasVars = item.hasVariants && item.variants && item.variants.length > 0;
+                              return (
+                                <div key={item.id} className="p-3">
+                                  {!hasVars ? (
+                                    <div className="flex items-center justify-between gap-2 min-w-0">
+                                      <div className="flex items-center gap-3 flex-1 min-w-0 overflow-hidden">
+                                        <img src={item.img || "/pacak-khemah.png"} className="w-8 h-8 rounded-lg object-cover bg-slate-100 flex-shrink-0" alt="" />
+                                        <div className="min-w-0 overflow-hidden">
+                                          <p className="text-[12px] font-bold text-[#062c24] truncate">{item.name}</p>
+                                          <p className="text-[10px] text-slate-400">
+                                            Stock: {getMaxStock(item)}{item.linkedItems?.length ? ` (${item.linkedItems.length} items)` : ""}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 flex-shrink-0">
+                                        <button onClick={() => setQuantities(p => ({ ...p, [item.id]: Math.max(0, (p[item.id] || 0) - 1) }))}
+                                          className="w-7 h-7 rounded bg-white text-slate-400 hover:text-red-500 font-bold shadow-sm text-sm">−</button>
+                                        <span className="w-7 text-center text-[12px] font-bold text-[#062c24]">{quantities[item.id] || 0}</span>
+                                        <button onClick={() => setQuantities(p => ({ ...p, [item.id]: Math.min(getMaxStock(item), (p[item.id] || 0) + 1) }))}
+                                          className="w-7 h-7 rounded bg-white text-slate-400 hover:text-emerald-500 font-bold shadow-sm text-sm">+</button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      <div className="flex items-center gap-3 mb-2">
+                                        <img src={item.img || "/pacak-khemah.png"} className="w-8 h-8 rounded-lg object-cover bg-slate-100 flex-shrink-0" alt="" />
+                                        <div className="min-w-0 overflow-hidden">
+                                          <p className="text-[12px] font-bold text-[#062c24] truncate">{item.name}</p>
+                                          <p className="text-[10px] text-slate-400">{item.variants!.length} variants</p>
+                                        </div>
+                                      </div>
+                                      <div className="ml-11 space-y-1.5">
+                                        {item.variants!.map(v => {
+                                          const vKey = `${item.id}__${v.id}`;
+                                          const label = [v.color?.label, v.size].filter(Boolean).join(", ") || v.id;
+                                          return (
+                                            <div key={v.id} className="flex items-center justify-between gap-2 bg-slate-50 rounded-lg px-2 py-1.5">
+                                              <div className="flex items-center gap-2 min-w-0">
+                                                {v.color?.hex && <span className="w-3.5 h-3.5 rounded-full border border-slate-200 flex-shrink-0" style={{ backgroundColor: v.color.hex }}></span>}
+                                                <span className="text-[11px] font-bold text-slate-600 truncate">{label}</span>
+                                                <span className="text-[9px] text-slate-400 flex-shrink-0">({v.stock})</span>
+                                              </div>
+                                              <div className="flex items-center gap-1 bg-white rounded-md p-0.5 flex-shrink-0">
+                                                <button onClick={() => setQuantities(p => ({ ...p, [vKey]: Math.max(0, (p[vKey] || 0) - 1) }))}
+                                                  className="w-6 h-6 rounded bg-slate-50 text-slate-400 hover:text-red-500 font-bold text-xs">−</button>
+                                                <span className="w-5 text-center text-[11px] font-bold text-[#062c24]">{quantities[vKey] || 0}</span>
+                                                <button onClick={() => setQuantities(p => ({ ...p, [vKey]: Math.min(v.stock, (p[vKey] || 0) + 1) }))}
+                                                  className="w-6 h-6 rounded bg-slate-50 text-slate-400 hover:text-emerald-500 font-bold text-xs">+</button>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
-                                <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 flex-shrink-0">
-                                  <button
-                                    onClick={() => setQuantities(p => ({ ...p, [item.id]: Math.max(0, (p[item.id] || 0) - 1) }))}
-                                    className="w-7 h-7 rounded bg-white text-slate-400 hover:text-red-500 font-bold shadow-sm text-sm"
-                                  >−</button>
-                                  <span className="w-7 text-center text-[12px] font-bold text-[#062c24]">
-                                    {quantities[item.id] || 0}
-                                  </span>
-                                  <button
-                                    onClick={() => setQuantities(p => ({ ...p, [item.id]: Math.min(getMaxStock(item), (p[item.id] || 0) + 1) }))}
-                                    className="w-7 h-7 rounded bg-white text-slate-400 hover:text-emerald-500 font-bold shadow-sm text-sm"
-                                  >+</button>
-                                </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </details>
                       );
@@ -1169,8 +1337,13 @@ export default function CalendarPage() {
                       {selectedEntry.items.map((item, idx) => (
                         <div key={idx} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl gap-2 min-w-0">
                           <div className="min-w-0 flex-1 overflow-hidden">
-                            <p className="text-[12px] font-bold text-[#062c24] truncate">{item.name}</p>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-wide">{item.category}</p>
+                            <div className="flex items-center gap-1.5">
+                              {item.variantColor && <span className="w-3.5 h-3.5 rounded-full border border-slate-200 flex-shrink-0" style={{ backgroundColor: item.variantColor }}></span>}
+                              <p className="text-[12px] font-bold text-[#062c24] truncate">{item.name}</p>
+                            </div>
+                            <p className="text-[10px] text-slate-400 uppercase tracking-wide">
+                              {item.variantLabel ? `${item.variantLabel} · ` : ""}{item.category}
+                            </p>
                           </div>
                           <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded-lg flex-shrink-0">
                             ×{item.qty}
