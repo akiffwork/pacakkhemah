@@ -371,6 +371,8 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   
   const cpRef = useRef<any>(null);
   const opRef = useRef<any>(null);
+  const cartCpRef = useRef<any>(null);
+  const cartOpRef = useRef<any>(null);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // EFFECTS
@@ -497,6 +499,37 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
     return () => { cpRef.current?.destroy(); opRef.current?.destroy(); };
   }, [vendorData, availRules, weeklyOff]);
 
+  // Cart modal date pickers
+  useEffect(() => {
+    if (!showCart || !vendorData) return;
+    const blocked: any[] = availRules.filter(r => r.type === "block").map(r => ({ from: r.start, to: r.end || r.start }));
+    const offDays = Object.entries(weeklyOff).filter(([, v]) => v).map(([k]) => Number(k));
+    if (offDays.length) blocked.push((date: Date) => offDays.includes(date.getDay()));
+
+    setTimeout(() => {
+      cartCpRef.current = flatpickr("#cart-checkin-date", {
+        minDate: "today", dateFormat: "Y-m-d", disable: blocked,
+        defaultDate: selectedDates[0] || undefined,
+        onChange: ([d]) => {
+          setSelectedDates(prev => [d, prev[1]]);
+          cpRef.current?.setDate(d);
+          opRef.current?.set("minDate", d);
+          cartOpRef.current?.set("minDate", d);
+        },
+      });
+      cartOpRef.current = flatpickr("#cart-checkout-date", {
+        minDate: selectedDates[0] || "today", dateFormat: "Y-m-d", disable: blocked,
+        defaultDate: selectedDates[1] || undefined,
+        onChange: ([d]) => {
+          setSelectedDates(prev => [prev[0], d]);
+          opRef.current?.setDate(d);
+        },
+      });
+    }, 50);
+
+    return () => { cartCpRef.current?.destroy(); cartOpRef.current?.destroy(); };
+  }, [showCart, vendorData, availRules, weeklyOff]);
+
   // Auto-open item modal from URL param
   useEffect(() => {
     const itemParam = searchParams.get("item");
@@ -593,6 +626,21 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
     // Regular item (with optional variant)
     return getItemStock(itemId, variantId);
   }
+
+  // Revalidate cart quantities when dates change
+  useEffect(() => {
+    if (!selectedDates[0] || !selectedDates[1]) return;
+    setCart(prev => {
+      let changed = false;
+      const clamped = prev.map(item => {
+        const vid = item.selectedVariant?.id;
+        const maxAvail = getAvailableStock(item.id, vid);
+        if (item.qty > maxAvail) { changed = true; return { ...item, qty: maxAvail }; }
+        return item;
+      }).filter(i => i.qty > 0);
+      return changed ? clamped : prev;
+    });
+  }, [selectedDates, availRules]);
 
   function addToCart(item: GearItem, variant?: GearVariant, keepOpen?: boolean) {
     const cartKey = variant ? `${item.id}__${variant.id}` : item.id;
@@ -1755,6 +1803,22 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                     </div>
                   );
                 })}
+              </div>
+
+              {/* Date Selection */}
+              <div className="bg-gradient-to-br from-emerald-50/50 to-slate-50 p-4 rounded-2xl border border-emerald-100">
+                <p className="text-[9px] font-black text-slate-400 uppercase mb-3 flex items-center gap-2"><i className="fas fa-calendar-alt text-emerald-500"></i>Rental Dates</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[8px] font-black text-slate-400 uppercase block mb-1 ml-1">Pickup</label>
+                    <input id="cart-checkin-date" readOnly className="w-full bg-white border border-slate-200 text-xs font-bold text-[#062c24] outline-none text-center py-3 rounded-xl focus:ring-2 focus:ring-emerald-500 cursor-pointer" placeholder="Select" />
+                  </div>
+                  <div>
+                    <label className="text-[8px] font-black text-emerald-600 uppercase block mb-1 ml-1">Return</label>
+                    <input id="cart-checkout-date" readOnly className="w-full bg-white border border-slate-200 text-xs font-bold text-[#062c24] outline-none text-center py-3 rounded-xl focus:ring-2 focus:ring-emerald-500 cursor-pointer" placeholder="Select" />
+                  </div>
+                </div>
+                {nights > 0 && <p className="text-[9px] font-bold text-emerald-600 text-center mt-2"><i className="fas fa-moon mr-1"></i>{nights} Night{nights > 1 ? "s" : ""}</p>}
               </div>
 
               {hasDelivery && (
