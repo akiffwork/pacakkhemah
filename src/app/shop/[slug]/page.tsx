@@ -101,7 +101,7 @@ type GearItem = {
 
 type CartItem = GearItem & { qty: number; addSetup?: boolean; selectedVariant?: GearVariant };
 type AvailRule = { itemId?: string; variantId?: string; type?: string; start: string; end?: string; qty?: number };
-type Discount = { type: string; trigger_nights?: number; discount_percent: number; code?: string; deleted?: boolean; is_public?: boolean };
+type Discount = { type: string; trigger_nights?: number; discount_percent: number; discount_fixed?: number; code?: string; deleted?: boolean; is_public?: boolean };
 type VendorPost = { id: string; content: string; image?: string; pinned?: boolean; createdAt: any };
 type Review = { id: string; customerName: string; rating: number; comment?: string | null; createdAt: any; isVerified?: boolean };
 
@@ -659,7 +659,9 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   if (rule) { const fn = (rule.trigger_nights ?? 0) - 1; const dn = nights - fn; if (dn > 0) autoDisc = dailyTotal * dn * (rule.discount_percent / 100); }
   
   // Promo discount
-  const promoDisc = appliedPromo ? sub * (appliedPromo.discount_percent / 100) : 0;
+  const promoDisc = appliedPromo
+    ? (appliedPromo.discount_fixed ? appliedPromo.discount_fixed : sub * (appliedPromo.discount_percent / 100))
+    : 0;
   const allowStacking = vendorData?.allow_stacking === true;
   let finalDiscount = 0, showAuto = false, showPromo = false;
   if (allowStacking) { finalDiscount = autoDisc + promoDisc; if (autoDisc > 0) showAuto = true; if (promoDisc > 0) showPromo = true; }
@@ -730,11 +732,47 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   // Check if any cart item has setup selected
   const hasAnySetupSelected = cart.some(i => i.addSetup && i.setup?.available);
 
-  function applyPromo() {
+  async function applyPromo() {
     const code = promoInput.trim().toUpperCase();
+    if (!code) return;
+
+    // 1. Check vendor discounts first
     const found = discounts.find(d => d.type === "promo_code" && d.code === code);
-    if (found) { setAppliedPromo(found); setPromoMsg({ text: `Success! ${found.discount_percent}% Off Applied`, success: true }); }
-    else { setAppliedPromo(null); setPromoMsg({ text: "Invalid Code", success: false }); }
+    if (found) {
+      setAppliedPromo(found);
+      setPromoMsg({ text: `Success! ${found.discount_percent}% Off Applied`, success: true });
+      return;
+    }
+
+    // 2. Fallback: check customer referral codes
+    if (!vendorId) { setAppliedPromo(null); setPromoMsg({ text: "Invalid Code", success: false }); return; }
+    try {
+      const refSnap = await getDocsFromServer(
+        query(collection(db, "vendors", vendorId, "referrals"), where("code", "==", code))
+      );
+      if (!refSnap.empty) {
+        const ref = refSnap.docs[0].data();
+        if (!ref.isActive) { setAppliedPromo(null); setPromoMsg({ text: "This code is no longer active", success: false }); return; }
+        if (ref.maxUses && ref.usedCount >= ref.maxUses) { setAppliedPromo(null); setPromoMsg({ text: "This code has reached its usage limit", success: false }); return; }
+        if (ref.expiresAt && ref.expiresAt.toDate() < new Date()) { setAppliedPromo(null); setPromoMsg({ text: "This code has expired", success: false }); return; }
+
+        const asDiscount: Discount = {
+          type: "promo_code",
+          code: ref.code,
+          discount_percent: ref.discountType === "percent" ? ref.discountValue : 0,
+          discount_fixed: ref.discountType === "fixed" ? ref.discountValue : 0,
+        };
+        setAppliedPromo(asDiscount);
+        const label = ref.discountType === "percent" ? `${ref.discountValue}% Off` : `RM${ref.discountValue} Off`;
+        setPromoMsg({ text: `Success! ${label} Applied`, success: true });
+        return;
+      }
+    } catch (e) {
+      console.error("Referral lookup error:", e);
+    }
+
+    setAppliedPromo(null);
+    setPromoMsg({ text: "Invalid Code", success: false });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
