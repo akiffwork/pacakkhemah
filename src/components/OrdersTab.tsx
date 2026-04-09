@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import {
   collection, query, where, onSnapshot, doc, updateDoc,
-  orderBy, serverTimestamp,
+  orderBy, serverTimestamp, getDocs, deleteDoc,
 } from "firebase/firestore";
 import { v4 as uuidv4 } from "uuid";
 
@@ -147,6 +147,21 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
         orderId: order.id,
       });
 
+      // Update calendar entries with real customer name
+      try {
+        const availSnap = await getDocs(
+          query(collection(db, "vendors", vendorId, "availability"), where("orderId", "==", order.id))
+        );
+        for (const d of availSnap.docs) {
+          if (d.data().customer === "Pending Order") {
+            await updateDoc(doc(db, "vendors", vendorId, "availability", d.id), {
+              customer: agSnap.customerName,
+              phone: agSnap.customerPhone || "",
+            });
+          }
+        }
+      } catch (e) { console.error("Calendar update error:", e); }
+
       setShowLinkPicker(false);
       alert("Agreement linked successfully!");
     } catch (e) {
@@ -165,7 +180,6 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
     const updates: any = { status: newStatus };
     
     if (newStatus === "completed") {
-      // Generate review token
       const token = uuidv4();
       updates.completedAt = serverTimestamp();
       updates.reviewToken = token;
@@ -173,6 +187,39 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
     }
 
     await updateDoc(doc(db, "orders", orderId), updates);
+
+    // Sync calendar availability
+    try {
+      const availSnap = await getDocs(
+        query(collection(db, "vendors", vendorId, "availability"), where("orderId", "==", orderId))
+      );
+
+      if (newStatus === "cancelled") {
+        // Delete all availability entries for this order
+        for (const d of availSnap.docs) {
+          await deleteDoc(doc(db, "vendors", vendorId, "availability", d.id));
+        }
+      } else if (newStatus === "completed") {
+        // Clean up availability — gear is returned, free the stock
+        for (const d of availSnap.docs) {
+          await deleteDoc(doc(db, "vendors", vendorId, "availability", d.id));
+        }
+      } else if (newStatus === "confirmed") {
+        // Update "Pending Order" to actual customer name
+        const order = orders.find(o => o.id === orderId);
+        const customerName = order?.customerName || order?.customerPhone || "Customer";
+        for (const d of availSnap.docs) {
+          if (d.data().customer === "Pending Order") {
+            await updateDoc(doc(db, "vendors", vendorId, "availability", d.id), {
+              customer: customerName,
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Calendar sync error:", e);
+    }
+
     setShowModal(false);
   }
 
@@ -180,6 +227,17 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
     if (!confirm("Delete this order? This action cannot be undone.")) return;
     try {
       await updateDoc(doc(db, "orders", orderId), { deleted: true });
+
+      // Clean up calendar entries
+      try {
+        const availSnap = await getDocs(
+          query(collection(db, "vendors", vendorId, "availability"), where("orderId", "==", orderId))
+        );
+        for (const d of availSnap.docs) {
+          await deleteDoc(doc(db, "vendors", vendorId, "availability", d.id));
+        }
+      } catch (e) { console.error("Calendar cleanup error:", e); }
+
       setShowModal(false);
       setSelectedOrder(null);
       alert("Order deleted successfully!");

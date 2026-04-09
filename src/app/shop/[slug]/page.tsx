@@ -993,6 +993,27 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         };
         const orderRef = await addDoc(collection(db, "orders"), orderData);
 
+        // Auto-block calendar for this order's items
+        try {
+          for (const item of cart) {
+            const availData: Record<string, any> = {
+              itemId: item.id,
+              qty: item.qty,
+              start: pickupDate,
+              end: returnDate,
+              type: "booking",
+              customer: "Pending Order",
+              orderId: orderRef.id,
+              createdAt: new Date().toISOString(),
+            };
+            if (item.selectedVariant) {
+              availData.variantId = item.selectedVariant.id;
+              availData.variantLabel = [item.selectedVariant.color?.label, item.selectedVariant.size].filter(Boolean).join(", ");
+            }
+            await addDoc(collection(db, "vendors", vendorId!, "availability"), availData);
+          }
+        } catch (e) { console.error("Auto-block calendar error:", e); }
+
         // Save booking data to localStorage for agreement page
         localStorage.setItem("current_booking", JSON.stringify({
           vendorId,
