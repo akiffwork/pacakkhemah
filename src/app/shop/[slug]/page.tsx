@@ -1685,7 +1685,19 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                 // 4. Validate both limits
                 const canAdd = !needsVariant && (variantInCart < variantAvail) && (totalItemInCart < totalAvail);
 
-                return (
+                return variantInCart > 0 && !needsVariant ? (
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => updateCartQty(cartKey, -1)}
+                      className="w-12 h-12 rounded-xl bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-500 flex items-center justify-center text-lg font-black transition-colors">
+                      {variantInCart === 1 ? <i className="fas fa-trash text-sm"></i> : "−"}
+                    </button>
+                    <span className="flex-1 text-center text-lg font-black text-[#062c24]">{variantInCart}</span>
+                    <button onClick={() => canAdd && addToCart(selectedItem, selectedVariant || undefined)} disabled={!canAdd}
+                      className={`w-12 h-12 rounded-xl flex items-center justify-center text-lg font-black transition-colors ${canAdd ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100" : "bg-slate-50 text-slate-300 cursor-not-allowed"}`}>
+                      +
+                    </button>
+                  </div>
+                ) : (
                   <button onClick={() => canAdd && addToCart(selectedItem, selectedVariant || undefined)} disabled={!canAdd}
                     className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl transition-all ${canAdd ? "bg-[#062c24] text-white hover:bg-emerald-800 active:scale-95" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
                     {needsVariant ? "Select a Variant" : canAdd ? "Add to Cart" : variantAvail === 0 ? "Sold Out" : "Max Added"}
