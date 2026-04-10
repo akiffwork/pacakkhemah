@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { getToken } from "firebase/messaging";
+import { getToken, onMessage } from "firebase/messaging";
 import { doc, updateDoc } from "firebase/firestore";
 import { db, getMessagingInstance } from "@/lib/firebase";
 
@@ -41,6 +41,32 @@ export function useFCM(vendorId: string | null) {
           });
           console.log("FCM token saved");
         }
+
+        // Clear badge when app opens
+        if ("clearAppBadge" in navigator) {
+          (navigator as any).clearAppBadge?.();
+        }
+        if (registration.active) {
+          registration.active.postMessage("CLEAR_BADGE");
+        }
+
+        // Handle foreground messages (app is open and focused)
+        onMessage(messaging, (payload) => {
+          console.log("[Foreground] Message:", payload);
+
+          const { title, body } = payload.notification || {};
+          if (!title) return;
+
+          // Show browser notification even when app is in foreground
+          if (Notification.permission === "granted") {
+            new Notification(title, {
+              body: body || "",
+              icon: "/pacak-khemah.png",
+              tag: payload.data?.type || "foreground",
+            });
+          }
+        });
+
       } catch (err) {
         console.error("FCM registration failed:", err);
       }

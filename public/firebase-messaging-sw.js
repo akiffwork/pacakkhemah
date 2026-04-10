@@ -17,23 +17,47 @@ const messaging = firebase.messaging();
 // Handle background notifications
 messaging.onBackgroundMessage((payload) => {
   const { title, body, icon } = payload.notification || {};
+  const data = payload.data || {};
 
   self.registration.showNotification(title || "Pacak Khemah", {
     body: body || "Anda ada pesanan baru!",
     icon: icon || "/icons/vendor/icon-192x192.png",
     badge: "/icons/vendor/icon-96x96.png",
+    tag: data.type || "default",
     vibrate: [200, 100, 200],
-    data: payload.data,
+    data: { url: data.url || "/store", ...data },
     actions: [
       { action: "open", title: "Buka App" },
     ],
   });
 });
 
-// Click on notification opens the app
+// Click on notification — focus existing tab or open new one, then clear badge
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+
+  const url = event.notification.data?.url || "/store";
+
   event.waitUntil(
-    clients.openWindow(event.notification.data?.url || "/store")
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
+      // Focus existing tab if already open
+      for (const client of windowClients) {
+        if (client.url.includes(self.location.origin) && "focus" in client) {
+          client.navigate(url);
+          return client.focus();
+        }
+      }
+      // Otherwise open new tab
+      return clients.openWindow(url);
+    })
   );
+});
+
+// Clear badge when app sends message
+self.addEventListener("message", (event) => {
+  if (event.data === "CLEAR_BADGE") {
+    if (navigator.clearAppBadge) {
+      navigator.clearAppBadge();
+    }
+  }
 });
