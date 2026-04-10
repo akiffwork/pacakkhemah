@@ -80,7 +80,7 @@ type GearItem = {
   images?: string[];
   desc?: string; category?: string; type?: string;
   stock?: number; inc?: string[];
-  linkedItems?: { itemId: string; qty: number }[];
+  linkedItems?: { itemId: string; qty: number; variantId?: string; variantLabel?: string; variantColor?: string }[];
   deleted?: boolean;
   hasVariants?: boolean;
   variants?: GearVariant[];
@@ -99,7 +99,8 @@ type GearItem = {
   };
 };
 
-type CartItem = GearItem & { qty: number; addSetup?: boolean; selectedVariant?: GearVariant };
+type LinkedVariantSelection = { itemId: string; variantId: string; variantLabel: string; variantColor?: string };
+type CartItem = GearItem & { qty: number; addSetup?: boolean; selectedVariant?: GearVariant; linkedVariants?: LinkedVariantSelection[] };
 type AvailRule = { itemId?: string; variantId?: string; type?: string; start: string; end?: string; qty?: number };
 type Discount = { type: string; trigger_nights?: number; discount_percent: number; discount_fixed?: number; code?: string; deleted?: boolean; is_public?: boolean };
 type VendorPost = { id: string; content: string; image?: string; pinned?: boolean; createdAt: any };
@@ -348,6 +349,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   const [showItemModal, setShowItemModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState<GearItem | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<GearVariant | null>(null);
+  const [linkedVarSelections, setLinkedVarSelections] = useState<Record<string, GearVariant | null>>({});
   const [selectedHub, setSelectedHub] = useState("");
   const [termsAgreed, setTermsAgreed] = useState(false);
   const [blockState, setBlockState] = useState<null | "unapproved" | "vacation" | "nocredits">(null);
@@ -538,6 +540,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
       if (item) {
         setSelectedItem(item);
         setSelectedVariant(null);
+        setLinkedVarSelections({});
         setShowItemModal(true);
       }
     }
@@ -642,24 +645,28 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
     });
   }, [selectedDates, availRules]);
 
-  function addToCart(item: GearItem, variant?: GearVariant, keepOpen?: boolean) {
-    const cartKey = variant ? `${item.id}__${variant.id}` : item.id;
+  function addToCart(item: GearItem, variant?: GearVariant, keepOpen?: boolean, linkedVars?: LinkedVariantSelection[]) {
+    const cartKey = variant ? `${item.id}__${variant.id}` :
+      linkedVars?.length ? `${item.id}__pkg_${linkedVars.map(v => v.variantId).sort().join("_")}` : item.id;
     const cartPrice = variant ? variant.price : item.price;
     setCart(prev => {
-      const ex = prev.find(i => (i.selectedVariant ? `${i.id}__${i.selectedVariant.id}` : i.id) === cartKey);
-      if (ex) return prev.map(i => (i.selectedVariant ? `${i.id}__${i.selectedVariant.id}` : i.id) === cartKey ? { ...i, qty: i.qty + 1 } : i);
-      return [...prev, { ...item, price: cartPrice, qty: 1, addSetup: false, selectedVariant: variant }];
+      const ex = prev.find(i => getCartKey(i) === cartKey);
+      if (ex) return prev.map(i => getCartKey(i) === cartKey ? { ...i, qty: i.qty + 1 } : i);
+      return [...prev, { ...item, price: cartPrice, qty: 1, addSetup: false, selectedVariant: variant, linkedVariants: linkedVars }];
     });
     if (!keepOpen) {
       setShowItemModal(false);
       setSelectedVariant(null);
+      setLinkedVarSelections({});
     }
     setAddToast(variant ? `${item.name} (${[variant.color?.label, variant.size].filter(Boolean).join(", ")})` : item.name);
     setTimeout(() => setAddToast(null), 2000);
   }
 
   function getCartKey(item: CartItem): string {
-    return item.selectedVariant ? `${item.id}__${item.selectedVariant.id}` : item.id;
+    if (item.selectedVariant) return `${item.id}__${item.selectedVariant.id}`;
+    if (item.linkedVariants?.length) return `${item.id}__pkg_${item.linkedVariants.map(v => v.variantId).sort().join("_")}`;
+    return item.id;
   }
 
   function removeFromCart(key: string) { setCart(prev => prev.filter(i => getCartKey(i) !== key)); }
@@ -842,6 +849,9 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         ? ` [${[i.selectedVariant.color?.label, i.selectedVariant.size].filter(Boolean).join(", ")}]`
         : "";
       let line = `• ${i.name}${variantLabel} (x${i.qty}) - RM${i.price * i.qty}`;
+      if (i.linkedVariants?.length) {
+        line += `%0A  ↳ ${i.linkedVariants.map(lv => lv.variantLabel).join(", ")}`;
+      }
       if (i.addSetup && i.setup?.available) {
         line += ` + Setup RM${i.setup.fee}`;
       }
@@ -942,6 +952,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
             addSetup: i.addSetup || false,
             setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0,
             ...(i.selectedVariant ? { variantId: i.selectedVariant.id, variantLabel: [i.selectedVariant.color?.label, i.selectedVariant.size].filter(Boolean).join(", ") } : {}),
+            ...(i.linkedVariants?.length ? { linkedVariants: i.linkedVariants } : {}),
           })),
         });
       } catch (e) { console.error("Analytics write error:", e); }
@@ -981,6 +992,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
               variantLabel: [i.selectedVariant.color?.label, i.selectedVariant.size].filter(Boolean).join(", "),
               variantColor: i.selectedVariant.color?.hex || null,
             } : {}),
+            ...(i.linkedVariants?.length ? { linkedVariants: i.linkedVariants } : {}),
           })),
           totalAmount: total,
           pickupLocation: fulfillmentType === "pickup" ? selectedHub : deliveryAddress,
@@ -1018,11 +1030,12 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         localStorage.setItem("current_booking", JSON.stringify({
           vendorId,
           orderId: orderRef.id,
-          items: cart.map(i => ({
-            name: i.name + (i.selectedVariant ? ` (${[i.selectedVariant.color?.label, i.selectedVariant.size].filter(Boolean).join(", ")})` : ""),
-            qty: i.qty,
-            price: i.price,
-          })),
+          items: cart.map(i => {
+            let name = i.name;
+            if (i.selectedVariant) name += ` (${[i.selectedVariant.color?.label, i.selectedVariant.size].filter(Boolean).join(", ")})`;
+            if (i.linkedVariants?.length) name += ` [${i.linkedVariants.map(lv => lv.variantLabel).join(", ")}]`;
+            return { name, qty: i.qty, price: i.price };
+          }),
           dates: { start: pickupDate, end: returnDate },
           total,
         }));
@@ -1090,14 +1103,14 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
     </div>
   ));
 
-  function getLinkedItemsData(item: GearItem): { item: GearItem; qty: number }[] {
+  function getLinkedItemsData(item: GearItem): { item: GearItem; qty: number; lockedVariantId?: string; lockedVariantLabel?: string; lockedVariantColor?: string }[] {
     if (!item.linkedItems || item.linkedItems.length === 0) return [];
     return item.linkedItems
       .map(li => {
         const linkedItem = allGear.find(g => g.id === li.itemId);
-        return linkedItem ? { item: linkedItem, qty: li.qty } : null;
+        return linkedItem ? { item: linkedItem, qty: li.qty, lockedVariantId: li.variantId, lockedVariantLabel: li.variantLabel, lockedVariantColor: li.variantColor } : null;
       })
-      .filter(Boolean) as { item: GearItem; qty: number }[];
+      .filter(Boolean) as { item: GearItem; qty: number; lockedVariantId?: string; lockedVariantLabel?: string; lockedVariantColor?: string }[];
   }
 
   const rating = vendorData?.rating || 0;
@@ -1354,7 +1367,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                   
                   return (
                     <div key={item.id} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm stagger-in relative" style={{ animationDelay: `${idx * 50}ms` }}>
-                      <div className="aspect-square relative cursor-pointer" onClick={() => { setSelectedItem(item); setSelectedVariant(null); setShowItemModal(true); }}>
+                      <div className="aspect-square relative cursor-pointer" onClick={() => { setSelectedItem(item); setSelectedVariant(null); setLinkedVarSelections({}); setShowItemModal(true); }}>
                         <img src={item.images?.[0] || item.img || "/placeholder.jpg"} className="w-full h-full object-cover" alt={item.name} />
                         {hasMultipleImages && (
                           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
@@ -1409,7 +1422,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                         </p>
                         {/* Add to cart / Select variant */}
                         {hasVars ? (
-                          <button onClick={() => { setSelectedItem(item); setSelectedVariant(null); setShowItemModal(true); }}
+                          <button onClick={() => { setSelectedItem(item); setSelectedVariant(null); setLinkedVarSelections({}); setShowItemModal(true); }}
                             className="w-full mt-2 py-2.5 rounded-xl text-[9px] font-black uppercase transition-all bg-[#062c24] text-white hover:bg-emerald-800 active:scale-95">
                             Select Variant
                           </button>
@@ -1717,16 +1730,85 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                 return (
                   <div className="mb-4 p-3 bg-purple-50 rounded-xl border border-purple-100">
                     <p className="text-[9px] font-black text-purple-600 uppercase mb-2"><i className="fas fa-link mr-1"></i>Package Includes:</p>
-                    <div className="space-y-2">
-                      {linkedItems.map(({ item: linkedItem, qty }) => (
-                        <div key={linkedItem.id} className="flex items-center gap-2 bg-white p-2 rounded-lg">
-                          <img src={linkedItem.images?.[0] || linkedItem.img || "/placeholder.jpg"} className="w-10 h-10 rounded-lg object-cover" alt={linkedItem.name} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[10px] font-black text-purple-700 truncate">{linkedItem.name}</p>
-                            <p className="text-[9px] text-purple-500">Qty: {qty} • RM {linkedItem.price}/night</p>
+                    <div className="space-y-3">
+                      {linkedItems.map(({ item: linkedItem, qty, lockedVariantId, lockedVariantLabel, lockedVariantColor }) => {
+                        const hasVars = linkedItem.hasVariants && linkedItem.variants && linkedItem.variants.length > 0;
+                        const isLocked = !!lockedVariantId;
+                        const lockedVariant = isLocked ? linkedItem.variants?.find(v => v.id === lockedVariantId) : null;
+
+                        // Customer picker state (only used when NOT locked)
+                        const selected = !isLocked ? (linkedVarSelections[linkedItem.id] || null) : null;
+                        const colors = hasVars && !isLocked ? [...new Map(linkedItem.variants!.filter(v => v.color?.label).map(v => [v.color!.label, v.color!])).values()] : [];
+                        const sizes = hasVars && !isLocked ? [...new Set(linkedItem.variants!.filter(v => v.size).map(v => v.size!))] : [];
+                        const selectedColor = selected?.color?.label || null;
+                        const selectedSize = selected?.size || null;
+
+                        function pickLinkedVariant(color: string | null, size: string | null) {
+                          const match = linkedItem.variants!.find(v =>
+                            (!color || v.color?.label === color) && (!size || v.size === size)
+                          );
+                          setLinkedVarSelections(prev => ({ ...prev, [linkedItem.id]: match || null }));
+                        }
+
+                        const displayPrice = lockedVariant?.price || selected?.price || linkedItem.price;
+
+                        return (
+                          <div key={linkedItem.id} className="bg-white rounded-lg p-2.5 border border-purple-100">
+                            <div className="flex items-center gap-2 mb-1">
+                              <img src={linkedItem.images?.[0] || linkedItem.img || "/placeholder.jpg"} className="w-9 h-9 rounded-lg object-cover shrink-0" alt={linkedItem.name} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[10px] font-black text-purple-700 truncate">{linkedItem.name}</p>
+                                <p className="text-[9px] text-purple-500">Qty: {qty} • RM {displayPrice}/night</p>
+                              </div>
+                              {/* Status badge */}
+                              {isLocked && (
+                                <span className="inline-flex items-center gap-0.5 text-[8px] font-bold text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded shrink-0">
+                                  {lockedVariantColor && <span className="w-2.5 h-2.5 rounded-full border border-teal-200 shrink-0" style={{ backgroundColor: lockedVariantColor }}></span>}
+                                  {lockedVariantLabel}
+                                </span>
+                              )}
+                              {hasVars && !isLocked && selected && (
+                                <span className="text-[8px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded shrink-0">✓</span>
+                              )}
+                              {hasVars && !isLocked && !selected && (
+                                <span className="text-[8px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded shrink-0">Pick</span>
+                              )}
+                            </div>
+                            {/* Customer variant picker — only when NOT locked by vendor */}
+                            {hasVars && !isLocked && (
+                              <div className="mt-2 space-y-2 pl-11">
+                                {colors.length > 0 && (
+                                  <div className="flex gap-1.5 flex-wrap">
+                                    {colors.map(c => {
+                                      const isActive = selectedColor === c.label;
+                                      return (
+                                        <button key={c.label} onClick={() => pickLinkedVariant(c.label, selectedSize)}
+                                          className={`w-6 h-6 rounded-full border-2 transition-all ${isActive ? "border-purple-600 scale-110 shadow" : "border-slate-200"}`}
+                                          style={{ backgroundColor: c.hex }} title={c.label}
+                                        >
+                                          {isActive && <span className="flex items-center justify-center text-white text-[7px] drop-shadow"><i className="fas fa-check"></i></span>}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                {sizes.length > 0 && (
+                                  <div className="flex gap-1 flex-wrap">
+                                    {sizes.map(s => (
+                                      <button key={s} onClick={() => pickLinkedVariant(selectedColor, s)}
+                                        className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase border transition-all ${
+                                          selectedSize === s ? "border-purple-600 bg-purple-600 text-white" : "border-slate-200 text-slate-500"
+                                        }`}>
+                                        {s}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -1740,38 +1822,57 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
               {(() => {
                 const hasVars = selectedItem.hasVariants && selectedItem.variants && selectedItem.variants.length > 0;
                 const needsVariant = hasVars && !selectedVariant;
+
+                // Check if package linked items need variant selections
+                const linkedItems = getLinkedItemsData(selectedItem);
+                // Only items with variants AND no vendor-locked variant need customer picks
+                const unlockedItemsWithVars = linkedItems.filter(({ item: li, lockedVariantId }) => !lockedVariantId && li.hasVariants && li.variants && li.variants.length > 0);
+                const allUnlockedPicked = unlockedItemsWithVars.every(({ item: li }) => linkedVarSelections[li.id]);
+                const needsLinkedVars = unlockedItemsWithVars.length > 0 && !allUnlockedPicked;
+                const unPickedCount = unlockedItemsWithVars.filter(({ item: li }) => !linkedVarSelections[li.id]).length;
+
                 const vid = selectedVariant?.id;
                 const cartKey = vid ? `${selectedItem.id}__${vid}` : selectedItem.id;
                 
-                // 1. Qty of THIS specific variant in the cart
                 const variantInCart = cart.find(i => getCartKey(i) === cartKey)?.qty || 0;
-                
-                // 2. Qty of ALL variants of this item in the cart combined
                 const totalItemInCart = cart.filter(i => i.id === selectedItem.id).reduce((sum, i) => sum + i.qty, 0);
-
-                // 3. Max stock limits USING getAvailableStock (accounts for bookings and raw limits)
                 const variantAvail = vid ? getAvailableStock(selectedItem.id, vid) : getAvailableStock(selectedItem.id);
                 const totalAvail = getAvailableStock(selectedItem.id); 
+                const canAdd = !needsVariant && !needsLinkedVars && (variantInCart < variantAvail) && (totalItemInCart < totalAvail);
 
-                // 4. Validate both limits
-                const canAdd = !needsVariant && (variantInCart < variantAvail) && (totalItemInCart < totalAvail);
+                // Build linkedVariants for cart — merge vendor-locked + customer-picked
+                const linkedVarsForCart: LinkedVariantSelection[] = [];
+                for (const { item: li, lockedVariantId, lockedVariantLabel, lockedVariantColor } of linkedItems) {
+                  if (lockedVariantId && lockedVariantLabel) {
+                    // Vendor-locked
+                    linkedVarsForCart.push({ itemId: li.id, variantId: lockedVariantId, variantLabel: lockedVariantLabel, variantColor: lockedVariantColor });
+                  } else if (linkedVarSelections[li.id]) {
+                    // Customer-picked
+                    const v = linkedVarSelections[li.id]!;
+                    linkedVarsForCart.push({ itemId: li.id, variantId: v.id, variantLabel: [v.color?.label, v.size].filter(Boolean).join(", "), variantColor: v.color?.hex });
+                  }
+                }
 
-                return variantInCart > 0 && !needsVariant ? (
+                const btnLabel = needsVariant ? "Select a Variant"
+                  : needsLinkedVars ? `Select variant for ${unPickedCount} item(s)`
+                  : canAdd ? "Add to Cart" : variantAvail === 0 ? "Sold Out" : "Max Added";
+
+                return variantInCart > 0 && !needsVariant && !needsLinkedVars ? (
                   <div className="flex items-center gap-2">
                     <button onClick={() => updateCartQty(cartKey, -1)}
                       className="w-12 h-12 rounded-xl bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-500 flex items-center justify-center text-lg font-black transition-colors">
                       {variantInCart === 1 ? <i className="fas fa-trash text-sm"></i> : "−"}
                     </button>
                     <span className="flex-1 text-center text-lg font-black text-[#062c24]">{variantInCart}</span>
-                    <button onClick={() => canAdd && addToCart(selectedItem, selectedVariant || undefined, true)} disabled={!canAdd}
+                    <button onClick={() => canAdd && addToCart(selectedItem, selectedVariant || undefined, true, linkedVarsForCart.length > 0 ? linkedVarsForCart : undefined)} disabled={!canAdd}
                       className={`w-12 h-12 rounded-xl flex items-center justify-center text-lg font-black transition-colors ${canAdd ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100" : "bg-slate-50 text-slate-300 cursor-not-allowed"}`}>
                       +
                     </button>
                   </div>
                 ) : (
-                  <button onClick={() => canAdd && addToCart(selectedItem, selectedVariant || undefined, true)} disabled={!canAdd}
+                  <button onClick={() => canAdd && addToCart(selectedItem, selectedVariant || undefined, false, linkedVarsForCart.length > 0 ? linkedVarsForCart : undefined)} disabled={!canAdd}
                     className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl transition-all ${canAdd ? "bg-[#062c24] text-white hover:bg-emerald-800 active:scale-95" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
-                    {needsVariant ? "Select a Variant" : canAdd ? "Add to Cart" : variantAvail === 0 ? "Sold Out" : "Max Added"}
+                    {btnLabel}
                   </button>
                 );
               })()}
@@ -1807,6 +1908,16 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                             <p className="text-[10px] font-black uppercase truncate">{item.name}</p>
                           </div>
                           {variantLabel && <p className="text-[8px] font-bold text-teal-600 mt-0.5">{variantLabel}</p>}
+                          {item.linkedVariants && item.linkedVariants.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-0.5">
+                              {item.linkedVariants.map(lv => (
+                                <span key={lv.itemId} className="text-[7px] font-bold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5">
+                                  {lv.variantColor && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lv.variantColor }}></span>}
+                                  {lv.variantLabel}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           <p className="text-[9px] font-bold text-slate-400">RM {item.price} × {item.qty} = RM {item.price * item.qty}</p>
                         </div>
                         <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-100 p-1">

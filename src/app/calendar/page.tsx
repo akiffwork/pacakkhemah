@@ -24,7 +24,7 @@ type GearVariant = {
 type GearItem = {
   id: string; name: string; stock: number;
   img?: string; category?: string; type?: string; deleted?: boolean;
-  linkedItems?: { itemId: string; qty: number }[];
+  linkedItems?: { itemId: string; qty: number; variantId?: string; variantLabel?: string; variantColor?: string }[];
   hasVariants?: boolean;
   variants?: GearVariant[];
 };

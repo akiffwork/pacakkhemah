@@ -31,7 +31,7 @@ type GearItem = {
   category?: string;
   type?: string; 
   inc?: string[]; // Text-based includes (legacy)
-  linkedItems?: { itemId: string; qty: number }[]; // Linked add-on items for packages
+  linkedItems?: { itemId: string; qty: number; variantId?: string; variantLabel?: string; variantColor?: string }[]; // Linked add-on items for packages
   deleted?: boolean;
   hasVariants?: boolean;
   variants?: GearVariant[];
@@ -84,7 +84,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
   const [gearType, setGearType] = useState("addon");
   const [gearImages, setGearImages] = useState<string[]>([]); // Multiple images
   const [gearInc, setGearInc] = useState<string[]>([]); // Text includes
-  const [linkedItems, setLinkedItems] = useState<{ itemId: string; qty: number }[]>([]); // Linked add-ons
+  const [linkedItems, setLinkedItems] = useState<{ itemId: string; qty: number; variantId?: string; variantLabel?: string; variantColor?: string }[]>([]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]); // Files to upload
   
   // NEW: Setup service form state
@@ -186,7 +186,8 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
       // Calculate stock and price from variants if enabled
       const cleanVariants = hasVariants ? variants.filter(v => v.stock > 0 || v.color?.label || v.size) : [];
       const variantStock = cleanVariants.length > 0 ? cleanVariants.reduce((s, v) => s + v.stock, 0) : null;
-      const variantMinPrice = cleanVariants.length > 0 ? Math.min(...cleanVariants.map(v => v.price)) : null;
+      const pricedVariants = cleanVariants.filter(v => v.price > 0);
+      const variantMinPrice = pricedVariants.length > 0 ? Math.min(...pricedVariants.map(v => v.price)) : null;
       
       const data: any = {
         vendorId, 
@@ -207,7 +208,13 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
       
       // Add linked items for packages
       if (gearType === "package" && linkedItems.length > 0) {
-        data.linkedItems = linkedItems.filter(li => li.itemId && li.qty > 0);
+        data.linkedItems = linkedItems
+          .filter(li => li.itemId && li.qty > 0)
+          .map(li => ({
+            itemId: li.itemId,
+            qty: li.qty,
+            ...(li.variantId ? { variantId: li.variantId, variantLabel: li.variantLabel, variantColor: li.variantColor } : {}),
+          }));
       }
       
       // Add setup service data
@@ -264,10 +271,23 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     setLinkedItems(prev => [...prev, { itemId: "", qty: 1 }]);
   }
 
-  function updateLinkedItem(index: number, field: "itemId" | "qty", value: string | number) {
-    setLinkedItems(prev => prev.map((li, i) => 
-      i === index ? { ...li, [field]: field === "qty" ? Number(value) : value } : li
-    ));
+  function updateLinkedItem(index: number, field: string, value: string | number) {
+    setLinkedItems(prev => prev.map((li, i) => {
+      if (i !== index) return li;
+      if (field === "qty") return { ...li, qty: Number(value) };
+      if (field === "itemId") return { itemId: String(value), qty: li.qty }; // reset variant when item changes
+      if (field === "variantId") {
+        const item = addons.find(a => a.id === li.itemId);
+        const variant = item?.variants?.find(v => v.id === value);
+        return {
+          ...li,
+          variantId: String(value) || undefined,
+          variantLabel: variant ? [variant.color?.label, variant.size].filter(Boolean).join(", ") : undefined,
+          variantColor: variant?.color?.hex || undefined,
+        };
+      }
+      return { ...li, [field]: value };
+    }));
   }
 
   function removeLinkedItem(index: number) {
@@ -643,12 +663,14 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                     {variants.length > 0 && (
                       <div className="bg-teal-100/50 rounded-lg p-2.5 flex justify-between text-[10px] font-bold text-teal-700">
                         <span>Total Stock: {variants.reduce((s, v) => s + v.stock, 0)}</span>
-                        <span>
-                          Price: RM{Math.min(...variants.map(v => v.price))}
-                          {Math.min(...variants.map(v => v.price)) !== Math.max(...variants.map(v => v.price))
-                            ? ` – RM${Math.max(...variants.map(v => v.price))}`
-                            : ""}
-                        </span>
+                        {variants.some(v => v.price > 0) && (
+                          <span>
+                            Price: RM{Math.min(...variants.filter(v => v.price > 0).map(v => v.price))}
+                            {Math.min(...variants.filter(v => v.price > 0).map(v => v.price)) !== Math.max(...variants.filter(v => v.price > 0).map(v => v.price))
+                              ? ` – RM${Math.max(...variants.filter(v => v.price > 0).map(v => v.price))}`
+                              : ""}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -818,31 +840,67 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                     <p className="text-[10px] text-purple-400 text-center py-3">No linked items. Add to sync inventory.</p>
                   ) : (
                     <div className="space-y-2">
-                      {linkedItems.map((li, i) => (
-                        <div key={i} className="flex gap-2 items-center bg-white p-2 rounded-lg">
-                          <select 
-                            value={li.itemId} 
-                            onChange={e => updateLinkedItem(i, "itemId", e.target.value)}
-                            className="flex-1 bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs outline-none"
-                          >
-                            <option value="">Select item...</option>
-                            {addons.map(addon => (
-                              <option key={addon.id} value={addon.id}>{addon.name} (Stock: {addon.stock})</option>
-                            ))}
-                          </select>
-                          <input 
-                            type="number" 
-                            value={li.qty} 
-                            onChange={e => updateLinkedItem(i, "qty", e.target.value)}
-                            min="1"
-                            className="w-16 bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs text-center outline-none"
-                            placeholder="Qty"
-                          />
-                          <button onClick={() => removeLinkedItem(i)} className="text-red-400 hover:text-red-600 p-1">
-                            <i className="fas fa-times"></i>
-                          </button>
-                        </div>
-                      ))}
+                      {linkedItems.map((li, i) => {
+                        const selectedAddon = addons.find(a => a.id === li.itemId);
+                        const hasVars = selectedAddon?.hasVariants && selectedAddon.variants && selectedAddon.variants.length > 0;
+                        return (
+                          <div key={i} className="bg-white p-2.5 rounded-lg border border-purple-100 space-y-2">
+                            <div className="flex gap-2 items-center">
+                              <select 
+                                value={li.itemId} 
+                                onChange={e => updateLinkedItem(i, "itemId", e.target.value)}
+                                className="flex-1 bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs outline-none"
+                              >
+                                <option value="">Select item...</option>
+                                {addons.map(addon => (
+                                  <option key={addon.id} value={addon.id}>{addon.name} (Stock: {addon.stock})</option>
+                                ))}
+                              </select>
+                              <input 
+                                type="number" 
+                                value={li.qty} 
+                                onChange={e => updateLinkedItem(i, "qty", e.target.value)}
+                                min="1"
+                                className="w-16 bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs text-center outline-none"
+                                placeholder="Qty"
+                              />
+                              <button onClick={() => removeLinkedItem(i)} className="text-red-400 hover:text-red-600 p-1">
+                                <i className="fas fa-times"></i>
+                              </button>
+                            </div>
+                            {/* Variant picker - shown when linked item has variants */}
+                            {hasVars && (
+                              <div className="flex items-center gap-2 pl-1">
+                                <span className="text-[8px] font-bold text-purple-500 uppercase shrink-0">Variant:</span>
+                                <div className="flex gap-1.5 flex-wrap flex-1">
+                                  {selectedAddon!.variants!.map(v => {
+                                    const label = [v.color?.label, v.size].filter(Boolean).join(", ");
+                                    const isActive = li.variantId === v.id;
+                                    return (
+                                      <button
+                                        key={v.id}
+                                        onClick={() => updateLinkedItem(i, "variantId", isActive ? "" : v.id)}
+                                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[8px] font-bold border transition-all ${
+                                          isActive ? "border-purple-600 bg-purple-600 text-white" : "border-slate-200 text-slate-600 hover:border-purple-300"
+                                        }`}
+                                      >
+                                        {v.color?.hex && <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/30" style={{ backgroundColor: v.color.hex }}></span>}
+                                        {label || `RM${v.price}`} ({v.stock})
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                            {/* Show locked variant label */}
+                            {li.variantLabel && (
+                              <p className="text-[8px] font-bold text-teal-600 pl-1">
+                                <i className="fas fa-lock text-[7px] mr-1"></i>Locked: {li.variantLabel}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
