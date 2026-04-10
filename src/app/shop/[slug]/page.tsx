@@ -670,6 +670,28 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   }
 
   function removeFromCart(key: string) { setCart(prev => prev.filter(i => getCartKey(i) !== key)); }
+
+  // Count how many of an item are "reserved" in the cart — both direct + via packages
+  function getEffectiveInCart(itemId: string, variantId?: string): number {
+    let count = 0;
+    for (const ci of cart) {
+      // Direct cart entry for this item
+      if (ci.id === itemId) {
+        if (!variantId || ci.selectedVariant?.id === variantId) count += ci.qty;
+      }
+      // Package in cart that links to this item
+      if (ci.linkedItems) {
+        for (const li of ci.linkedItems) {
+          if (li.itemId === itemId) {
+            // Check variant from vendor-locked (linkedItems.variantId) or customer-picked (linkedVariants)
+            const resolvedVariantId = li.variantId || ci.linkedVariants?.find(lv => lv.itemId === itemId)?.variantId;
+            if (!variantId || resolvedVariantId === variantId) count += (li.qty || 1) * ci.qty;
+          }
+        }
+      }
+    }
+    return count;
+  }
   
   function updateCartQty(key: string, delta: number) {
     if (delta > 0) {
@@ -680,7 +702,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         // Calculate the TRUE available stock (accounting for dates and bookings)
         const variantAvail = vid ? getAvailableStock(cartItem.id, vid) : getAvailableStock(cartItem.id);
         const totalAvail = getAvailableStock(cartItem.id);
-        const totalItemInCart = cart.filter(i => i.id === cartItem.id).reduce((sum, i) => sum + i.qty, 0);
+        const totalItemInCart = getEffectiveInCart(cartItem.id);
 
         // Block the '+' click if they are hitting the variant ceiling OR the overall item ceiling
         if (cartItem.qty >= variantAvail || totalItemInCart >= totalAvail) {
@@ -1354,7 +1376,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
               <div id="demo-gear" className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {filteredGear(activeCategory || categories[0] || "").map((item, idx) => {
                   const avail = getAvailableStock(item.id);
-                  const inCart = cart.filter(c => c.id === item.id).reduce((s, c) => s + c.qty, 0);
+                  const inCart = getEffectiveInCart(item.id);
                   const canAdd = avail > inCart;
                   const hasSetupOption = item.setup?.available;
                   const hasMultipleImages = (item.images?.length || 0) > 1;
@@ -1835,7 +1857,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                 const cartKey = vid ? `${selectedItem.id}__${vid}` : selectedItem.id;
                 
                 const variantInCart = cart.find(i => getCartKey(i) === cartKey)?.qty || 0;
-                const totalItemInCart = cart.filter(i => i.id === selectedItem.id).reduce((sum, i) => sum + i.qty, 0);
+                const totalItemInCart = getEffectiveInCart(selectedItem.id);
                 const variantAvail = vid ? getAvailableStock(selectedItem.id, vid) : getAvailableStock(selectedItem.id);
                 const totalAvail = getAvailableStock(selectedItem.id); 
                 const canAdd = !needsVariant && !needsLinkedVars && (variantInCart < variantAvail) && (totalItemInCart < totalAvail);
@@ -1870,7 +1892,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                     </button>
                   </div>
                 ) : (
-                  <button onClick={() => canAdd && addToCart(selectedItem, selectedVariant || undefined, false, linkedVarsForCart.length > 0 ? linkedVarsForCart : undefined)} disabled={!canAdd}
+                  <button onClick={() => canAdd && addToCart(selectedItem, selectedVariant || undefined, true, linkedVarsForCart.length > 0 ? linkedVarsForCart : undefined)} disabled={!canAdd}
                     className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl transition-all ${canAdd ? "bg-[#062c24] text-white hover:bg-emerald-800 active:scale-95" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
                     {btnLabel}
                   </button>
