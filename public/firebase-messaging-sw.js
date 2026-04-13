@@ -14,14 +14,15 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// Handle background notifications
+// Handle background messages — data-only (no "notification" key from server)
 messaging.onBackgroundMessage((payload) => {
-  const { title, body, icon } = payload.notification || {};
   const data = payload.data || {};
+  const title = data.title || "Pacak Khemah";
+  const body = data.body || "Anda ada pesanan baru!";
 
-  self.registration.showNotification(title || "Pacak Khemah", {
-    body: body || "Anda ada pesanan baru!",
-    icon: icon || "/icons/vendor/icon-192x192.png",
+  self.registration.showNotification(title, {
+    body,
+    icon: "/icons/vendor/icon-192x192.png",
     badge: "/icons/vendor/icon-96x96.png",
     tag: data.type || "default",
     vibrate: [200, 100, 200],
@@ -32,7 +33,7 @@ messaging.onBackgroundMessage((payload) => {
   });
 });
 
-// Click on notification — focus existing tab or open new one, then clear badge
+// Click on notification — focus existing tab or open new one
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
@@ -40,14 +41,12 @@ self.addEventListener("notificationclick", (event) => {
 
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
-      // Focus existing tab if already open
       for (const client of windowClients) {
         if (client.url.includes(self.location.origin) && "focus" in client) {
           client.navigate(url);
           return client.focus();
         }
       }
-      // Otherwise open new tab
       return clients.openWindow(url);
     })
   );

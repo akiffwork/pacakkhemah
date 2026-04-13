@@ -17,24 +17,20 @@ export function useFCM(vendorId: string | null) {
         const messaging = await getMessagingInstance();
         if (!messaging) return;
 
-        // Request notification permission
         const permission = await Notification.requestPermission();
         if (permission !== "granted") return;
 
-        // Register service worker and wait for it to be active
         const registration = await navigator.serviceWorker.register(
           "/firebase-messaging-sw.js"
         );
         await navigator.serviceWorker.ready;
 
-        // Get FCM token
         const token = await getToken(messaging, {
           vapidKey: VAPID_KEY,
           serviceWorkerRegistration: registration,
         });
 
         if (token) {
-          // Save token to vendor's Firestore doc
           await updateDoc(doc(db, "vendors", vendorId), {
             fcmToken: token,
             fcmUpdatedAt: new Date().toISOString(),
@@ -50,19 +46,20 @@ export function useFCM(vendorId: string | null) {
           registration.active.postMessage("CLEAR_BADGE");
         }
 
-        // Handle foreground messages (app is open and focused)
+        // Handle foreground messages — read from data payload (no notification key)
         onMessage(messaging, (payload) => {
           console.log("[Foreground] Message:", payload);
 
-          const { title, body } = payload.notification || {};
+          const data = payload.data || {};
+          const title = data.title || payload.notification?.title;
+          const body = data.body || payload.notification?.body;
           if (!title) return;
 
-          // Show browser notification even when app is in foreground
           if (Notification.permission === "granted") {
             new Notification(title, {
               body: body || "",
               icon: "/pacak-khemah.png",
-              tag: payload.data?.type || "foreground",
+              tag: data.type || "foreground",
             });
           }
         });
