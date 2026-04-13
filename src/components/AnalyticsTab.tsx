@@ -22,6 +22,16 @@ type Lead = {
   isRepeatVisitor?: boolean;
 };
 
+type OrderData = {
+  id: string;
+  totalAmount: number;
+  status: string;
+  paymentStatus?: string;
+  items: { name: string; qty: number; price: number }[];
+  createdAt: any;
+  completedAt?: any;
+};
+
 type PaymentPackage = { credits: number; price: number };
 type PaymentConfig = {
   packages?: PaymentPackage[];
@@ -37,6 +47,7 @@ const INFO = {
 
 export default function AnalyticsTab({ vendorId, vendorData }: AnalyticsTabProps) {
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [orders, setOrders] = useState<OrderData[]>([]);
   const [credits, setCredits] = useState(vendorData.credits ?? 0);
   const [loading, setLoading] = useState(true);
   const [showTopUp, setShowTopUp] = useState(false);
@@ -62,6 +73,19 @@ export default function AnalyticsTab({ vendorId, vendorData }: AnalyticsTabProps
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "vendors", vendorId), (snap) => {
       if (snap.exists()) setCredits(snap.data().credits ?? 0);
+    });
+    return () => unsub();
+  }, [vendorId]);
+
+  // Orders listener for revenue data
+  useEffect(() => {
+    const q = query(
+      collection(db, "orders"),
+      where("vendorId", "==", vendorId),
+      orderBy("createdAt", "desc")
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as OrderData)).filter(o => !(o as any).deleted));
     });
     return () => unsub();
   }, [vendorId]);
@@ -194,6 +218,156 @@ export default function AnalyticsTab({ vendorId, vendorData }: AnalyticsTabProps
           </div>
         </div>
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════
+          REVENUE DASHBOARD
+          ═══════════════════════════════════════════════════════════════ */}
+      {(() => {
+        const completed = orders.filter(o => o.status === "completed");
+        const confirmed = orders.filter(o => o.status === "confirmed" || o.status === "completed");
+        const totalRevenue = completed.reduce((s, o) => s + (o.totalAmount || 0), 0);
+        const avgOrderValue = completed.length > 0 ? Math.round(totalRevenue / completed.length) : 0;
+        const pendingRevenue = orders.filter(o => o.status === "confirmed").reduce((s, o) => s + (o.totalAmount || 0), 0);
+        const conversionRate = leads.length > 0 ? Math.round((confirmed.length / leads.length) * 100) : 0;
+
+        // Monthly revenue (last 6 months)
+        const months: { label: string; revenue: number; orders: number }[] = [];
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date();
+          d.setMonth(d.getMonth() - i);
+          const m = d.getMonth();
+          const y = d.getFullYear();
+          const label = d.toLocaleDateString("en-MY", { month: "short" });
+          const monthOrders = completed.filter(o => {
+            const ts = o.completedAt?.toDate?.() || o.createdAt?.toDate?.();
+            return ts && ts.getMonth() === m && ts.getFullYear() === y;
+          });
+          months.push({ label, revenue: monthOrders.reduce((s, o) => s + (o.totalAmount || 0), 0), orders: monthOrders.length });
+        }
+        const maxRevenue = Math.max(...months.map(m => m.revenue), 1);
+
+        // Top items by frequency
+        const itemCounts: Record<string, { name: string; qty: number; revenue: number }> = {};
+        completed.forEach(o => {
+          (o.items || []).forEach(item => {
+            if (!itemCounts[item.name]) itemCounts[item.name] = { name: item.name, qty: 0, revenue: 0 };
+            itemCounts[item.name].qty += item.qty;
+            itemCounts[item.name].revenue += item.price * item.qty;
+          });
+        });
+        const topItems = Object.values(itemCounts).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+
+        return (
+          <div className="space-y-4">
+            <h3 className="text-lg font-black text-[#062c24] uppercase">Revenue</h3>
+
+            {/* Revenue Stats */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-white rounded-2xl p-4 border border-slate-100">
+                <p className="text-[9px] font-black text-slate-400 uppercase">Total Revenue</p>
+                <p className="text-2xl font-black text-emerald-600">RM {totalRevenue.toLocaleString()}</p>
+                <p className="text-[8px] text-slate-300 mt-1">{completed.length} completed orders</p>
+              </div>
+              <div className="bg-white rounded-2xl p-4 border border-slate-100">
+                <p className="text-[9px] font-black text-slate-400 uppercase">Avg Order Value</p>
+                <p className="text-2xl font-black text-[#062c24]">RM {avgOrderValue}</p>
+                <p className="text-[8px] text-slate-300 mt-1">Per completed order</p>
+              </div>
+              <div className="bg-white rounded-2xl p-4 border border-slate-100">
+                <p className="text-[9px] font-black text-amber-600 uppercase">Pending Revenue</p>
+                <p className="text-2xl font-black text-amber-600">RM {pendingRevenue.toLocaleString()}</p>
+                <p className="text-[8px] text-amber-500 mt-1">{orders.filter(o => o.status === "confirmed").length} active bookings</p>
+              </div>
+              <div className="bg-white rounded-2xl p-4 border border-slate-100">
+                <p className="text-[9px] font-black text-slate-400 uppercase">Conversion</p>
+                <p className="text-2xl font-black text-blue-600">{conversionRate}%</p>
+                <p className="text-[8px] text-slate-300 mt-1">Leads → Bookings</p>
+              </div>
+            </div>
+
+            {/* Monthly Revenue Chart */}
+            <div className="bg-white rounded-2xl p-5 border border-slate-100">
+              <p className="text-[9px] font-black text-slate-400 uppercase mb-4">Monthly Revenue (Last 6 Months)</p>
+              <div className="flex items-end gap-2 h-32">
+                {months.map((m, i) => (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                    <p className="text-[8px] font-bold text-slate-500">{m.revenue > 0 ? `RM${m.revenue}` : ""}</p>
+                    <div className="w-full bg-slate-100 rounded-t-lg relative overflow-hidden" style={{ height: "100%" }}>
+                      <div
+                        className="absolute bottom-0 w-full bg-emerald-400 rounded-t-lg transition-all duration-500"
+                        style={{ height: `${(m.revenue / maxRevenue) * 100}%`, minHeight: m.revenue > 0 ? "4px" : "0" }}
+                      ></div>
+                    </div>
+                    <p className="text-[8px] font-bold text-slate-400">{m.label}</p>
+                    <p className="text-[7px] text-slate-300">{m.orders > 0 ? `${m.orders} order${m.orders > 1 ? "s" : ""}` : ""}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Top Items + Payment Summary */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Top Items */}
+              <div className="bg-white rounded-2xl p-5 border border-slate-100">
+                <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Top Performing Items</p>
+                {topItems.length === 0 ? (
+                  <p className="text-[10px] text-slate-300 text-center py-4">No completed orders yet</p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {topItems.map((item, i) => (
+                      <div key={item.name} className="flex items-center gap-3">
+                        <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[9px] font-black ${
+                          i === 0 ? "bg-amber-100 text-amber-600" : i === 1 ? "bg-slate-200 text-slate-600" : "bg-orange-100 text-orange-600"
+                        }`}>{i + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] font-bold text-[#062c24] truncate">{item.name}</p>
+                          <p className="text-[8px] text-slate-400">{item.qty} rented</p>
+                        </div>
+                        <span className="text-[10px] font-black text-emerald-600">RM {item.revenue}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Payment Summary */}
+              <div className="bg-white rounded-2xl p-5 border border-slate-100">
+                <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Payment Summary</p>
+                {(() => {
+                  const unpaid = orders.filter(o => (!o.paymentStatus || o.paymentStatus === "unpaid") && o.status !== "cancelled").length;
+                  const depositPaid = orders.filter(o => o.paymentStatus === "deposit_paid").length;
+                  const fullPaid = orders.filter(o => o.paymentStatus === "full_paid").length;
+                  const refunded = orders.filter(o => o.paymentStatus === "refunded").length;
+                  const total = unpaid + depositPaid + fullPaid + refunded;
+                  if (total === 0) return <p className="text-[10px] text-slate-300 text-center py-4">No orders yet</p>;
+                  return (
+                    <div className="space-y-3">
+                      {[
+                        { label: "Unpaid", count: unpaid, color: "bg-red-400", textColor: "text-red-600" },
+                        { label: "Deposit Paid", count: depositPaid, color: "bg-amber-400", textColor: "text-amber-600" },
+                        { label: "Full Paid", count: fullPaid, color: "bg-emerald-400", textColor: "text-emerald-600" },
+                        { label: "Refunded", count: refunded, color: "bg-slate-300", textColor: "text-slate-500" },
+                      ].map(s => (
+                        <div key={s.label} className="flex items-center gap-3">
+                          <div className="flex-1">
+                            <div className="flex justify-between mb-1">
+                              <span className="text-[10px] font-bold text-slate-600">{s.label}</span>
+                              <span className={`text-[10px] font-black ${s.textColor}`}>{s.count}</span>
+                            </div>
+                            <div className="bg-slate-100 rounded-full h-2 overflow-hidden">
+                              <div className={`h-full rounded-full ${s.color}`} style={{ width: `${total > 0 ? (s.count / total) * 100 : 0}%` }}></div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Top Up Modal */}
       {showTopUp && (

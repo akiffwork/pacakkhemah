@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, query, where, orderBy, limit } from "firebase/firestore";
+import { collection, getDocs, getDocsFromServer, query, where, orderBy, limit } from "firebase/firestore";
 
 type Vendor = {
   id: string;
@@ -43,22 +43,31 @@ type Props = {
 
 export default function DashboardTab({ allVendors, onNavigate }: Props) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [platformOrders, setPlatformOrders] = useState<{ vendorId: string; vendorName?: string; totalAmount: number; status: string; items: any[]; createdAt: any }[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<"7d" | "30d" | "90d">("30d");
 
   useEffect(() => {
     loadTransactions();
+    loadPlatformOrders();
   }, []);
 
   async function loadTransactions() {
     try {
-      const snap = await getDocs(query(collection(db, "transactions"), orderBy("createdAt", "desc"), limit(100)));
+      const snap = await getDocsFromServer(query(collection(db, "transactions"), orderBy("createdAt", "desc"), limit(100)));
       setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Transaction)));
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadPlatformOrders() {
+    try {
+      const snap = await getDocs(query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(500)));
+      setPlatformOrders(snap.docs.map(d => d.data() as any).filter(o => !o.deleted));
+    } catch (e) { console.error("Platform orders error:", e); }
   }
 
   // Calculate stats
@@ -285,6 +294,84 @@ export default function DashboardTab({ allVendors, onNavigate }: Props) {
           )}
         </div>
       </div>
+
+      {/* Platform Bookings */}
+      {(() => {
+        const completedOrders = platformOrders.filter(o => o.status === "completed");
+        const confirmedOrders = platformOrders.filter(o => o.status === "confirmed");
+        const gmv = completedOrders.reduce((s, o) => s + (o.totalAmount || 0), 0);
+        const pendingGmv = confirmedOrders.reduce((s, o) => s + (o.totalAmount || 0), 0);
+
+        // Vendor rankings by completed order revenue
+        const vendorRevenue: Record<string, { name: string; revenue: number; orders: number }> = {};
+        completedOrders.forEach(o => {
+          const vid = o.vendorId;
+          if (!vendorRevenue[vid]) {
+            const vendor = allVendors.find(v => v.id === vid);
+            vendorRevenue[vid] = { name: vendor?.name || o.vendorName || "Unknown", revenue: 0, orders: 0 };
+          }
+          vendorRevenue[vid].revenue += o.totalAmount || 0;
+          vendorRevenue[vid].orders += 1;
+        });
+        const rankedVendors = Object.values(vendorRevenue).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+
+        return (
+          <div className="space-y-4">
+            <h4 className="text-xs font-black text-[#062c24] uppercase">Platform Bookings</h4>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+                <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center mb-3">
+                  <i className="fas fa-shopping-bag"></i>
+                </div>
+                <p className="text-2xl font-black text-[#062c24]">RM {gmv.toLocaleString()}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase">GMV (Completed)</p>
+              </div>
+              <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+                <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center mb-3">
+                  <i className="fas fa-hourglass-half"></i>
+                </div>
+                <p className="text-2xl font-black text-amber-600">RM {pendingGmv.toLocaleString()}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase">Pending Revenue</p>
+              </div>
+              <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+                <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-3">
+                  <i className="fas fa-receipt"></i>
+                </div>
+                <p className="text-2xl font-black text-[#062c24]">{platformOrders.length}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase">Total Orders</p>
+              </div>
+              <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+                <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center mb-3">
+                  <i className="fas fa-trophy"></i>
+                </div>
+                <p className="text-2xl font-black text-[#062c24]">{Object.keys(vendorRevenue).length}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase">Active Sellers</p>
+              </div>
+            </div>
+
+            {/* Vendor Performance Ranking */}
+            {rankedVendors.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+                <h4 className="text-xs font-black text-[#062c24] uppercase mb-4">Vendor Performance (by Revenue)</h4>
+                <div className="space-y-3">
+                  {rankedVendors.map((v, i) => (
+                    <div key={v.name} className="flex items-center gap-3">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black ${
+                        i === 0 ? "bg-amber-100 text-amber-600" : i === 1 ? "bg-slate-200 text-slate-600" : i === 2 ? "bg-orange-100 text-orange-600" : "bg-slate-100 text-slate-400"
+                      }`}>{i + 1}</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-[#062c24] truncate">{v.name}</p>
+                        <p className="text-[9px] text-slate-400">{v.orders} completed order{v.orders > 1 ? "s" : ""}</p>
+                      </div>
+                      <span className="text-xs font-black text-emerald-600">RM {v.revenue.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Bottom Row */}
       <div className="grid lg:grid-cols-2 gap-6">
