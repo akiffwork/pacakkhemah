@@ -128,6 +128,17 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
 
   const categories = Array.from(new Set(allGear.map(g => g.category || (g.type === "package" ? "Packages" : "Add-ons")))).sort();
   const addons = allGear.filter(g => g.type !== "package");
+  const [showIssuesFor, setShowIssuesFor] = useState<string | null>(null);
+
+  function getItemIssues(g: GearItem): { issue: string; icon: string; critical: boolean }[] {
+    const issues: { issue: string; icon: string; critical: boolean }[] = [];
+    if (!g.images?.length && !g.img) issues.push({ issue: "No photos", icon: "fa-camera", critical: false });
+    if (!g.price || g.price <= 0) issues.push({ issue: "No price", icon: "fa-tag", critical: true });
+    if ((g.stock || 0) <= 0 && !g.hasVariants) issues.push({ issue: "Zero stock", icon: "fa-box-open", critical: true });
+    if (g.hasVariants && g.variants?.some(v => !v.price || v.price <= 0)) issues.push({ issue: "Variant missing price", icon: "fa-palette", critical: false });
+    if (g.hasVariants && g.variants?.some(v => v.stock <= 0)) issues.push({ issue: "Variant zero stock", icon: "fa-palette", critical: true });
+    return issues;
+  }
 
   // --- GEAR ACTIONS ---
   function openAddGear() {
@@ -404,49 +415,6 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
         </div>
       </div>
 
-      {/* Inventory Health Alerts */}
-      {(() => {
-        const issues = allGear.reduce((acc, g) => {
-          if (!g.images?.length && !g.img) acc.push({ name: g.name, issue: "No photos", icon: "fa-camera", color: "text-amber-600" });
-          if (!g.price || g.price <= 0) acc.push({ name: g.name, issue: "No price set", icon: "fa-tag", color: "text-red-600" });
-          if ((g.stock || 0) <= 0 && !g.hasVariants) acc.push({ name: g.name, issue: "Zero stock", icon: "fa-box-open", color: "text-red-600" });
-          if (g.hasVariants && g.variants?.some(v => !v.price || v.price <= 0)) acc.push({ name: g.name, issue: "Variant missing price", icon: "fa-palette", color: "text-amber-600" });
-          if (g.hasVariants && g.variants?.some(v => v.stock <= 0)) acc.push({ name: g.name, issue: "Variant zero stock", icon: "fa-palette", color: "text-red-600" });
-          if (!g.desc?.trim()) acc.push({ name: g.name, issue: "No description", icon: "fa-align-left", color: "text-slate-500" });
-          return acc;
-        }, [] as { name: string; issue: string; icon: string; color: string }[]);
-
-        if (issues.length === 0) return null;
-
-        const critical = issues.filter(i => i.color === "text-red-600").length;
-        const warning = issues.length - critical;
-
-        return (
-          <div className={`rounded-2xl p-4 border ${critical > 0 ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`}>
-            <div className="flex items-center justify-between mb-2">
-              <p className={`text-xs font-black uppercase ${critical > 0 ? "text-red-700" : "text-amber-700"}`}>
-                <i className="fas fa-exclamation-triangle mr-1"></i>
-                {issues.length} Inventory Issue{issues.length > 1 ? "s" : ""}
-              </p>
-              <div className="flex gap-2">
-                {critical > 0 && <span className="text-[8px] font-black bg-red-100 text-red-600 px-2 py-0.5 rounded-full">{critical} critical</span>}
-                {warning > 0 && <span className="text-[8px] font-black bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full">{warning} warnings</span>}
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              {issues.slice(0, 6).map((issue, i) => (
-                <div key={i} className="flex items-center gap-2 text-[10px]">
-                  <i className={`fas ${issue.icon} ${issue.color} w-4 text-center`}></i>
-                  <span className="font-bold text-slate-700">{issue.name}</span>
-                  <span className={`${issue.color} font-bold`}>— {issue.issue}</span>
-                </div>
-              ))}
-              {issues.length > 6 && <p className="text-[10px] text-slate-500 pl-6">...and {issues.length - 6} more</p>}
-            </div>
-          </div>
-        );
-      })()}
-
       {/* Active Discounts */}
       {allDiscounts.length > 0 && (
         <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
@@ -482,14 +450,29 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                 {cat} <span className="text-slate-300 ml-2">({items.length})</span>
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {items.map(g => (
-                  <div key={g.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-all group">
+                {items.map(g => {
+                  const issues = getItemIssues(g);
+                  const hasCritical = issues.some(i => i.critical);
+                  return (
+                  <div key={g.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-all group relative">
                     <div className="w-14 h-14 rounded-xl bg-white p-0.5 shadow-sm overflow-hidden flex-shrink-0 relative">
                       <img src={g.images?.[0] || g.img || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-lg" alt={g.name} />
                       {g.setup?.available && (
                         <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
                           <i className="fas fa-tools text-white text-[6px]"></i>
                         </span>
+                      )}
+                      {/* Issue indicator on thumbnail */}
+                      {issues.length > 0 && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setShowIssuesFor(showIssuesFor === g.id ? null : g.id); }}
+                          className={`absolute -bottom-1 -left-1 w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-black shadow-sm ${
+                            hasCritical ? "bg-red-500 text-white animate-pulse" : "bg-amber-400 text-white"
+                          }`}
+                          title={`${issues.length} issue${issues.length > 1 ? "s" : ""}`}
+                        >
+                          {issues.length}
+                        </button>
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -510,6 +493,17 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                           </p>
                         )}
                       </div>
+                      {/* Issue details dropdown */}
+                      {showIssuesFor === g.id && issues.length > 0 && (
+                        <div className="mt-2 bg-white border border-slate-200 rounded-lg p-2 space-y-1 shadow-md">
+                          {issues.map((issue, i) => (
+                            <div key={i} className={`flex items-center gap-1.5 text-[9px] font-bold ${issue.critical ? "text-red-600" : "text-amber-600"}`}>
+                              <i className={`fas ${issue.icon} w-3 text-center`}></i>
+                              {issue.issue}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => openEditGear(g)}
@@ -522,7 +516,8 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                       </button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           );
