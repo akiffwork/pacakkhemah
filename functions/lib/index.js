@@ -9,57 +9,49 @@ const firestore_2 = require("firebase-admin/firestore");
 const messaging_1 = require("firebase-admin/messaging");
 (0, app_1.initializeApp)();
 const db = (0, firestore_2.getFirestore)();
+// Helper: send data-only push (no "notification" key = no browser auto-display = no duplicates)
+async function sendPush(token, title, body, extraData = {}) {
+    await (0, messaging_1.getMessaging)().send({
+        token,
+        data: Object.assign({ title,
+            body }, extraData),
+        android: {
+            priority: "high",
+        },
+        apns: {
+            payload: {
+                aps: { sound: "default", badge: 1, "content-available": 1 },
+            },
+        },
+        webpush: {
+            headers: { Urgency: "high" },
+        },
+    });
+}
 // Trigger on every new analytics doc (new order/inquiry)
 exports.onNewOrder = (0, firestore_1.onDocumentCreated)("analytics/{docId}", async (event) => {
-    var _a;
+    var _a, _b;
     const data = (_a = event.data) === null || _a === void 0 ? void 0 : _a.data();
     if (!data)
         return;
-    // Only notify for whatsapp_lead type
     if (data.type !== "whatsapp_lead")
         return;
     const { vendorId, vendorName, totalAmount, items } = data;
     if (!vendorId)
         return;
-    // Get vendor's FCM token
     const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
-    const vendorData = vendorSnap.data();
-    const fcmToken = vendorData === null || vendorData === void 0 ? void 0 : vendorData.fcmToken;
+    const fcmToken = (_b = vendorSnap.data()) === null || _b === void 0 ? void 0 : _b.fcmToken;
     if (!fcmToken) {
         console.log(`No FCM token for vendor ${vendorId}`);
         return;
     }
-    // Build item summary
     const itemSummary = Array.isArray(items)
         ? items.map((i) => `${i.name} x${i.qty}`).join(", ")
         : "Gear rental";
-    // Send push notification
-    await (0, messaging_1.getMessaging)().send({
-        token: fcmToken,
-        notification: {
-            title: "🛒 Pesanan Baru!",
-            body: `${itemSummary} — RM ${totalAmount}`,
-        },
-        data: {
-            url: "/store",
-            vendorId,
-            type: "new_order",
-        },
-        android: {
-            notification: {
-                channelId: "orders",
-                priority: "high",
-                sound: "default",
-            },
-        },
-        apns: {
-            payload: {
-                aps: {
-                    sound: "default",
-                    badge: 1,
-                },
-            },
-        },
+    await sendPush(fcmToken, "🛒 Pesanan Baru!", `${itemSummary} — RM ${totalAmount}`, {
+        url: "/store",
+        vendorId,
+        type: "new_order",
     });
     console.log(`Notification sent to vendor ${vendorName || vendorId}`);
 });
@@ -69,10 +61,10 @@ exports.onAgreementSigned = (0, firestore_1.onDocumentCreated)("agreements/{docI
     const data = (_a = event.data) === null || _a === void 0 ? void 0 : _a.data();
     if (!data)
         return;
-    const { vendorId, customerName, customerPhone, orderId, startDate, endDate } = data;
+    const { vendorId, customerName, customerPhone, orderId } = data;
     if (!vendorId)
         return;
-    // Link agreement to order (server-side — customers can't write to orders)
+    // Link agreement to order
     if (orderId) {
         try {
             await db.doc(`orders/${orderId}`).update({
@@ -125,29 +117,10 @@ exports.onAgreementSigned = (0, firestore_1.onDocumentCreated)("agreements/{docI
     const fcmToken = (_c = vendorSnap.data()) === null || _c === void 0 ? void 0 : _c.fcmToken;
     if (!fcmToken)
         return;
-    await (0, messaging_1.getMessaging)().send({
-        token: fcmToken,
-        notification: {
-            title: "✅ Perjanjian Ditandatangani!",
-            body: `${customerName || "Pelanggan"} telah menandatangani perjanjian sewa`,
-        },
-        data: {
-            url: "/store",
-            vendorId,
-            type: "agreement_signed",
-        },
-        android: {
-            notification: {
-                channelId: "orders",
-                priority: "high",
-                sound: "default",
-            },
-        },
-        apns: {
-            payload: {
-                aps: { sound: "default", badge: 1 },
-            },
-        },
+    await sendPush(fcmToken, "✅ Perjanjian Ditandatangani!", `${customerName || "Pelanggan"} telah menandatangani perjanjian sewa`, {
+        url: "/store",
+        vendorId,
+        type: "agreement_signed",
     });
     console.log(`Agreement notification sent to vendor ${vendorId}`);
 });
@@ -180,12 +153,10 @@ exports.onReviewCreated = (0, firestore_1.onDocumentCreated)("reviews/{docId}", 
         const currentCount = (vendorData === null || vendorData === void 0 ? void 0 : vendorData.reviewCount) || 0;
         const currentRating = (vendorData === null || vendorData === void 0 ? void 0 : vendorData.rating) || 0;
         const currentBreakdown = (vendorData === null || vendorData === void 0 ? void 0 : vendorData.ratingBreakdown) || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-        // Overall average
         const newCount = currentCount + 1;
         const newRating = ((currentRating * currentCount) + rating) / newCount;
         const roundedRating = Math.round(rating);
         const newBreakdown = Object.assign(Object.assign({}, currentBreakdown), { [roundedRating]: (currentBreakdown[roundedRating] || 0) + 1 });
-        // Per-category averages
         const currentCategoryAvg = (vendorData === null || vendorData === void 0 ? void 0 : vendorData.categoryRatings) || {};
         const newCategoryAvg = {};
         if (ratings && typeof ratings === "object") {
@@ -206,29 +177,10 @@ exports.onReviewCreated = (0, firestore_1.onDocumentCreated)("reviews/{docId}", 
         const fcmToken = (_b = vendorSnap.data()) === null || _b === void 0 ? void 0 : _b.fcmToken;
         if (!fcmToken)
             return;
-        await (0, messaging_1.getMessaging)().send({
-            token: fcmToken,
-            notification: {
-                title: `⭐ Review Baru! ${rating}/5`,
-                body: `${data.customerName || "Pelanggan"} telah memberi ulasan`,
-            },
-            data: {
-                url: "/store",
-                vendorId,
-                type: "new_review",
-            },
-            android: {
-                notification: {
-                    channelId: "orders",
-                    priority: "high",
-                    sound: "default",
-                },
-            },
-            apns: {
-                payload: {
-                    aps: { sound: "default", badge: 1 },
-                },
-            },
+        await sendPush(fcmToken, `⭐ Review Baru! ${rating}/5`, `${data.customerName || "Pelanggan"} telah memberi ulasan`, {
+            url: "/store",
+            vendorId,
+            type: "new_review",
         });
     }
     catch (e) {

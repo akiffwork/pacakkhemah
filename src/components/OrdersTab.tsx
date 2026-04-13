@@ -16,11 +16,14 @@ type Order = {
   totalAmount: number;
   pickupLocation: string;
   bookingDates: { start: string; end: string };
-  status: "pending" | "confirmed" | "completed" | "cancelled";
+  status: "pending" | "confirmed" | "completed" | "cancelled" | "conflict";
+  paymentStatus?: "unpaid" | "deposit_paid" | "full_paid" | "refunded";
   agreementSigned?: boolean;
   agreementSignedAt?: any;
   agreementId?: string;
   calendarLinked?: boolean;
+  stockConflict?: boolean;
+  stockConflictDetails?: string[];
   reviewToken?: string;
   reviewTokenUsed?: boolean;
   reviewTokenSentAt?: any;
@@ -42,18 +45,34 @@ type UnlinkedAgreement = {
   orderId?: string | null;
 };
 
-const statusColors = {
+const statusColors: Record<string, string> = {
   pending: "bg-amber-100 text-amber-700",
   confirmed: "bg-blue-100 text-blue-700",
   completed: "bg-emerald-100 text-emerald-700",
   cancelled: "bg-red-100 text-red-700",
+  conflict: "bg-red-100 text-red-700",
 };
 
-const statusIcons = {
+const statusIcons: Record<string, string> = {
   pending: "fa-clock",
   confirmed: "fa-check",
   completed: "fa-flag-checkered",
   cancelled: "fa-times",
+  conflict: "fa-exclamation-triangle",
+};
+
+const paymentColors: Record<string, string> = {
+  unpaid: "bg-red-50 text-red-500 border-red-100",
+  deposit_paid: "bg-amber-50 text-amber-600 border-amber-100",
+  full_paid: "bg-emerald-50 text-emerald-600 border-emerald-100",
+  refunded: "bg-slate-100 text-slate-500 border-slate-200",
+};
+
+const paymentLabels: Record<string, string> = {
+  unpaid: "Unpaid",
+  deposit_paid: "Deposit Paid",
+  full_paid: "Full Paid",
+  refunded: "Refunded",
 };
 
 export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
@@ -295,9 +314,11 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
   const stats = {
     total: orders.length,
     pending: orders.filter(o => o.status === "pending").length,
+    conflict: orders.filter(o => o.status === "conflict").length,
     confirmed: orders.filter(o => o.status === "confirmed").length,
     completed: orders.filter(o => o.status === "completed").length,
     awaitingReview: orders.filter(o => o.status === "completed" && !o.reviewTokenUsed).length,
+    unpaid: orders.filter(o => !o.paymentStatus || o.paymentStatus === "unpaid").filter(o => o.status !== "cancelled").length,
   };
 
   return (
@@ -312,16 +333,16 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
         </div>
       </div>
 
-      {/* Stats Cards with helper text */}
+      {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="bg-white rounded-xl p-4 border border-slate-100">
           <p className="text-[9px] font-black text-slate-400 uppercase">Total</p>
           <p className="text-2xl font-black text-[#062c24]">{stats.total}</p>
           <p className="text-[8px] text-slate-300 mt-1">All time orders</p>
         </div>
-        <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 group relative">
+        <div className="bg-amber-50 rounded-xl p-4 border border-amber-100">
           <p className="text-[9px] font-black text-amber-600 uppercase">Pending</p>
-          <p className="text-2xl font-black text-amber-700">{stats.pending}</p>
+          <p className="text-2xl font-black text-amber-700">{stats.pending}{stats.conflict > 0 ? <span className="text-red-600 text-sm ml-1">+{stats.conflict}</span> : ""}</p>
           <p className="text-[8px] text-amber-500 mt-1">Needs your action</p>
         </div>
         <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
@@ -334,22 +355,22 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
           <p className="text-2xl font-black text-emerald-700">{stats.completed}</p>
           <p className="text-[8px] text-emerald-500 mt-1">Gear returned</p>
         </div>
-        <div className="bg-orange-50 rounded-xl p-4 border border-orange-100">
-          <p className="text-[9px] font-black text-orange-600 uppercase">Awaiting Review</p>
-          <p className="text-2xl font-black text-orange-700">{stats.awaitingReview}</p>
-          <p className="text-[8px] text-orange-500 mt-1">No review yet</p>
+        <div className="bg-red-50 rounded-xl p-4 border border-red-100">
+          <p className="text-[9px] font-black text-red-600 uppercase">Unpaid</p>
+          <p className="text-2xl font-black text-red-700">{stats.unpaid}</p>
+          <p className="text-[8px] text-red-500 mt-1">Awaiting payment</p>
         </div>
       </div>
 
       {/* Filter Tabs */}
       <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
-        {(["all", "pending", "confirmed", "completed", "cancelled"] as const).map(status => (
+        {(["all", "pending", "conflict", "confirmed", "completed", "cancelled"] as const).map(status => (
           <button
             key={status}
             onClick={() => setFilter(status)}
             className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase whitespace-nowrap transition-all ${
               filter === status
-                ? "bg-[#062c24] text-white"
+                ? status === "conflict" ? "bg-red-600 text-white" : "bg-[#062c24] text-white"
                 : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300"
             }`}
           >
@@ -463,6 +484,16 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                     {order.calendarLinked && (
                       <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-blue-50 text-blue-600">
                         <i className="fas fa-calendar-check mr-1"></i> Booked
+                      </span>
+                    )}
+                    {order.paymentStatus && order.paymentStatus !== "unpaid" && (
+                      <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase border ${paymentColors[order.paymentStatus]}`}>
+                        <i className="fas fa-money-bill-wave mr-1"></i>{paymentLabels[order.paymentStatus]}
+                      </span>
+                    )}
+                    {order.stockConflict && (
+                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-red-100 text-red-600 animate-pulse">
+                        <i className="fas fa-exclamation-triangle mr-1"></i> Stock Conflict
                       </span>
                     )}
                   </div>
@@ -640,6 +671,43 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
               </div>
             </div>
 
+            {/* Stock Conflict Warning */}
+            {selectedOrder.stockConflict && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                <p className="text-xs font-black text-red-700 uppercase mb-2"><i className="fas fa-exclamation-triangle mr-1"></i>Stock Conflict Detected</p>
+                <div className="space-y-1">
+                  {(selectedOrder.stockConflictDetails || []).map((detail, i) => (
+                    <p key={i} className="text-[10px] text-red-600">• {detail}</p>
+                  ))}
+                </div>
+                <p className="text-[9px] text-red-500 mt-2">Please check inventory or cancel this order.</p>
+              </div>
+            )}
+
+            {/* Payment Status */}
+            <div className="mb-4">
+              <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Payment Status</p>
+              <div className="grid grid-cols-4 gap-1.5">
+                {(["unpaid", "deposit_paid", "full_paid", "refunded"] as const).map(ps => (
+                  <button
+                    key={ps}
+                    onClick={async () => {
+                      try {
+                        await updateDoc(doc(db, "orders", selectedOrder.id), { paymentStatus: ps });
+                      } catch (e) { console.error("Payment status error:", e); }
+                    }}
+                    className={`py-2.5 rounded-xl text-[8px] font-black uppercase text-center transition-all border ${
+                      (selectedOrder.paymentStatus || "unpaid") === ps
+                        ? paymentColors[ps] + " ring-2 ring-offset-1 ring-current"
+                        : "bg-white border-slate-200 text-slate-400 hover:border-slate-300"
+                    }`}
+                  >
+                    {paymentLabels[ps]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Status Actions */}
             <div className="space-y-2">
               <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Update Status</p>
@@ -662,6 +730,32 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                       onClick={() => updateStatus(selectedOrder.id, "cancelled")}
                       className="py-3 rounded-xl font-black uppercase text-xs bg-red-100 text-red-600 hover:bg-red-200"
                       title="Reject or cancel this booking"
+                    >
+                      <i className="fas fa-times mr-2"></i>Cancel
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {selectedOrder.status === "conflict" && (
+                <>
+                  <p className="text-[10px] text-red-500 mb-2">
+                    <i className="fas fa-exclamation-triangle mr-1"></i>
+                    Stock conflict detected. Confirm to override or cancel.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={async () => {
+                        await updateDoc(doc(db, "orders", selectedOrder.id), { stockConflict: false });
+                        await updateStatus(selectedOrder.id, "confirmed");
+                      }}
+                      className="py-3 rounded-xl font-black uppercase text-xs bg-amber-500 text-white hover:bg-amber-600"
+                    >
+                      <i className="fas fa-check mr-2"></i>Override & Confirm
+                    </button>
+                    <button
+                      onClick={() => updateStatus(selectedOrder.id, "cancelled")}
+                      className="py-3 rounded-xl font-black uppercase text-xs bg-red-100 text-red-600 hover:bg-red-200"
                     >
                       <i className="fas fa-times mr-2"></i>Cancel
                     </button>

@@ -404,6 +404,49 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
         </div>
       </div>
 
+      {/* Inventory Health Alerts */}
+      {(() => {
+        const issues = allGear.reduce((acc, g) => {
+          if (!g.images?.length && !g.img) acc.push({ name: g.name, issue: "No photos", icon: "fa-camera", color: "text-amber-600" });
+          if (!g.price || g.price <= 0) acc.push({ name: g.name, issue: "No price set", icon: "fa-tag", color: "text-red-600" });
+          if ((g.stock || 0) <= 0 && !g.hasVariants) acc.push({ name: g.name, issue: "Zero stock", icon: "fa-box-open", color: "text-red-600" });
+          if (g.hasVariants && g.variants?.some(v => !v.price || v.price <= 0)) acc.push({ name: g.name, issue: "Variant missing price", icon: "fa-palette", color: "text-amber-600" });
+          if (g.hasVariants && g.variants?.some(v => v.stock <= 0)) acc.push({ name: g.name, issue: "Variant zero stock", icon: "fa-palette", color: "text-red-600" });
+          if (!g.desc?.trim()) acc.push({ name: g.name, issue: "No description", icon: "fa-align-left", color: "text-slate-500" });
+          return acc;
+        }, [] as { name: string; issue: string; icon: string; color: string }[]);
+
+        if (issues.length === 0) return null;
+
+        const critical = issues.filter(i => i.color === "text-red-600").length;
+        const warning = issues.length - critical;
+
+        return (
+          <div className={`rounded-2xl p-4 border ${critical > 0 ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`}>
+            <div className="flex items-center justify-between mb-2">
+              <p className={`text-xs font-black uppercase ${critical > 0 ? "text-red-700" : "text-amber-700"}`}>
+                <i className="fas fa-exclamation-triangle mr-1"></i>
+                {issues.length} Inventory Issue{issues.length > 1 ? "s" : ""}
+              </p>
+              <div className="flex gap-2">
+                {critical > 0 && <span className="text-[8px] font-black bg-red-100 text-red-600 px-2 py-0.5 rounded-full">{critical} critical</span>}
+                {warning > 0 && <span className="text-[8px] font-black bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full">{warning} warnings</span>}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              {issues.slice(0, 6).map((issue, i) => (
+                <div key={i} className="flex items-center gap-2 text-[10px]">
+                  <i className={`fas ${issue.icon} ${issue.color} w-4 text-center`}></i>
+                  <span className="font-bold text-slate-700">{issue.name}</span>
+                  <span className={`${issue.color} font-bold`}>— {issue.issue}</span>
+                </div>
+              ))}
+              {issues.length > 6 && <p className="text-[10px] text-slate-500 pl-6">...and {issues.length - 6} more</p>}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Active Discounts */}
       {allDiscounts.length > 0 && (
         <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>

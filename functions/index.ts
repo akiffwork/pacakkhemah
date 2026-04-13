@@ -10,6 +10,29 @@ initializeApp();
 
 const db = getFirestore();
 
+// Helper: send data-only push (no "notification" key = no browser auto-display = no duplicates)
+async function sendPush(token: string, title: string, body: string, extraData: Record<string, string> = {}) {
+  await getMessaging().send({
+    token,
+    data: {
+      title,
+      body,
+      ...extraData,
+    },
+    android: {
+      priority: "high",
+    },
+    apns: {
+      payload: {
+        aps: { sound: "default", badge: 1, "content-available": 1 },
+      },
+    },
+    webpush: {
+      headers: { Urgency: "high" },
+    },
+  });
+}
+
 // Trigger on every new analytics doc (new order/inquiry)
 export const onNewOrder = onDocumentCreated(
   "analytics/{docId}",
@@ -17,54 +40,27 @@ export const onNewOrder = onDocumentCreated(
     const data = event.data?.data();
     if (!data) return;
 
-    // Only notify for whatsapp_lead type
     if (data.type !== "whatsapp_lead") return;
 
     const { vendorId, vendorName, totalAmount, items } = data;
     if (!vendorId) return;
 
-    // Get vendor's FCM token
     const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
-    const vendorData = vendorSnap.data();
-    const fcmToken = vendorData?.fcmToken;
+    const fcmToken = vendorSnap.data()?.fcmToken;
 
     if (!fcmToken) {
       console.log(`No FCM token for vendor ${vendorId}`);
       return;
     }
 
-    // Build item summary
     const itemSummary = Array.isArray(items)
       ? items.map((i: { name: string; qty: number }) => `${i.name} x${i.qty}`).join(", ")
       : "Gear rental";
 
-    // Send push notification
-    await getMessaging().send({
-      token: fcmToken,
-      notification: {
-        title: "🛒 Pesanan Baru!",
-        body: `${itemSummary} — RM ${totalAmount}`,
-      },
-      data: {
-        url: "/store",
-        vendorId,
-        type: "new_order",
-      },
-      android: {
-        notification: {
-          channelId: "orders",
-          priority: "high",
-          sound: "default",
-        },
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: "default",
-            badge: 1,
-          },
-        },
-      },
+    await sendPush(fcmToken, "🛒 Pesanan Baru!", `${itemSummary} — RM ${totalAmount}`, {
+      url: "/store",
+      vendorId,
+      type: "new_order",
     });
 
     console.log(`Notification sent to vendor ${vendorName || vendorId}`);
@@ -78,10 +74,10 @@ export const onAgreementSigned = onDocumentCreated(
     const data = event.data?.data();
     if (!data) return;
 
-    const { vendorId, customerName, customerPhone, orderId, startDate, endDate } = data;
+    const { vendorId, customerName, customerPhone, orderId } = data;
     if (!vendorId) return;
 
-    // Link agreement to order (server-side — customers can't write to orders)
+    // Link agreement to order
     if (orderId) {
       try {
         await db.doc(`orders/${orderId}`).update({
@@ -136,29 +132,10 @@ export const onAgreementSigned = onDocumentCreated(
     const fcmToken = vendorSnap.data()?.fcmToken;
     if (!fcmToken) return;
 
-    await getMessaging().send({
-      token: fcmToken,
-      notification: {
-        title: "✅ Perjanjian Ditandatangani!",
-        body: `${customerName || "Pelanggan"} telah menandatangani perjanjian sewa`,
-      },
-      data: {
-        url: "/store",
-        vendorId,
-        type: "agreement_signed",
-      },
-      android: {
-        notification: {
-          channelId: "orders",
-          priority: "high",
-          sound: "default",
-        },
-      },
-      apns: {
-        payload: {
-          aps: { sound: "default", badge: 1 },
-        },
-      },
+    await sendPush(fcmToken, "✅ Perjanjian Ditandatangani!", `${customerName || "Pelanggan"} telah menandatangani perjanjian sewa`, {
+      url: "/store",
+      vendorId,
+      type: "agreement_signed",
     });
 
     console.log(`Agreement notification sent to vendor ${vendorId}`);
@@ -197,13 +174,11 @@ export const onReviewCreated = onDocumentCreated(
       const currentRating = vendorData?.rating || 0;
       const currentBreakdown = vendorData?.ratingBreakdown || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
 
-      // Overall average
       const newCount = currentCount + 1;
       const newRating = ((currentRating * currentCount) + rating) / newCount;
       const roundedRating = Math.round(rating);
       const newBreakdown = { ...currentBreakdown, [roundedRating]: (currentBreakdown[roundedRating] || 0) + 1 };
 
-      // Per-category averages
       const currentCategoryAvg = vendorData?.categoryRatings || {};
       const newCategoryAvg: Record<string, number> = {};
       if (ratings && typeof ratings === "object") {
@@ -231,32 +206,104 @@ export const onReviewCreated = onDocumentCreated(
       const fcmToken = vendorSnap.data()?.fcmToken;
       if (!fcmToken) return;
 
-      await getMessaging().send({
-        token: fcmToken,
-        notification: {
-          title: `⭐ Review Baru! ${rating}/5`,
-          body: `${data.customerName || "Pelanggan"} telah memberi ulasan`,
-        },
-        data: {
-          url: "/store",
-          vendorId,
-          type: "new_review",
-        },
-        android: {
-          notification: {
-            channelId: "orders",
-            priority: "high",
-            sound: "default",
-          },
-        },
-        apns: {
-          payload: {
-            aps: { sound: "default", badge: 1 },
-          },
-        },
+      await sendPush(fcmToken, `⭐ Review Baru! ${rating}/5`, `${data.customerName || "Pelanggan"} telah memberi ulasan`, {
+        url: "/store",
+        vendorId,
+        type: "new_review",
       });
     } catch (e) {
       console.error("Review notification error:", e);
+    }
+  }
+);
+
+// Trigger on new order — validate stock server-side to prevent overbooking
+export const onOrderCreated = onDocumentCreated(
+  "orders/{orderId}",
+  async (event) => {
+    const data = event.data?.data();
+    if (!data) return;
+
+    const { vendorId, items, bookingDates } = data;
+    if (!vendorId || !items || !bookingDates?.start || !bookingDates?.end) return;
+
+    // Skip if already marked (e.g. re-trigger)
+    if (data.stockValidated) return;
+
+    try {
+      const conflicts: string[] = [];
+      const startDate = new Date(bookingDates.start);
+      const endDate = new Date(bookingDates.end);
+
+      for (const item of items) {
+        if (!item.id) continue;
+
+        // Get gear doc for total stock
+        const gearSnap = await db.doc(`gear/${item.id}`).get();
+        const gearData = gearSnap.data();
+        if (!gearData) continue;
+
+        const totalStock = gearData.stock || 0;
+
+        // Count already booked qty for overlapping dates
+        const availSnap = await db
+          .collection(`vendors/${vendorId}/availability`)
+          .where("itemId", "==", item.id)
+          .where("type", "==", "booking")
+          .get();
+
+        let bookedQty = 0;
+        for (const doc of availSnap.docs) {
+          const entry = doc.data();
+          const eStart = new Date(entry.start);
+          const eEnd = new Date(entry.end || entry.start);
+          // Check date overlap
+          if (eStart <= endDate && eEnd >= startDate) {
+            // Exclude entries from this same order (in case of re-validation)
+            if (entry.orderId !== event.data?.id) {
+              bookedQty += entry.qty || 0;
+            }
+          }
+        }
+
+        const remaining = totalStock - bookedQty;
+        const requested = item.qty || 1;
+
+        if (requested > remaining) {
+          conflicts.push(`${item.name}: requested ${requested}, only ${Math.max(0, remaining)} available`);
+        }
+      }
+
+      // Update order with validation result
+      const updateData: Record<string, any> = {
+        stockValidated: true,
+        stockValidatedAt: new Date(),
+      };
+
+      if (conflicts.length > 0) {
+        updateData.stockConflict = true;
+        updateData.stockConflictDetails = conflicts;
+        updateData.status = "conflict";
+
+        // Notify vendor about conflict
+        const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
+        const fcmToken = vendorSnap.data()?.fcmToken;
+        if (fcmToken) {
+          await sendPush(fcmToken, "⚠️ Konflik Stok!", `${conflicts.length} item melebihi stok: ${conflicts[0]}`, {
+            url: "/store?tab=orders",
+            vendorId,
+            type: "stock_conflict",
+          });
+        }
+
+        console.log(`Order ${event.data?.id} has stock conflicts: ${conflicts.join(", ")}`);
+      } else {
+        updateData.stockConflict = false;
+      }
+
+      await db.doc(`orders/${event.data?.id}`).update(updateData);
+    } catch (e) {
+      console.error("Stock validation error:", e);
     }
   }
 );
