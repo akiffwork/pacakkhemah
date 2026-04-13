@@ -107,6 +107,16 @@ function AgreementContent() {
           }
         } catch { /* ignore */ }
 
+        // Auto-fill returning customer info
+        try {
+          const savedCustomer = localStorage.getItem("pk_customer");
+          if (savedCustomer) {
+            const { name, phone } = JSON.parse(savedCustomer);
+            if (name && !custName) setCustName(name);
+            if (phone && !custPhone) setCustPhone(phone);
+          }
+        } catch { /* ignore */ }
+
         setLoading(false);
       } catch (e) {
         setError("System error. Please try again.");
@@ -164,6 +174,15 @@ function AgreementContent() {
       // 3. Sending push notification
 
       setSubmitted(true);
+
+      // Save customer info for repeat visits
+      try {
+        localStorage.setItem("pk_customer", JSON.stringify({
+          name: custName,
+          phone: custPhone.replace(/\D/g, ""),
+          lastVisit: new Date().toISOString(),
+        }));
+      } catch { /* ignore */ }
     } catch (e) {
       console.error(e);
       alert("Upload failed. Please check your connection and try again.");

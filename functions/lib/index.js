@@ -2,7 +2,7 @@
 // functions/index.ts
 // Deploy with: firebase deploy --only functions
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onReviewCreated = exports.onAgreementSigned = exports.onNewOrder = void 0;
+exports.onOrderCreated = exports.onReviewCreated = exports.onAgreementSigned = exports.onNewOrder = void 0;
 const firestore_1 = require("firebase-functions/v2/firestore");
 const app_1 = require("firebase-admin/app");
 const firestore_2 = require("firebase-admin/firestore");
@@ -185,6 +185,86 @@ exports.onReviewCreated = (0, firestore_1.onDocumentCreated)("reviews/{docId}", 
     }
     catch (e) {
         console.error("Review notification error:", e);
+    }
+});
+// Trigger on new order — validate stock server-side to prevent overbooking
+exports.onOrderCreated = (0, firestore_1.onDocumentCreated)("orders/{orderId}", async (event) => {
+    var _a, _b, _c, _d, _e;
+    const data = (_a = event.data) === null || _a === void 0 ? void 0 : _a.data();
+    if (!data)
+        return;
+    const { vendorId, items, bookingDates } = data;
+    if (!vendorId || !items || !(bookingDates === null || bookingDates === void 0 ? void 0 : bookingDates.start) || !(bookingDates === null || bookingDates === void 0 ? void 0 : bookingDates.end))
+        return;
+    // Skip if already marked (e.g. re-trigger)
+    if (data.stockValidated)
+        return;
+    try {
+        const conflicts = [];
+        const startDate = new Date(bookingDates.start);
+        const endDate = new Date(bookingDates.end);
+        for (const item of items) {
+            if (!item.id)
+                continue;
+            // Get gear doc for total stock
+            const gearSnap = await db.doc(`gear/${item.id}`).get();
+            const gearData = gearSnap.data();
+            if (!gearData)
+                continue;
+            const totalStock = gearData.stock || 0;
+            // Count already booked qty for overlapping dates
+            const availSnap = await db
+                .collection(`vendors/${vendorId}/availability`)
+                .where("itemId", "==", item.id)
+                .where("type", "==", "booking")
+                .get();
+            let bookedQty = 0;
+            for (const doc of availSnap.docs) {
+                const entry = doc.data();
+                const eStart = new Date(entry.start);
+                const eEnd = new Date(entry.end || entry.start);
+                // Check date overlap
+                if (eStart <= endDate && eEnd >= startDate) {
+                    // Exclude entries from this same order (in case of re-validation)
+                    if (entry.orderId !== ((_b = event.data) === null || _b === void 0 ? void 0 : _b.id)) {
+                        bookedQty += entry.qty || 0;
+                    }
+                }
+            }
+            const remaining = totalStock - bookedQty;
+            const requested = item.qty || 1;
+            if (requested > remaining) {
+                conflicts.push(`${item.name}: requested ${requested}, only ${Math.max(0, remaining)} available`);
+            }
+        }
+        // Update order with validation result
+        const updateData = {
+            stockValidated: true,
+            stockValidatedAt: new Date(),
+        };
+        if (conflicts.length > 0) {
+            updateData.stockConflict = true;
+            updateData.stockConflictDetails = conflicts;
+            updateData.status = "conflict";
+            // Notify vendor about conflict
+            const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
+            const fcmToken = (_c = vendorSnap.data()) === null || _c === void 0 ? void 0 : _c.fcmToken;
+            if (fcmToken) {
+                await sendPush(fcmToken, "⚠️ Konflik Stok!", `${conflicts.length} item melebihi stok: ${conflicts[0]}`, {
+                    url: "/store?tab=orders",
+                    vendorId,
+                    type: "stock_conflict",
+                });
+            }
+            console.log(`Order ${(_d = event.data) === null || _d === void 0 ? void 0 : _d.id} has stock conflicts: ${conflicts.join(", ")}`);
+        }
+        else {
+            updateData.stockConflict = false;
+        }
+        await db.doc(`orders/${(_e = event.data) === null || _e === void 0 ? void 0 : _e.id}`).update(updateData);
+    }
+    catch (e) {
+        console.error("Stock validation error:", e);
     }
 });
 //# sourceMappingURL=index.js.map

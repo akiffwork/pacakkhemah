@@ -891,18 +891,93 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
               )}
             </div>
 
-            {/* Contact Customer */}
+            {/* WhatsApp Quick Messages */}
             <div className="mt-4 pt-4 border-t border-slate-100">
-              {selectedOrder.customerPhone ? (
-                <a
-                  href={`https://wa.me/${selectedOrder.customerPhone.replace(/\D/g, "")}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="w-full py-3 rounded-xl font-black uppercase text-xs bg-emerald-100 text-emerald-700 hover:bg-emerald-200 flex items-center justify-center gap-2"
-                >
-                  <i className="fab fa-whatsapp"></i>Contact Customer
-                </a>
-              ) : (
+              <p className="text-[9px] font-black text-slate-400 uppercase mb-3"><i className="fab fa-whatsapp text-emerald-500 mr-1"></i>Quick Messages</p>
+              {selectedOrder.customerPhone ? (() => {
+                const phone = selectedOrder.customerPhone.replace(/[\s\-\+\(\)]/g, "");
+                const name = selectedOrder.customerName || "pelanggan";
+                const items = selectedOrder.items.map(i => i.name).join(", ");
+                const dates = selectedOrder.bookingDates;
+                const total = selectedOrder.totalAmount;
+                const deposit = Math.round(total * 0.5);
+
+                const templates = [
+                  {
+                    label: "Confirm Booking",
+                    icon: "fa-check-circle",
+                    color: "bg-blue-50 text-blue-700 border-blue-100",
+                    show: selectedOrder.status === "pending" || selectedOrder.status === "confirmed",
+                    msg: `Assalamualaikum ${name} 👋\n\n✅ *Tempahan anda telah disahkan!*\n\n📦 Item: ${items}\n📅 Tarikh: ${dates.start} → ${dates.end}\n💰 Jumlah: RM${total}\n\nSila buat bayaran deposit RM${deposit} ke akaun berikut untuk mengesahkan tempahan:\n\n🏦 [Bank/No Akaun]\n\nSelepas bayaran, sila hantar bukti pembayaran di sini.\n\nTerima kasih! 🏕️`,
+                  },
+                  {
+                    label: "Deposit Received",
+                    icon: "fa-money-bill-wave",
+                    color: "bg-emerald-50 text-emerald-700 border-emerald-100",
+                    show: true,
+                    msg: `Assalamualaikum ${name} 👋\n\n💚 *Deposit telah diterima!*\n\nTempahan anda kini telah dikunci:\n📦 ${items}\n📅 ${dates.start} → ${dates.end}\n\nKami akan hubungi anda sehari sebelum tarikh pickup untuk pengesahan lokasi dan masa.\n\nTerima kasih! 🏕️`,
+                  },
+                  {
+                    label: "Pickup Reminder",
+                    icon: "fa-map-marker-alt",
+                    color: "bg-amber-50 text-amber-700 border-amber-100",
+                    show: selectedOrder.status === "confirmed",
+                    msg: `Assalamualaikum ${name} 👋\n\n📍 *Peringatan Pickup Esok!*\n\n📦 Item: ${items}\n📅 Tarikh Pickup: ${dates.start}\n📍 Lokasi: ${selectedOrder.pickupLocation || "TBD"}\n\nSila hubungi kami jika ada sebarang perubahan.\n\nJumpa esok! 🏕️`,
+                  },
+                  {
+                    label: "Return Reminder",
+                    icon: "fa-undo",
+                    color: "bg-orange-50 text-orange-700 border-orange-100",
+                    show: selectedOrder.status === "confirmed",
+                    msg: `Assalamualaikum ${name} 👋\n\n🔄 *Peringatan Pemulangan*\n\n📦 Item: ${items}\n📅 Tarikh Pulang: ${dates.end}\n📍 Lokasi: ${selectedOrder.pickupLocation || "TBD"}\n\nSila pastikan semua peralatan dalam keadaan baik dan bersih.\n\nTerima kasih atas sokongan anda! 🙏`,
+                  },
+                  {
+                    label: "Gear Ready",
+                    icon: "fa-box-open",
+                    color: "bg-teal-50 text-teal-700 border-teal-100",
+                    show: selectedOrder.status === "confirmed",
+                    msg: `Assalamualaikum ${name} 👋\n\n📦 *Peralatan anda sudah siap!*\n\n✅ ${items}\n\nSemua item telah diperiksa dan dalam keadaan baik. Anda boleh pickup pada:\n📅 ${dates.start}\n📍 ${selectedOrder.pickupLocation || "TBD"}\n\nSelamat berkemah! 🏕️🔥`,
+                  },
+                  {
+                    label: "Full Payment",
+                    icon: "fa-receipt",
+                    color: "bg-purple-50 text-purple-700 border-purple-100",
+                    show: true,
+                    msg: `Assalamualaikum ${name} 👋\n\n💰 *Peringatan Baki Bayaran*\n\nBaki yang perlu dijelaskan:\n📦 ${items}\n💵 Jumlah: RM${total}\n💳 Deposit dibayar: RM${deposit}\n💰 Baki: RM${total - deposit}\n\nSila buat bayaran sebelum tarikh pickup.\n\n🏦 [Bank/No Akaun]\n\nTerima kasih! 🙏`,
+                  },
+                  {
+                    label: "Thank You",
+                    icon: "fa-heart",
+                    color: "bg-pink-50 text-pink-700 border-pink-100",
+                    show: selectedOrder.status === "completed",
+                    msg: `Assalamualaikum ${name} 👋\n\n🙏 *Terima kasih!*\n\nKami harap anda menikmati pengalaman berkemah dengan peralatan kami! 🏕️\n\nJika anda berpuas hati, kami amat menghargai jika anda boleh tinggalkan ulasan:\n⭐ ${typeof window !== "undefined" ? window.location.origin : ""}/review/${selectedOrder.reviewToken || ""}\n\nJumpa lagi di trip seterusnya! 🔥`,
+                  },
+                  {
+                    label: "Custom Message",
+                    icon: "fa-comment-dots",
+                    color: "bg-slate-50 text-slate-700 border-slate-200",
+                    show: true,
+                    msg: `Assalamualaikum ${name} 👋\n\n`,
+                  },
+                ].filter(t => t.show);
+
+                return (
+                  <div className="grid grid-cols-2 gap-2">
+                    {templates.map(t => (
+                      <a
+                        key={t.label}
+                        href={`https://wa.me/${phone}?text=${encodeURIComponent(t.msg)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={`py-2.5 px-3 rounded-xl text-[9px] font-black uppercase flex items-center gap-1.5 transition-all border hover:shadow-sm ${t.color}`}
+                      >
+                        <i className={`fas ${t.icon} text-[10px]`}></i>
+                        <span className="truncate">{t.label}</span>
+                      </a>
+                    ))}
+                  </div>
+                );
+              })() : (
                 <div className="w-full py-3 rounded-xl font-black uppercase text-xs bg-slate-100 text-slate-400 flex items-center justify-center gap-2">
                   <i className="fab fa-whatsapp"></i>No Phone Number Yet
                 </div>
