@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
-import { doc, updateDoc, increment, arrayUnion, arrayRemove, collection, query, where, getDocs, getDoc } from "firebase/firestore";
+import { doc, updateDoc, deleteDoc, increment, arrayUnion, arrayRemove, collection, query, where, getDocs, getDoc, writeBatch } from "firebase/firestore";
 
 type Badge = "verified" | "id_verified" | "top_rated" | "fast_responder" | "premium";
 
@@ -135,6 +135,69 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
 
   async function toggleMockup(vendorId: string, currentlyMockup: boolean) {
     await updateDoc(doc(db, "vendors", vendorId), { is_mockup: !currentlyMockup });
+  }
+
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function deleteVendor(vendorId: string, vendorName: string) {
+    const confirmed = prompt(`Type "${vendorName}" to permanently delete this vendor and ALL their data:`);
+    if (confirmed !== vendorName) {
+      if (confirmed !== null) alert("Name didn't match. Delete cancelled.");
+      return;
+    }
+
+    setDeletingId(vendorId);
+    try {
+      // 1. Delete all gear
+      const gearSnap = await getDocs(query(collection(db, "gear"), where("vendorId", "==", vendorId)));
+      const batch1 = writeBatch(db);
+      gearSnap.docs.forEach(d => batch1.delete(d.ref));
+      if (!gearSnap.empty) await batch1.commit();
+
+      // 2. Delete all orders
+      const ordersSnap = await getDocs(query(collection(db, "orders"), where("vendorId", "==", vendorId)));
+      const batch2 = writeBatch(db);
+      ordersSnap.docs.forEach(d => batch2.delete(d.ref));
+      if (!ordersSnap.empty) await batch2.commit();
+
+      // 3. Delete all analytics
+      const analyticsSnap = await getDocs(query(collection(db, "analytics"), where("vendorId", "==", vendorId)));
+      const batch3 = writeBatch(db);
+      analyticsSnap.docs.forEach(d => batch3.delete(d.ref));
+      if (!analyticsSnap.empty) await batch3.commit();
+
+      // 4. Delete all reviews
+      const reviewsSnap = await getDocs(query(collection(db, "reviews"), where("vendorId", "==", vendorId)));
+      const batch4 = writeBatch(db);
+      reviewsSnap.docs.forEach(d => batch4.delete(d.ref));
+      if (!reviewsSnap.empty) await batch4.commit();
+
+      // 5. Delete all agreements
+      const agreementsSnap = await getDocs(query(collection(db, "agreements"), where("vendorId", "==", vendorId)));
+      const batch5 = writeBatch(db);
+      agreementsSnap.docs.forEach(d => batch5.delete(d.ref));
+      if (!agreementsSnap.empty) await batch5.commit();
+
+      // 6. Delete subcollections (availability, settings, discounts)
+      for (const sub of ["availability", "settings", "discounts"]) {
+        const subSnap = await getDocs(collection(db, "vendors", vendorId, sub));
+        if (!subSnap.empty) {
+          const batchSub = writeBatch(db);
+          subSnap.docs.forEach(d => batchSub.delete(d.ref));
+          await batchSub.commit();
+        }
+      }
+
+      // 7. Delete vendor doc itself
+      await deleteDoc(doc(db, "vendors", vendorId));
+
+      alert(`✅ ${vendorName} and all related data permanently deleted.`);
+    } catch (e) {
+      console.error("Delete vendor error:", e);
+      alert("❌ Failed to delete vendor. Check console for details.");
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   // Calculate auto badges for display
@@ -325,11 +388,18 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                             <i className="fas fa-ban text-[10px]"></i>
                           </button>
                         ) : (
-                          <button onClick={() => { if(confirm("Reject and delete this vendor?")) { /* delete logic */ } }}
-                            className="w-8 h-8 rounded-lg bg-red-50 text-red-400 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all" title="Reject">
-                            <i className="fas fa-times text-[10px]"></i>
+                          <button onClick={() => deleteVendor(v.id, v.name)}
+                            disabled={deletingId === v.id}
+                            className="w-8 h-8 rounded-lg bg-red-50 text-red-400 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all disabled:opacity-50" title="Reject & Delete">
+                            <i className={`fas ${deletingId === v.id ? "fa-spinner fa-spin" : "fa-times"} text-[10px]`}></i>
                           </button>
                         )}
+                        {/* Permanent Delete */}
+                        <button onClick={() => deleteVendor(v.id, v.name)}
+                          disabled={deletingId === v.id}
+                          className="w-8 h-8 rounded-lg bg-red-100 text-red-500 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all disabled:opacity-50" title="Permanently Delete">
+                          <i className={`fas ${deletingId === v.id ? "fa-spinner fa-spin" : "fa-trash"} text-[10px]`}></i>
+                        </button>
                       </div>
                     </td>
                   </tr>
