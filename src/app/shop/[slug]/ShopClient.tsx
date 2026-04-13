@@ -104,7 +104,11 @@ type CartItem = GearItem & { qty: number; addSetup?: boolean; selectedVariant?: 
 type AvailRule = { itemId?: string; variantId?: string; type?: string; start: string; end?: string; qty?: number };
 type Discount = { type: string; trigger_nights?: number; discount_percent: number; discount_fixed?: number; code?: string; deleted?: boolean; is_public?: boolean };
 type VendorPost = { id: string; content: string; image?: string; pinned?: boolean; createdAt: any };
-type Review = { id: string; customerName: string; rating: number; comment?: string | null; createdAt: any; isVerified?: boolean };
+type Review = {
+  id: string; customerName: string; rating: number; comment?: string | null; createdAt: any; isVerified?: boolean;
+  ratings?: { gearCondition?: number; communication?: number; value?: number; convenience?: number; overall?: number };
+  vendorReply?: string; vendorRepliedAt?: any;
+};
 
 type FulfillmentType = "pickup" | "delivery";
 
@@ -307,7 +311,7 @@ function MockupBanner() {
 
 // Mock-up vendor ID constant
 const MOCKUP_VENDOR_ID = "UHdf5wMhsPbwi7qFGPSloXGdbu53";
-const ADMIN_WHATSAPP = "601136904336";
+const ADMIN_WHATSAPP = "6011136904336";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN SHOP PAGE
@@ -1027,8 +1031,26 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         };
         const orderRef = await addDoc(collection(db, "orders"), orderData);
 
-        // Note: Calendar blocking handled by vendor via OrdersTab "Create Booking"
-        // or automatically by Cloud Function when agreement is signed
+        // Auto-block calendar for this order's items
+        try {
+          for (const item of cart) {
+            const availData: Record<string, any> = {
+              itemId: item.id,
+              qty: item.qty,
+              start: pickupDate,
+              end: returnDate,
+              type: "booking",
+              customer: "Pending Order",
+              orderId: orderRef.id,
+              createdAt: new Date().toISOString(),
+            };
+            if (item.selectedVariant) {
+              availData.variantId = item.selectedVariant.id;
+              availData.variantLabel = [item.selectedVariant.color?.label, item.selectedVariant.size].filter(Boolean).join(", ");
+            }
+            await addDoc(collection(db, "vendors", vendorId!, "availability"), availData);
+          }
+        } catch (e) { console.error("Auto-block calendar error:", e); }
 
         // Save booking data to localStorage for agreement page
         localStorage.setItem("current_booking", JSON.stringify({
@@ -1057,10 +1079,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
       }
     }
     
-    // Sanitize phone number for wa.me
-    const rawPhone = isMockupShop ? ADMIN_WHATSAPP : (vendorData?.phone || "");
-    const cleanPhone = rawPhone.replace(/[\s\-\+\(\)]/g, "");
-    window.open(`https://wa.me/${cleanPhone}?text=${msg}`, "_blank");
+    window.open(`https://wa.me/${isMockupShop ? ADMIN_WHATSAPP : vendorData?.phone}?text=${msg}`, "_blank");
     } finally {
       setIsSending(false);
     }
@@ -1125,7 +1144,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   
   // Mock-up detection
   const isMockup = vendorId === MOCKUP_VENDOR_ID || vendorData?.is_mockup === true;
-  const whatsappNumber = (isMockup ? ADMIN_WHATSAPP : vendorData?.phone)?.replace(/[\s\-\+\(\)]/g, "");
+  const whatsappNumber = isMockup ? ADMIN_WHATSAPP : vendorData?.phone;
   
   // Auto-calculate badges based on vendor data
   const calculatedBadges: Badge[] = [];
@@ -1544,6 +1563,12 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                       </span>
                     </div>
                     {r.comment && <p className="text-xs text-slate-500 leading-relaxed">{r.comment}</p>}
+                    {r.vendorReply && (
+                      <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                        <p className="text-[9px] font-black text-emerald-700 uppercase mb-1"><i className="fas fa-reply mr-1"></i>Vendor Reply</p>
+                        <p className="text-xs text-emerald-800">{r.vendorReply}</p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
