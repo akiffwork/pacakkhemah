@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import {
-  collection, query, where, onSnapshot, orderBy, doc, updateDoc, serverTimestamp,
+  collection, query, where, onSnapshot, orderBy, doc, updateDoc, getDoc, serverTimestamp,
 } from "firebase/firestore";
 
 type Review = {
@@ -94,10 +94,20 @@ export default function ReviewsTab({ vendorId }: { vendorId: string }) {
     return ts.toDate().toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" });
   }
 
-  function openWhatsApp(phone?: string) {
-    if (!phone) return;
-    const clean = phone.replace(/[\s\-\+\(\)]/g, "");
-    window.open(`https://wa.me/${clean}`, "_blank");
+  async function followUpWhatsApp(review: Review) {
+    // Review stores masked phone — look up full phone from order
+    if (!review.orderId) return;
+    try {
+      const orderSnap = await getDoc(doc(db, "orders", review.orderId));
+      const phone = orderSnap.data()?.customerPhone;
+      if (!phone) { alert("No phone number found for this customer."); return; }
+      const clean = phone.replace(/[\s\-\+\(\)]/g, "");
+      const msg = encodeURIComponent(`Hi ${review.customerName || ""}! Terima kasih atas ulasan anda. `);
+      window.open(`https://wa.me/${clean}?text=${msg}`, "_blank");
+    } catch (e) {
+      console.error("Follow up error:", e);
+      alert("Could not retrieve customer phone.");
+    }
   }
 
   return (
@@ -298,8 +308,8 @@ export default function ReviewsTab({ vendorId }: { vendorId: string }) {
                       <i className="fas fa-reply"></i> Reply
                     </button>
                   )}
-                  {review.customerPhone && (
-                    <button onClick={() => openWhatsApp(review.customerPhone)}
+                  {review.orderId && (
+                    <button onClick={() => followUpWhatsApp(review)}
                       className="py-2.5 px-4 rounded-xl text-[9px] font-black uppercase bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-100 flex items-center justify-center gap-1.5">
                       <i className="fab fa-whatsapp"></i> Follow Up
                     </button>
