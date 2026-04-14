@@ -48,6 +48,7 @@ type GearItem = {
     weight?: string;
     tentType?: string;
   };
+  pickupLocation?: string;
 };
 
 type Discount = {
@@ -101,6 +102,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
   const [specLayers, setSpecLayers] = useState("");
   const [specWeight, setSpecWeight] = useState("");
   const [specTentType, setSpecTentType] = useState("");
+  const [gearPickup, setGearPickup] = useState("");
 
   // Variant form state
   const [hasVariants, setHasVariants] = useState(false);
@@ -151,6 +153,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     setPendingFiles([]);
     setSetupAvailable(false); setSetupFee(""); setSetupDesc("");
     setSpecSize(""); setSpecMaxPax(""); setSpecPuRating(""); setSpecLayers(""); setSpecWeight(""); setSpecTentType("");
+    setGearPickup("");
     setHasVariants(false); setVariants([]);
     setShowGearModal(true);
   }
@@ -176,6 +179,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     setSpecLayers(g.specs?.layers || "");
     setSpecWeight(g.specs?.weight || "");
     setSpecTentType(g.specs?.tentType || "");
+    setGearPickup(g.pickupLocation || "");
     setHasVariants(g.hasVariants || false);
     setVariants(g.variants || []);
     setShowGearModal(true);
@@ -246,6 +250,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
       if (specWeight.trim()) specs.weight = specWeight.trim();
       if (specTentType.trim()) specs.tentType = specTentType.trim();
       data.specs = specs;
+      if (gearPickup.trim()) data.pickupLocation = gearPickup.trim();
       
       if (editingGear) {
         await updateDoc(doc(db, "gear", editingGear.id), data);
@@ -501,6 +506,11 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                         {g.setup?.available && (
                           <p className="text-[8px] text-blue-500">
                             <i className="fas fa-tools mr-1"></i>Setup +RM{g.setup.fee}
+                          </p>
+                        )}
+                        {g.pickupLocation && (
+                          <p className="text-[8px] text-emerald-600">
+                            <i className="fas fa-map-marker-alt mr-1"></i>{g.pickupLocation}
                           </p>
                         )}
                       </div>
@@ -770,6 +780,13 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                   )}
                 </div>
                 <p className={helperCls}>First photo will be the main thumbnail</p>
+              </div>
+
+              {/* Pickup Location */}
+              <div>
+                <label className={labelCls}><i className="fas fa-map-marker-alt mr-1 text-emerald-500"></i>Pickup Location</label>
+                <input value={gearPickup} onChange={e => setGearPickup(e.target.value)} className={inputCls} placeholder="e.g. Kuantan Hub, Pandan Store" />
+                <p className={helperCls}>Where customer picks up this item. Leave empty to use your default shop locations.</p>
               </div>
 
               {/* NEW: Setup Service */}

@@ -127,12 +127,21 @@ function AgreementContent() {
   }, [vendorId, orderIdParam, dataParam]);
 
   function handleFileChange(file: File, side: "front" | "back") {
-    const reader = new FileReader();
-    reader.onload = e => {
-      if (side === "front") { setFrontFile(file); setFrontPreview(e.target?.result as string); }
-      else { setBackFile(file); setBackPreview(e.target?.result as string); }
-    };
-    reader.readAsDataURL(file);
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (isPdf) {
+      // PDF — show icon preview instead of image
+      const preview = "PDF:" + file.name;
+      if (side === "front") { setFrontFile(file); setFrontPreview(preview); }
+      else { setBackFile(file); setBackPreview(preview); }
+    } else {
+      // Image — show actual preview
+      const reader = new FileReader();
+      reader.onload = e => {
+        if (side === "front") { setFrontFile(file); setFrontPreview(e.target?.result as string); }
+        else { setBackFile(file); setBackPreview(e.target?.result as string); }
+      };
+      reader.readAsDataURL(file);
+    }
   }
 
   async function submitAgreement() {
@@ -146,9 +155,11 @@ function AgreementContent() {
       const storage = getStorage();
       const ts = Date.now();
       const cleanName = custName.replace(/[^a-zA-Z0-9]/g, "");
+      const frontExt = frontFile.name.split(".").pop()?.toLowerCase() || "jpg";
+      const backExt = backFile.name.split(".").pop()?.toLowerCase() || "jpg";
 
-      const frontStorageRef = ref(storage, `verifications/${vendorId}/${ts}_${cleanName}_FRONT`);
-      const backStorageRef = ref(storage, `verifications/${vendorId}/${ts}_${cleanName}_BACK`);
+      const frontStorageRef = ref(storage, `verifications/${vendorId}/${ts}_${cleanName}_FRONT.${frontExt}`);
+      const backStorageRef = ref(storage, `verifications/${vendorId}/${ts}_${cleanName}_BACK.${backExt}`);
 
       const [snapFront, snapBack] = await Promise.all([
         uploadBytes(frontStorageRef, frontFile),
@@ -385,40 +396,60 @@ function AgreementContent() {
                 {/* Front */}
                 <div className="cursor-pointer" onClick={() => frontRef.current?.click()}>
                   {frontPreview ? (
-                    <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-lg">
-                      <img src={frontPreview} className="w-full h-full object-cover" alt="IC Front" />
-                      <div className="absolute bottom-2 left-2 bg-emerald-500 text-white px-2 py-0.5 rounded-full text-[8px] font-black uppercase">
-                        ✓ Front Uploaded
+                    frontPreview.startsWith("PDF:") ? (
+                      <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-lg bg-red-50 flex flex-col items-center justify-center">
+                        <i className="fas fa-file-pdf text-4xl text-red-400 mb-2"></i>
+                        <p className="text-[9px] font-bold text-red-500 truncate px-4 max-w-full">{frontPreview.replace("PDF:", "")}</p>
+                        <div className="absolute bottom-2 left-2 bg-emerald-500 text-white px-2 py-0.5 rounded-full text-[8px] font-black uppercase">
+                          ✓ Front Uploaded
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-lg">
+                        <img src={frontPreview} className="w-full h-full object-cover" alt="IC Front" />
+                        <div className="absolute bottom-2 left-2 bg-emerald-500 text-white px-2 py-0.5 rounded-full text-[8px] font-black uppercase">
+                          ✓ Front Uploaded
+                        </div>
+                      </div>
+                    )
                   ) : (
                     <div className="aspect-video bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center hover:bg-white hover:border-emerald-400 transition-all group">
                       <i className="fas fa-id-card text-3xl text-slate-200 mb-3 group-hover:text-emerald-400 transition-colors"></i>
                       <p className="text-[9px] font-black text-slate-400 uppercase group-hover:text-emerald-600">Tap to Upload Front</p>
-                      <p className="text-[8px] text-slate-300 mt-1">IC / MyKad Front Side</p>
+                      <p className="text-[8px] text-slate-300 mt-1">Photo or PDF — IC / MyKad Front</p>
                     </div>
                   )}
-                  <input ref={frontRef} type="file" className="hidden" accept="image/*" capture="environment"
+                  <input ref={frontRef} type="file" className="hidden" accept="image/*,.pdf,application/pdf"
                     onChange={e => e.target.files?.[0] && handleFileChange(e.target.files[0], "front")} />
                 </div>
 
                 {/* Back */}
                 <div className="cursor-pointer" onClick={() => backRef.current?.click()}>
                   {backPreview ? (
-                    <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-lg">
-                      <img src={backPreview} className="w-full h-full object-cover" alt="IC Back" />
-                      <div className="absolute bottom-2 left-2 bg-emerald-500 text-white px-2 py-0.5 rounded-full text-[8px] font-black uppercase">
-                        ✓ Back Uploaded
+                    backPreview.startsWith("PDF:") ? (
+                      <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-lg bg-red-50 flex flex-col items-center justify-center">
+                        <i className="fas fa-file-pdf text-4xl text-red-400 mb-2"></i>
+                        <p className="text-[9px] font-bold text-red-500 truncate px-4 max-w-full">{backPreview.replace("PDF:", "")}</p>
+                        <div className="absolute bottom-2 left-2 bg-emerald-500 text-white px-2 py-0.5 rounded-full text-[8px] font-black uppercase">
+                          ✓ Back Uploaded
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-lg">
+                        <img src={backPreview} className="w-full h-full object-cover" alt="IC Back" />
+                        <div className="absolute bottom-2 left-2 bg-emerald-500 text-white px-2 py-0.5 rounded-full text-[8px] font-black uppercase">
+                          ✓ Back Uploaded
+                        </div>
+                      </div>
+                    )
                   ) : (
                     <div className="aspect-video bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center hover:bg-white hover:border-emerald-400 transition-all group">
                       <i className="fas fa-id-card text-3xl text-slate-200 mb-3 group-hover:text-emerald-400 transition-colors"></i>
                       <p className="text-[9px] font-black text-slate-400 uppercase group-hover:text-emerald-600">Tap to Upload Back</p>
-                      <p className="text-[8px] text-slate-300 mt-1">IC / MyKad Back Side</p>
+                      <p className="text-[8px] text-slate-300 mt-1">Photo or PDF — IC / MyKad Back</p>
                     </div>
                   )}
-                  <input ref={backRef} type="file" className="hidden" accept="image/*" capture="environment"
+                  <input ref={backRef} type="file" className="hidden" accept="image/*,.pdf,application/pdf"
                     onChange={e => e.target.files?.[0] && handleFileChange(e.target.files[0], "back")} />
                 </div>
               </div>
