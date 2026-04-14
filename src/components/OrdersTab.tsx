@@ -85,6 +85,8 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [unlinkedAgreements, setUnlinkedAgreements] = useState<UnlinkedAgreement[]>([]);
   const [showLinkPicker, setShowLinkPicker] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
 
   // Real-time orders listener
   useEffect(() => {
@@ -182,10 +184,10 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
       } catch (e) { console.error("Calendar update error:", e); }
 
       setShowLinkPicker(false);
-      alert("Agreement linked successfully!");
+      showToast("Agreement linked!");
     } catch (e) {
       console.error("Link error:", e);
-      alert("Failed to link agreement.");
+      showToast("Failed to link agreement.", "error");
     }
   }
 
@@ -240,6 +242,8 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
     }
 
     setShowModal(false);
+    const labels: Record<string, string> = { pending: "Pending", confirmed: "✅ Confirmed", completed: "🏁 Completed", cancelled: "❌ Cancelled", conflict: "⚠️ Conflict" };
+    showToast(labels[newStatus] || newStatus);
   }
 
   async function deleteOrder(orderId: string) {
@@ -259,7 +263,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
 
       setShowModal(false);
       setSelectedOrder(null);
-      alert("Order deleted successfully!");
+      showToast("Order deleted!");
     } catch (e) { console.error("Delete order error:", e); }
   }
 
@@ -694,7 +698,8 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                     onClick={async () => {
                       try {
                         await updateDoc(doc(db, "orders", selectedOrder.id), { paymentStatus: ps });
-                      } catch (e) { console.error("Payment status error:", e); }
+                        showToast(`Payment: ${paymentLabels[ps]}`);
+                      } catch (e) { console.error("Payment status error:", e); showToast("Failed to update payment", "error"); }
                     }}
                     className={`py-2.5 rounded-xl text-[8px] font-black uppercase text-center transition-all border ${
                       (selectedOrder.paymentStatus || "unpaid") === ps
@@ -994,6 +999,17 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
           </div>
         </div>
       )}
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[500] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[10px] font-black uppercase tracking-widest ${
+          toast.type === "success" ? "bg-emerald-600" : "bg-red-500"
+        }`} style={{ animation: "toastIn 0.3s ease-out" }}>
+          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`}></i>
+          {toast.msg}
+        </div>
+      )}
+      <style>{`@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
     </div>
   );
 }

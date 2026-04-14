@@ -106,42 +106,56 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
 
   // Active section for mobile
   const [activeSection, setActiveSection] = useState<"account" | "logistics" | "services" | "help">("account");
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
 
   async function saveAccount() {
-    if (!name || !phone) return alert("Shop Name and Phone are required.");
-    const cleanSlug = slug.trim().toLowerCase().replace(/ /g, "-");
-    await updateDoc(doc(db, "vendors", vendorId), { name, phone, slug: cleanSlug });
-    setSavedAccount(true);
-    setTimeout(() => setSavedAccount(false), 2000);
+    if (!name || !phone) return showToast("Shop Name and Phone are required", "error");
+    try {
+      const cleanSlug = slug.trim().toLowerCase().replace(/ /g, "-");
+      await updateDoc(doc(db, "vendors", vendorId), { name, phone, slug: cleanSlug });
+      setSavedAccount(true);
+      showToast("Account saved!");
+      setTimeout(() => setSavedAccount(false), 2000);
+    } catch { showToast("Failed to save account", "error"); }
   }
 
   async function saveLogistics() {
-    await updateDoc(doc(db, "vendors", vendorId), {
-      city,
-      areas: areas.split(",").map(s => s.trim()).filter(Boolean),
-      pickup: hubs.split(",").map(s => s.trim()).filter(Boolean),
-      security_deposit: Number(depositVal),
-      security_deposit_type: depositType,
-      rules: rules.filter(Boolean),
-      is_vacation: isVacation,
-      allow_stacking: allowStacking,
-    });
-    setSavedLogistics(true);
-    setTimeout(() => setSavedLogistics(false), 2000);
+    try {
+      await updateDoc(doc(db, "vendors", vendorId), {
+        city,
+        areas: areas.split(",").map(s => s.trim()).filter(Boolean),
+        pickup: hubs.split(",").map(s => s.trim()).filter(Boolean),
+        security_deposit: Number(depositVal),
+        security_deposit_type: depositType,
+        rules: rules.filter(Boolean),
+        is_vacation: isVacation,
+        allow_stacking: allowStacking,
+      });
+      setSavedLogistics(true);
+      showToast("Logistics saved!");
+      setTimeout(() => setSavedLogistics(false), 2000);
+    } catch { showToast("Failed to save logistics", "error"); }
   }
 
   async function saveServices() {
-    await updateDoc(doc(db, "vendors", vendorId), { services });
-    setSavedServices(true);
-    setTimeout(() => setSavedServices(false), 2000);
+    try {
+      await updateDoc(doc(db, "vendors", vendorId), { services });
+      setSavedServices(true);
+      showToast("Services saved!");
+      setTimeout(() => setSavedServices(false), 2000);
+    } catch { showToast("Failed to save services", "error"); }
   }
 
   async function sendPasswordReset() {
     const email = auth.currentUser?.email;
     if (!email) return;
-    await sendPasswordResetEmail(auth, email);
-    setResetSent(true);
-    setTimeout(() => setResetSent(false), 3000);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetSent(true);
+      showToast("Password reset email sent!");
+      setTimeout(() => setResetSent(false), 3000);
+    } catch { showToast("Failed to send reset email", "error"); }
   }
 
   async function deleteAccount() {
@@ -153,7 +167,7 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
       await auth.currentUser?.delete();
       window.location.href = "/";
     } catch {
-      alert("Error deleting. Try re-logging in first.");
+      showToast("Error deleting. Try re-logging in first.", "error");
     }
   }
 
@@ -686,6 +700,17 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[500] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[10px] font-black uppercase tracking-widest ${
+          toast.type === "success" ? "bg-emerald-600" : "bg-red-500"
+        }`} style={{ animation: "toastIn 0.3s ease-out" }}>
+          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`}></i>
+          {toast.msg}
+        </div>
+      )}
+      <style>{`@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
     </div>
   );
 }

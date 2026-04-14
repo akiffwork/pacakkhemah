@@ -40,6 +40,8 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
   const [filter, setFilter] = useState<"all" | "pending" | "premium" | "mockup">("all");
   const [referralReward, setReferralReward] = useState(5);
   const [rewardingId, setRewardingId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
 
   // Load referral reward setting
   useEffect(() => {
@@ -69,18 +71,27 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
   async function manualTopUp(id: string, name: string) {
     const amt = prompt(`Add credits for ${name}:`, "10");
     if (amt && !isNaN(Number(amt))) {
-      await updateDoc(doc(db, "vendors", id), { credits: increment(Number(amt)) });
+      try {
+        await updateDoc(doc(db, "vendors", id), { credits: increment(Number(amt)) });
+        showToast(`+${amt} credits added to ${name}`);
+      } catch { showToast("Failed to add credits", "error"); }
     }
   }
 
   async function suspendVendor(id: string) {
-    if (confirm("Suspend this vendor?"))
+    if (!confirm("Suspend this vendor?")) return;
+    try {
       await updateDoc(doc(db, "vendors", id), { status: "pending" });
+      showToast("Vendor suspended");
+    } catch { showToast("Failed to suspend", "error"); }
   }
 
   async function approveVendor(id: string) {
     if (!confirm("Approve this vendor?")) return;
-    await updateDoc(doc(db, "vendors", id), { status: "approved" });
+    try {
+      await updateDoc(doc(db, "vendors", id), { status: "approved" });
+      showToast("✅ Vendor approved!");
+    } catch { showToast("Failed to approve", "error"); }
     
     // Auto-reward referrer
     const vendor = allVendors.find(v => v.id === id);
@@ -92,49 +103,52 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
   async function rewardReferrer(vendorId: string, refCode: string) {
     setRewardingId(vendorId);
     try {
-      // Find referrer vendor by their myReferralCode
       const snap = await getDocs(query(collection(db, "vendors"), where("myReferralCode", "==", refCode)));
       if (!snap.empty) {
         const referrerId = snap.docs[0].id;
         const referrerName = snap.docs[0].data().name || "Vendor";
         
-        // Add credits to referrer
         await updateDoc(doc(db, "vendors", referrerId), {
           credits: increment(referralReward),
           referral_total_referred: increment(1),
           referral_total_credits: increment(referralReward),
         });
 
-        // Mark as rewarded on the referred vendor
         await updateDoc(doc(db, "vendors", vendorId), {
           referralRewarded: true,
           referralRewardedAt: new Date().toISOString(),
         });
 
-        alert(`Rewarded ${referrerName} with ${referralReward} credits for referral!`);
+        showToast(`🎁 Rewarded ${referrerName} with ${referralReward} credits!`);
       } else {
-        alert(`Referral code "${refCode}" not found. No reward given.`);
-        // Still mark as processed so it doesn't retry
+        showToast(`Referral code "${refCode}" not found`, "error");
         await updateDoc(doc(db, "vendors", vendorId), { referralRewarded: true });
       }
     } catch (e) {
       console.error("Referral reward error:", e);
-      alert("Failed to process referral reward.");
+      showToast("Failed to process referral reward", "error");
     } finally {
       setRewardingId(null);
     }
   }
 
   async function toggleBadge(vendorId: string, badge: Badge, currentlyHas: boolean) {
-    if (currentlyHas) {
-      await updateDoc(doc(db, "vendors", vendorId), { badges: arrayRemove(badge) });
-    } else {
-      await updateDoc(doc(db, "vendors", vendorId), { badges: arrayUnion(badge) });
-    }
+    try {
+      if (currentlyHas) {
+        await updateDoc(doc(db, "vendors", vendorId), { badges: arrayRemove(badge) });
+        showToast(`Badge removed`);
+      } else {
+        await updateDoc(doc(db, "vendors", vendorId), { badges: arrayUnion(badge) });
+        showToast(`Badge added`);
+      }
+    } catch { showToast("Failed to update badge", "error"); }
   }
 
   async function toggleMockup(vendorId: string, currentlyMockup: boolean) {
-    await updateDoc(doc(db, "vendors", vendorId), { is_mockup: !currentlyMockup });
+    try {
+      await updateDoc(doc(db, "vendors", vendorId), { is_mockup: !currentlyMockup });
+      showToast(currentlyMockup ? "Mockup disabled" : "Mockup enabled");
+    } catch { showToast("Failed to toggle mockup", "error"); }
   }
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -192,6 +206,7 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
       await deleteDoc(doc(db, "vendors", vendorId));
 
       alert(`✅ ${vendorName} and all related data permanently deleted.`);
+      showToast(`🗑 ${vendorName} permanently deleted`);
     } catch (e) {
       console.error("Delete vendor error:", e);
       alert("❌ Failed to delete vendor. Check console for details.");
@@ -532,6 +547,17 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
           </div>
         </div>
       )}
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[500] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[10px] font-black uppercase tracking-widest animate-[toastIn_0.3s_ease-out] ${
+          toast.type === "success" ? "bg-emerald-600" : "bg-red-500"
+        }`}>
+          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`}></i>
+          {toast.msg}
+        </div>
+      )}
+      <style>{`@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
     </div>
   );
 }

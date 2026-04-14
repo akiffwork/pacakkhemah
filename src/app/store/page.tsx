@@ -7,7 +7,7 @@ import { db, auth } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import {
   signInWithPopup, GoogleAuthProvider,
-  signInWithEmailAndPassword, signOut, onAuthStateChanged, User,
+  signInWithEmailAndPassword, sendPasswordResetEmail, signOut, onAuthStateChanged, User,
 } from "firebase/auth";
 import AnalyticsTab from "@/components/AnalyticsTab";
 import DocumentsTab from "@/components/DocumentsTab";
@@ -63,6 +63,7 @@ function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [resetSent, setResetSent] = useState(false);
 
   async function loginWithGoogle() {
     try {
@@ -78,6 +79,21 @@ function LoginScreen() {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (e: any) {
       setError("Invalid email or password.");
+    }
+  }
+
+  async function handleForgotPassword() {
+    if (!email.trim() || !email.includes("@")) {
+      setError("Please enter your email address first.");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      setResetSent(true);
+      setError("");
+      setTimeout(() => setResetSent(false), 5000);
+    } catch {
+      setError("Could not send reset email. Check the address and try again.");
     }
   }
 
@@ -113,10 +129,16 @@ function LoginScreen() {
             className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-[0.85rem] text-sm font-semibold outline-none text-center focus:border-emerald-500 focus:bg-white transition-all" />
 
           {error && <p className="text-red-500 text-[10px] font-bold">{error}</p>}
+          {resetSent && <p className="text-emerald-600 text-[10px] font-bold"><i className="fas fa-check-circle mr-1"></i>Password reset email sent! Check your inbox.</p>}
 
           <button onClick={handleEmailLogin}
             className="w-full bg-[#062c24] text-white py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-900 shadow-lg">
             Login
+          </button>
+
+          <button onClick={handleForgotPassword}
+            className="text-[10px] text-emerald-600 font-bold hover:underline">
+            Forgot Password?
           </button>
 
           <p className="text-center text-[10px] text-slate-400 font-medium pt-2">

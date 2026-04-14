@@ -41,6 +41,8 @@ export default function StorefrontTab({ vendorId, vendorData }: StorefrontTabPro
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
   const [activeTab, setActiveTab] = useState<"visuals" | "location" | "steps">("visuals");
   const [previewAboutOpen, setPreviewAboutOpen] = useState(false);
   const [previewHowToOpen, setPreviewHowToOpen] = useState(false);
@@ -64,7 +66,7 @@ export default function StorefrontTab({ vendorId, vendorData }: StorefrontTabPro
       const snap = await uploadBytes(ref(storage, "logos/" + vendorId), file);
       const url = await getDownloadURL(snap.ref);
       setLogoUrl(url);
-    } catch (e) { console.error(e); alert("Upload failed."); }
+    } catch (e) { console.error(e); showToast("Upload failed", "error"); }
     finally { setUploadingLogo(false); }
   }
 
@@ -79,8 +81,9 @@ export default function StorefrontTab({ vendorId, vendorData }: StorefrontTabPro
         steps,
       });
       setSaved(true);
+      showToast("Storefront saved!");
       setTimeout(() => setSaved(false), 2000);
-    } catch (e) { console.error(e); alert("Failed to save"); }
+    } catch (e) { console.error(e); showToast("Failed to save", "error"); }
     finally { setSaving(false); }
   }
 
@@ -306,6 +309,17 @@ export default function StorefrontTab({ vendorId, vendorData }: StorefrontTabPro
           {saving ? <><i className="fas fa-spinner fa-spin mr-2"></i>Saving...</> : saved ? "Saved!" : "Save All Changes"}
         </button>
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[500] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[10px] font-black uppercase tracking-widest ${
+          toast.type === "success" ? "bg-emerald-600" : "bg-red-500"
+        }`} style={{ animation: "toastIn 0.3s ease-out" }}>
+          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`}></i>
+          {toast.msg}
+        </div>
+      )}
+      <style>{`@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
     </div>
   );
 }

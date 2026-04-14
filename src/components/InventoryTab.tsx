@@ -74,6 +74,8 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
   const [editingDisc, setEditingDisc] = useState<Discount | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showFlyer, setShowFlyer] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
 
   // Gear form state
   const [gearName, setGearName] = useState("");
@@ -180,7 +182,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
   }
 
   async function saveGear() {
-    if (!gearName.trim()) return alert("Please enter item name");
+    if (!gearName.trim()) return showToast("Please enter item name", "error");
     setUploading(true);
     try {
       const storage = getStorage();
@@ -251,17 +253,21 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
         await addDoc(collection(db, "gear"), data);
       }
       setShowGearModal(false);
+      showToast(editingGear ? "Item updated!" : "Item added!");
     } catch (e) { 
       console.error(e); 
-      alert("Error saving item."); 
+      showToast("Error saving item", "error"); 
     } finally { 
       setUploading(false); 
     }
   }
 
   async function deleteGear(id: string) {
-    if (confirm("Remove this item?"))
+    if (!confirm("Remove this item?")) return;
+    try {
       await updateDoc(doc(db, "gear", id), { deleted: true });
+      showToast("Item removed!");
+    } catch { showToast("Failed to remove item", "error"); }
   }
 
   function handleFileSelect(files: FileList | null) {
@@ -361,19 +367,24 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
         itemIds: discAppliesTo === "specific" ? discSelectedItems : [],
       },
     };
-    if (editingDisc) {
-      await updateDoc(doc(db, "vendors", vendorId, "discounts", editingDisc.id), data);
-    } else {
-      await addDoc(collection(db, "vendors", vendorId, "discounts"), data);
-    }
-    setShowDiscModal(false);
+    try {
+      if (editingDisc) {
+        await updateDoc(doc(db, "vendors", vendorId, "discounts", editingDisc.id), data);
+      } else {
+        await addDoc(collection(db, "vendors", vendorId, "discounts"), data);
+      }
+      setShowDiscModal(false);
+      showToast(editingDisc ? "Discount updated!" : "Discount added!");
+    } catch { showToast("Failed to save discount", "error"); }
   }
 
   async function deleteDisc() {
-    if (editingDisc && confirm("Delete rule?")) {
+    if (!editingDisc || !confirm("Delete rule?")) return;
+    try {
       await updateDoc(doc(db, "vendors", vendorId, "discounts", editingDisc.id), { deleted: true });
       setShowDiscModal(false);
-    }
+      showToast("Discount deleted!");
+    } catch { showToast("Failed to delete discount", "error"); }
   }
 
   function toggleDiscountItem(itemId: string) {
@@ -1098,6 +1109,17 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
 
       {/* Gear Flyer Modal */}
       {showFlyer && <GearFlyerModal vendorId={vendorId} onClose={() => setShowFlyer(false)} />}
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[500] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[10px] font-black uppercase tracking-widest ${
+          toast.type === "success" ? "bg-emerald-600" : "bg-red-500"
+        }`} style={{ animation: "toastIn 0.3s ease-out" }}>
+          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`}></i>
+          {toast.msg}
+        </div>
+      )}
+      <style>{`@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
     </div>
   );
 }

@@ -37,6 +37,8 @@ export default function ReviewsTab({ vendorId }: { vendorId: string }) {
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
   const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -62,7 +64,8 @@ export default function ReviewsTab({ vendorId }: { vendorId: string }) {
     const newStatus = review.status === "published" ? "hidden" : "published";
     try {
       await updateDoc(doc(db, "reviews", review.id), { status: newStatus });
-    } catch (e) { console.error("Toggle status error:", e); }
+      showToast(newStatus === "published" ? "Review published" : "Review hidden");
+    } catch (e) { console.error("Toggle status error:", e); showToast("Failed to update status", "error"); }
   }
 
   async function saveReply(reviewId: string) {
@@ -75,7 +78,8 @@ export default function ReviewsTab({ vendorId }: { vendorId: string }) {
       });
       setReplyingTo(null);
       setReplyText("");
-    } catch (e) { console.error("Save reply error:", e); }
+      showToast("Reply posted!");
+    } catch (e) { console.error("Save reply error:", e); showToast("Failed to save reply", "error"); }
     finally { setSaving(false); }
   }
 
@@ -86,7 +90,8 @@ export default function ReviewsTab({ vendorId }: { vendorId: string }) {
         vendorReply: null,
         vendorRepliedAt: null,
       });
-    } catch (e) { console.error("Delete reply error:", e); }
+      showToast("Reply removed");
+    } catch (e) { console.error("Delete reply error:", e); showToast("Failed to remove reply", "error"); }
   }
 
   function formatDate(ts: any): string {
@@ -320,6 +325,17 @@ export default function ReviewsTab({ vendorId }: { vendorId: string }) {
           ))}
         </div>
       )}
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[500] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[10px] font-black uppercase tracking-widest ${
+          toast.type === "success" ? "bg-emerald-600" : "bg-red-500"
+        }`} style={{ animation: "toastIn 0.3s ease-out" }}>
+          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`}></i>
+          {toast.msg}
+        </div>
+      )}
+      <style>{`@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
     </div>
   );
 }
