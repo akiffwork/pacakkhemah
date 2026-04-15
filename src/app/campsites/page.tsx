@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { db } from "@/lib/firebase";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import BottomNav from "@/components/BottomNav";
 
 
@@ -11,6 +11,7 @@ type Campsite = {
   id: string;
   name: string;
   location?: string;
+  state?: string;
   category?: string;
   carousel?: string[];
   direction?: string;
@@ -26,6 +27,12 @@ const CATEGORIES = [
   { id: "river", label: "River", emoji: "🛶" },
   { id: "hilltop", label: "Hilltop", emoji: "⛰️" },
   { id: "waterfall", label: "Waterfall", emoji: "💧" },
+];
+
+const STATES = [
+  "All States", "Johor", "Kedah", "Kelantan", "Melaka", "Negeri Sembilan",
+  "Pahang", "Perak", "Perlis", "Pulau Pinang", "Sabah", "Sarawak",
+  "Selangor", "Terengganu", "Kuala Lumpur", "Putrajaya", "Labuan",
 ];
 
 function SkeletonCard() {
@@ -75,7 +82,21 @@ function CarouselImage({ images, name }: { images: string[]; name: string }) {
   );
 }
 
-function CampsiteCard({ site, onClick }: { site: Campsite; onClick: () => void }) {
+function CampsiteCard({ site, onClick, vendorCount, isSaved, onToggleSave }: { 
+  site: Campsite; onClick: () => void; vendorCount?: number; isSaved: boolean; onToggleSave: () => void;
+}) {
+  function handleShare(e: React.MouseEvent) {
+    e.stopPropagation();
+    const url = `${window.location.origin}/campsites?spot=${site.id}`;
+    const text = `🏕️ ${site.name}${site.location ? ` — ${site.location}` : ""}\n\nCheck out this campsite on Pacak Khemah!`;
+    if (navigator.share) {
+      navigator.share({ title: site.name, text, url }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(url);
+      alert("Link copied!");
+    }
+  }
+
   return (
     <div onClick={onClick}
       className="group bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-pointer">
@@ -85,12 +106,32 @@ function CampsiteCard({ site, onClick }: { site: Campsite; onClick: () => void }
         <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-[9px] font-black uppercase text-[#062c24] shadow-sm">
           {CATEGORIES.find(c => c.id === site.category)?.emoji || "🏕️"} {site.category || "Campsite"}
         </div>
+        {/* Top right actions */}
+        <div className="absolute top-4 right-4 flex gap-1.5">
+          <button onClick={(e) => { e.stopPropagation(); onToggleSave(); }}
+            className={`w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-sm transition-all ${
+              isSaved ? "bg-red-500 text-white" : "bg-black/30 text-white/80 hover:bg-red-500 hover:text-white"
+            }`}>
+            <i className={`fas fa-heart text-[10px]`}></i>
+          </button>
+          <button onClick={handleShare}
+            className="w-8 h-8 bg-black/30 backdrop-blur-sm rounded-full flex items-center justify-center text-white/80 hover:bg-white hover:text-[#062c24] transition-all">
+            <i className="fas fa-share-alt text-[10px]"></i>
+          </button>
+        </div>
+        {/* Vendor count badge */}
+        {vendorCount !== undefined && vendorCount > 0 && (
+          <div className="absolute top-4 left-4 mt-8 bg-emerald-500 text-white px-2.5 py-0.5 rounded-full text-[8px] font-black uppercase shadow-sm">
+            <i className="fas fa-store mr-1"></i>{vendorCount} vendor{vendorCount > 1 ? "s" : ""} nearby
+          </div>
+        )}
         {/* Name overlay on image */}
         <div className="absolute bottom-0 left-0 right-0 p-4">
           <h3 className="text-lg font-black text-white uppercase leading-tight drop-shadow-lg">{site.name}</h3>
           {site.location && (
             <p className="text-[10px] text-white/80 font-medium flex items-center gap-1 mt-0.5">
               <i className="fas fa-map-pin text-emerald-400"></i> {site.location}
+              {site.state && <span className="ml-1 opacity-60">• {site.state}</span>}
             </p>
           )}
         </div>
@@ -102,15 +143,20 @@ function CampsiteCard({ site, onClick }: { site: Campsite; onClick: () => void }
             <i className="fas fa-ticket-alt text-[8px]"></i> RM {site.fee} / person
           </div>
         )}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <a href={site.direction || "#"} target="_blank" rel="noreferrer"
             onClick={e => e.stopPropagation()}
-            className="flex items-center justify-center gap-2 bg-slate-50 text-slate-600 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-emerald-50 hover:text-emerald-700 transition-colors border border-slate-100">
+            className="flex items-center justify-center gap-1.5 bg-slate-50 text-slate-600 py-3 rounded-xl text-[9px] font-black uppercase hover:bg-emerald-50 hover:text-emerald-700 transition-colors border border-slate-100">
             <i className="fas fa-location-arrow"></i> Directions
           </a>
+          <Link href={`/directory?search=${encodeURIComponent(site.state || site.location || site.name)}`}
+            onClick={e => e.stopPropagation()}
+            className="flex items-center justify-center gap-1.5 bg-emerald-50 text-emerald-700 py-3 rounded-xl text-[9px] font-black uppercase hover:bg-emerald-100 transition-colors border border-emerald-100">
+            <i className="fas fa-campground"></i> Rent Gear
+          </Link>
           <a href={site.whatsapp || "#"} target="_blank" rel="noreferrer"
             onClick={e => e.stopPropagation()}
-            className="flex items-center justify-center gap-2 bg-[#062c24] text-white py-3 rounded-xl text-[10px] font-black uppercase hover:bg-emerald-800 transition-colors">
+            className="flex items-center justify-center gap-1.5 bg-[#062c24] text-white py-3 rounded-xl text-[9px] font-black uppercase hover:bg-emerald-800 transition-colors">
             <i className="fab fa-whatsapp"></i> Contact
           </a>
         </div>
@@ -214,6 +260,23 @@ function DetailSheet({ site, onClose }: { site: Campsite; onClose: () => void })
               <i className="fab fa-whatsapp"></i> Contact Site
             </a>
           </div>
+
+          {/* Rent Gear CTA */}
+          <Link href={`/directory?search=${encodeURIComponent(site.state || site.location || site.name)}`}
+            className="block w-full bg-emerald-600 text-white py-4 rounded-2xl text-[10px] font-black uppercase text-center hover:bg-emerald-700 transition-colors shadow-lg">
+            <i className="fas fa-campground mr-2"></i>Rent Camping Gear Nearby
+          </Link>
+
+          {/* Share */}
+          <button onClick={() => {
+            const url = `${window.location.origin}/campsites?spot=${site.id}`;
+            const text = `🏕️ ${site.name}${site.location ? ` — ${site.location}` : ""}\n\nCheck out this campsite!`;
+            if (navigator.share) { navigator.share({ title: site.name, text, url }).catch(() => {}); }
+            else { navigator.clipboard.writeText(url); }
+          }}
+            className="w-full bg-slate-50 text-slate-600 py-3 rounded-2xl text-[10px] font-black uppercase text-center hover:bg-slate-100 transition-colors border border-slate-100">
+            <i className="fas fa-share-alt mr-2"></i>Share This Campsite
+          </button>
         </div>
       </div>
     </div>
@@ -224,36 +287,110 @@ export default function CampsitesPage() {
   const [allCampsites, setAllCampsites] = useState<Campsite[]>([]);
   const [filtered, setFiltered] = useState<Campsite[]>([]);
   const [activeCategory, setActiveCategory] = useState("all");
+  const [activeState, setActiveState] = useState("All States");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Campsite | null>(null);
   const [error, setError] = useState(false);
+  const [savedIds, setSavedIds] = useState<string[]>([]);
+  const [vendorCounts, setVendorCounts] = useState<Record<string, number>>({});
+  const [showSavedOnly, setShowSavedOnly] = useState(false);
 
+  // Load saved spots from localStorage
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("pk_saved_campsites") || "[]");
+      setSavedIds(saved);
+    } catch { /* ignore */ }
+  }, []);
+
+  function toggleSave(id: string) {
+    setSavedIds(prev => {
+      const next = prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id];
+      localStorage.setItem("pk_saved_campsites", JSON.stringify(next));
+      return next;
+    });
+  }
+
+  // Load campsites
   useEffect(() => {
     getDocs(collection(db, "campsites"))
       .then(snap => {
         const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Campsite));
         setAllCampsites(data);
         setFiltered(data);
+
+        // Deep link: ?spot=id
+        const params = new URLSearchParams(window.location.search);
+        const spotId = params.get("spot");
+        if (spotId) {
+          const found = data.find(c => c.id === spotId);
+          if (found) setSelected(found);
+        }
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, []);
 
+  // Fetch vendor counts per state/location
+  useEffect(() => {
+    async function fetchVendorCounts() {
+      try {
+        const snap = await getDocs(query(collection(db, "vendors"), where("status", "==", "approved")));
+        const counts: Record<string, number> = {};
+        snap.docs.forEach(d => {
+          const city = (d.data().city || "").toLowerCase();
+          const areas = (d.data().areas || []) as string[];
+          // Count by city and areas
+          if (city) counts[city] = (counts[city] || 0) + 1;
+          areas.forEach(a => {
+            const key = a.toLowerCase().trim();
+            if (key) counts[key] = (counts[key] || 0) + 1;
+          });
+        });
+        setVendorCounts(counts);
+      } catch { /* ignore */ }
+    }
+    fetchVendorCounts();
+  }, []);
+
+  function getVendorCount(site: Campsite): number {
+    const loc = (site.location || "").toLowerCase();
+    const state = (site.state || "").toLowerCase();
+    const name = (site.name || "").toLowerCase();
+    let count = 0;
+    for (const [key, val] of Object.entries(vendorCounts)) {
+      if (loc.includes(key) || key.includes(loc) || state.includes(key) || key.includes(state) || name.includes(key)) {
+        count += val;
+      }
+    }
+    return count;
+  }
+
+  // Filter logic
   useEffect(() => {
     let result = allCampsites;
+    if (showSavedOnly) result = result.filter(c => savedIds.includes(c.id));
     if (activeCategory !== "all") result = result.filter(c => c.category === activeCategory);
+    if (activeState !== "All States") result = result.filter(c => c.state === activeState);
     if (search.trim()) result = result.filter(c =>
       c.name?.toLowerCase().includes(search.toLowerCase()) ||
-      c.location?.toLowerCase().includes(search.toLowerCase())
+      c.location?.toLowerCase().includes(search.toLowerCase()) ||
+      c.state?.toLowerCase().includes(search.toLowerCase())
     );
     setFiltered(result);
-  }, [activeCategory, search, allCampsites]);
+  }, [activeCategory, activeState, search, allCampsites, showSavedOnly, savedIds]);
 
   // Category counts
   const counts: Record<string, number> = { all: allCampsites.length };
   allCampsites.forEach(c => {
     if (c.category) counts[c.category] = (counts[c.category] || 0) + 1;
+  });
+
+  // State counts
+  const stateCounts: Record<string, number> = {};
+  allCampsites.forEach(c => {
+    if (c.state) stateCounts[c.state] = (stateCounts[c.state] || 0) + 1;
   });
 
   return (
@@ -302,7 +439,7 @@ export default function CampsitesPage() {
       </header>
 
       {/* Category Filter */}
-      <div className="sticky top-0 z-40 bg-slate-50/95 backdrop-blur-md border-b border-slate-200 py-3 px-4">
+      <div className="sticky top-0 z-40 bg-slate-50/95 backdrop-blur-md border-b border-slate-200 py-3 px-4 space-y-2">
         <div className="flex gap-2 overflow-x-auto justify-center" style={{ scrollbarWidth: "none" }}>
           {CATEGORIES.map(cat => {
             const count = counts[cat.id] || 0;
@@ -320,6 +457,23 @@ export default function CampsitesPage() {
               </button>
             );
           })}
+        </div>
+        {/* State filter + Saved toggle */}
+        <div className="flex gap-2 items-center justify-center">
+          <select value={activeState} onChange={e => setActiveState(e.target.value)}
+            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold text-slate-600 outline-none focus:border-emerald-400 appearance-none">
+            {STATES.map(s => (
+              <option key={s} value={s}>{s}{stateCounts[s] ? ` (${stateCounts[s]})` : ""}</option>
+            ))}
+          </select>
+          {savedIds.length > 0 && (
+            <button onClick={() => setShowSavedOnly(!showSavedOnly)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${
+                showSavedOnly ? "bg-red-500 text-white" : "bg-white border border-slate-200 text-slate-500 hover:border-red-300"
+              }`}>
+              <i className="fas fa-heart text-[8px]"></i> Saved ({savedIds.length})
+            </button>
+          )}
         </div>
       </div>
 
@@ -354,7 +508,13 @@ export default function CampsitesPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {filtered.map((site, i) => (
               <div key={site.id} className="stagger-in" style={{ animationDelay: `${i * 60}ms` }}>
-                <CampsiteCard site={site} onClick={() => setSelected(site)} />
+                <CampsiteCard 
+                  site={site} 
+                  onClick={() => setSelected(site)} 
+                  vendorCount={getVendorCount(site)}
+                  isSaved={savedIds.includes(site.id)}
+                  onToggleSave={() => toggleSave(site.id)}
+                />
               </div>
             ))}
           </div>
@@ -365,6 +525,27 @@ export default function CampsitesPage() {
 
       {/* Detail Sheet */}
       {selected && <DetailSheet site={selected} onClose={() => setSelected(null)} />}
+
+      {/* Suggest a Campsite */}
+      {!loading && !error && (
+        <div className="max-w-2xl mx-auto px-6 pt-8">
+          <div className="bg-gradient-to-br from-[#062c24] to-emerald-800 rounded-2xl p-6 text-white text-center relative overflow-hidden">
+            <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "20px 20px" }}></div>
+            <div className="relative z-10">
+              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
+                <i className="fas fa-plus text-lg"></i>
+              </div>
+              <h3 className="text-sm font-black uppercase mb-1">Know a Great Spot?</h3>
+              <p className="text-xs text-white/60 mb-4">Suggest a campsite and help fellow campers discover it!</p>
+              <a href={`https://wa.me/601136904336?text=${encodeURIComponent("Hi Pacak Khemah! 🏕️\n\nI'd like to suggest a campsite:\n\nName: \nLocation: \nState: \nCategory (Beach/River/Hilltop/Waterfall): \nFee (if any): \nGoogle Maps Link: \nDescription: ")}`}
+                target="_blank" rel="noreferrer"
+                className="inline-flex items-center gap-2 bg-white text-[#062c24] px-6 py-3 rounded-xl font-black uppercase text-xs hover:bg-emerald-50 transition-colors">
+                <i className="fab fa-whatsapp text-emerald-600"></i> Suggest via WhatsApp
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Disclaimer */}
       <footer className="max-w-2xl mx-auto px-6 pt-10 pb-6">
