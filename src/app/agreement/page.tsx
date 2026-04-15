@@ -113,7 +113,11 @@ function AgreementContent() {
           if (savedCustomer) {
             const { name, phone } = JSON.parse(savedCustomer);
             if (name && !custName) setCustName(name);
-            if (phone && !custPhone) setCustPhone(phone);
+            if (phone && !custPhone) {
+              // Convert stored 60123456789 back to local 0123456789 for display
+              const localPhone = phone.startsWith("60") ? "0" + phone.slice(2) : phone;
+              setCustPhone(localPhone);
+            }
           }
         } catch { /* ignore */ }
 
@@ -125,6 +129,14 @@ function AgreementContent() {
     }
     init();
   }, [vendorId, orderIdParam, dataParam]);
+
+  // Convert local phone (012-345 6789) to international (60123456789)
+  function formatPhone(raw: string): string {
+    const digits = raw.replace(/\D/g, "");
+    if (digits.startsWith("60")) return digits; // already international
+    if (digits.startsWith("0")) return "60" + digits.slice(1); // 012... → 6012...
+    return "60" + digits; // bare number
+  }
 
   function handleFileChange(file: File, side: "front" | "back") {
     const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
@@ -169,7 +181,7 @@ function AgreementContent() {
       await addDoc(collection(db, "agreements"), {
         vendorId,
         customerName: custName,
-        customerPhone: custPhone.replace(/\D/g, ""),
+        customerPhone: formatPhone(custPhone),
         icFrontPath: snapFront.metadata.fullPath,
         icBackPath: snapBack.metadata.fullPath,
         bookingDetails: booking || "Manual/Chat Booking",
@@ -190,7 +202,7 @@ function AgreementContent() {
       try {
         localStorage.setItem("pk_customer", JSON.stringify({
           name: custName,
-          phone: custPhone.replace(/\D/g, ""),
+          phone: formatPhone(custPhone),
           lastVisit: new Date().toISOString(),
         }));
       } catch { /* ignore */ }
@@ -219,7 +231,7 @@ function AgreementContent() {
 
     generateAgreementPDF(
       { name: vendor?.name || "—" },
-      { customerName: custName || "—", customerPhone: custPhone || undefined, ...meta },
+      { customerName: custName || "—", customerPhone: formatPhone(custPhone) || undefined, ...meta },
       booking ? { items: booking.items, dates: booking.dates, total: booking.total } : null,
       vendor?.rules,
     );
@@ -296,14 +308,16 @@ function AgreementContent() {
                     placeholder="FULL NAME AS PER IC"
                     className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-50 transition-all uppercase mb-2"
                   />
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"><i className="fab fa-whatsapp text-emerald-500"></i></span>
+                  <div className="relative flex">
+                    <span className="flex items-center gap-1.5 bg-slate-100 border border-r-0 border-slate-200 px-3 rounded-l-xl text-sm font-bold text-slate-500 shrink-0">
+                      <i className="fab fa-whatsapp text-emerald-500"></i> +60
+                    </span>
                     <input
                       type="tel"
                       value={custPhone}
-                      onChange={e => setCustPhone(e.target.value)}
-                      placeholder="60xxxxxxxxxx"
-                      className="w-full bg-white border border-slate-200 p-3 pl-8 rounded-xl font-bold text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-50 transition-all"
+                      onChange={e => setCustPhone(e.target.value.replace(/[^0-9\-\s]/g, ""))}
+                      placeholder="012-345 6789"
+                      className="w-full bg-white border border-slate-200 p-3 rounded-r-xl font-bold text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-50 transition-all"
                     />
                   </div>
                 </div>
