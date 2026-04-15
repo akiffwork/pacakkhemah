@@ -14,6 +14,8 @@ type Order = {
   customerName?: string;
   items: { name: string; qty: number; price: number; variantId?: string; variantLabel?: string; variantColor?: string }[];
   totalAmount: number;
+  rentalAmount?: number;
+  depositAmount?: number;
   pickupLocation: string;
   bookingDates: { start: string; end: string };
   status: "pending" | "confirmed" | "completed" | "cancelled" | "conflict";
@@ -668,9 +670,28 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                     <span className="font-bold shrink-0 ml-2">RM {item.price * item.qty}</span>
                   </div>
                 ))}
-                <div className="border-t border-slate-200 pt-2 flex justify-between">
-                  <span className="font-black text-[#062c24]">Total</span>
-                  <span className="font-black text-emerald-600 text-lg">RM {selectedOrder.totalAmount}</span>
+                <div className="border-t border-slate-200 pt-2 space-y-1">
+                  {selectedOrder.depositAmount ? (
+                    <>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">Rental</span>
+                        <span className="font-bold text-[#062c24]">RM {selectedOrder.rentalAmount ?? (selectedOrder.totalAmount - selectedOrder.depositAmount)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">Deposit (Refundable)</span>
+                        <span className="font-bold text-slate-400">RM {selectedOrder.depositAmount}</span>
+                      </div>
+                      <div className="flex justify-between pt-1 border-t border-slate-100">
+                        <span className="font-black text-[#062c24]">Total</span>
+                        <span className="font-black text-emerald-600 text-lg">RM {selectedOrder.totalAmount}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex justify-between">
+                      <span className="font-black text-[#062c24]">Total</span>
+                      <span className="font-black text-emerald-600 text-lg">RM {selectedOrder.totalAmount}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
