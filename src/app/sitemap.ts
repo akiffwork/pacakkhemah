@@ -4,7 +4,7 @@ const SITE = "https://pacakkhemah.com";
 const PROJECT_ID = "kuantan-unplugged";
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 
-async function getVendorSlugs(): Promise<{ slug: string; updatedAt?: string }[]> {
+async function getVendorSlugs(): Promise<string[]> {
   try {
     const res = await fetch(`${FIRESTORE_BASE}:runQuery`, {
       method: "POST",
@@ -19,66 +19,38 @@ async function getVendorSlugs(): Promise<{ slug: string; updatedAt?: string }[]>
               value: { stringValue: "approved" },
             },
           },
-          select: {
-            fields: [
-              { fieldPath: "slug" },
-              { fieldPath: "name" },
-            ],
-          },
+          select: { fields: [{ fieldPath: "slug" }] },
         },
       }),
-      next: { revalidate: 3600 }, // Rebuild every hour
+      cache: "no-store",
     });
 
+    if (!res.ok) return [];
     const data = await res.json();
-    return (data || [])
-      .filter((d: any) => d.document)
-      .map((d: any) => {
-        const slug = d.document.fields?.slug?.stringValue;
-        const id = d.document.name.split("/").pop();
-        return { slug: slug || id };
-      })
-      .filter((v: any) => v.slug);
-  } catch (e) {
-    console.error("Sitemap vendor fetch error:", e);
+    if (!Array.isArray(data)) return [];
+
+    return data
+      .filter((d: any) => d.document?.fields?.slug?.stringValue)
+      .map((d: any) => d.document.fields.slug.stringValue);
+  } catch {
     return [];
   }
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const vendors = await getVendorSlugs();
+  const slugs = await getVendorSlugs();
 
-  // Static pages
   const staticPages: MetadataRoute.Sitemap = [
-    {
-      url: SITE,
-      lastModified: new Date(),
-      changeFrequency: "weekly",
-      priority: 1.0,
-    },
-    {
-      url: `${SITE}/directory`,
-      lastModified: new Date(),
-      changeFrequency: "daily",
-      priority: 0.9,
-    },
-    {
-      url: `${SITE}/store`,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 0.5,
-    },
-    {
-      url: `${SITE}/register-vendor`,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 0.6,
-    },
+    { url: SITE, lastModified: new Date(), changeFrequency: "weekly", priority: 1.0 },
+    { url: `${SITE}/directory`, lastModified: new Date(), changeFrequency: "daily", priority: 0.9 },
+    { url: `${SITE}/campsites`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.7 },
+    { url: `${SITE}/about`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.5 },
+    { url: `${SITE}/faq`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.5 },
+    { url: `${SITE}/register-vendor`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.6 },
   ];
 
-  // Dynamic vendor shop pages
-  const vendorPages: MetadataRoute.Sitemap = vendors.map((v) => ({
-    url: `${SITE}/shop/${v.slug}`,
+  const vendorPages: MetadataRoute.Sitemap = slugs.map((slug) => ({
+    url: `${SITE}/shop/${slug}`,
     lastModified: new Date(),
     changeFrequency: "daily" as const,
     priority: 0.8,
