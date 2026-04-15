@@ -42,6 +42,7 @@ function AgreementContent() {
   const [backFile, setBackFile] = useState<File | null>(null);
   const [frontPreview, setFrontPreview] = useState("");
   const [backPreview, setBackPreview] = useState("");
+  const [fileWarning, setFileWarning] = useState("");
 
   const frontRef = useRef<HTMLInputElement>(null);
   const backRef = useRef<HTMLInputElement>(null);
@@ -139,14 +140,19 @@ function AgreementContent() {
   }
 
   function handleFileChange(file: File, side: "front" | "back") {
+    const MAX_MB = 5;
+    if (file.size > MAX_MB * 1024 * 1024) {
+      setFileWarning(`File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum ${MAX_MB}MB.`);
+      setTimeout(() => setFileWarning(""), 5000);
+      return;
+    }
+    setFileWarning("");
     const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
     if (isPdf) {
-      // PDF — show icon preview instead of image
       const preview = "PDF:" + file.name;
       if (side === "front") { setFrontFile(file); setFrontPreview(preview); }
       else { setBackFile(file); setBackPreview(preview); }
     } else {
-      // Image — show actual preview
       const reader = new FileReader();
       reader.onload = e => {
         if (side === "front") { setFrontFile(file); setFrontPreview(e.target?.result as string); }
@@ -467,6 +473,13 @@ function AgreementContent() {
                     onChange={e => e.target.files?.[0] && handleFileChange(e.target.files[0], "back")} />
                 </div>
               </div>
+              <p className="text-[9px] text-slate-400 mt-2">Photo or PDF. Max 5MB per file.</p>
+              {fileWarning && (
+                <div className="mt-2 flex items-center gap-2 bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded-xl">
+                  <i className="fas fa-exclamation-circle text-xs shrink-0"></i>
+                  <p className="text-[10px] font-bold">{fileWarning}</p>
+                </div>
+              )}
             </div>
 
             {/* Section 5 — Sign */}

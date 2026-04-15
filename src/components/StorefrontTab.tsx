@@ -59,13 +59,21 @@ export default function StorefrontTab({ vendorId, vendorData }: StorefrontTabPro
     loadGearCount();
   }, [vendorId]);
 
+  const MAX_FILE_MB = 5;
+  const MAX_FILE_SIZE = MAX_FILE_MB * 1024 * 1024;
+
   async function handleLogoUpload(file: File) {
+    if (file.size > MAX_FILE_SIZE) {
+      showToast(`File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max ${MAX_FILE_MB}MB.`, "error");
+      return;
+    }
     setUploadingLogo(true);
     try {
       const storage = getStorage();
       const snap = await uploadBytes(ref(storage, "logos/" + vendorId), file);
       const url = await getDownloadURL(snap.ref);
       setLogoUrl(url);
+      showToast("Logo uploaded!");
     } catch (e) { console.error(e); showToast("Upload failed", "error"); }
     finally { setUploadingLogo(false); }
   }

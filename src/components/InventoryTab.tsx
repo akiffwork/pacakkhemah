@@ -275,10 +275,25 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     } catch { showToast("Failed to remove item", "error"); }
   }
 
+  const MAX_FILE_MB = 5;
+  const MAX_FILE_SIZE = MAX_FILE_MB * 1024 * 1024;
+
   function handleFileSelect(files: FileList | null) {
     if (!files) return;
-    const newFiles = Array.from(files).slice(0, 5 - gearImages.length - pendingFiles.length);
-    setPendingFiles(prev => [...prev, ...newFiles]);
+    const allowed: File[] = [];
+    const rejected: string[] = [];
+    for (const file of Array.from(files)) {
+      if (file.size > MAX_FILE_SIZE) {
+        rejected.push(file.name);
+      } else {
+        allowed.push(file);
+      }
+    }
+    if (rejected.length > 0) {
+      showToast(`${rejected.length} file${rejected.length > 1 ? "s" : ""} exceeded ${MAX_FILE_MB}MB limit`, "error");
+    }
+    const newFiles = allowed.slice(0, 5 - gearImages.length - pendingFiles.length);
+    if (newFiles.length > 0) setPendingFiles(prev => [...prev, ...newFiles]);
   }
 
   function removeImage(index: number) {
@@ -779,7 +794,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                     </label>
                   )}
                 </div>
-                <p className={helperCls}>First photo will be the main thumbnail</p>
+                <p className={helperCls}>First photo = main thumbnail. Max 5MB per file.</p>
               </div>
 
               {/* Pickup Location */}
