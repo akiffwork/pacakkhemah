@@ -881,7 +881,17 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         ? ` [${[i.selectedVariant.color?.label, i.selectedVariant.size].filter(Boolean).join(", ")}]`
         : "";
       let line = `• ${i.name}${variantLabel} (x${i.qty}) - RM${i.price * i.qty}`;
-      if (i.linkedVariants?.length) {
+      // Show package included items
+      if (i.linkedItems && i.linkedItems.length > 0) {
+        const includedNames = i.linkedItems.map(li => {
+          const gear = allGear.find(g => g.id === li.itemId);
+          const vLabel = li.variantId
+            ? (li.variantLabel || i.linkedVariants?.find(lv => lv.itemId === li.itemId)?.variantLabel || "")
+            : (i.linkedVariants?.find(lv => lv.itemId === li.itemId)?.variantLabel || "");
+          return `${gear?.name || "Item"} x${li.qty}${vLabel ? ` [${vLabel}]` : ""}`;
+        });
+        line += `%0A  ↳ Includes: ${includedNames.join(", ")}`;
+      } else if (i.linkedVariants?.length) {
         line += `%0A  ↳ ${i.linkedVariants.map(lv => lv.variantLabel).join(", ")}`;
       }
       if (i.addSetup && i.setup?.available) {
@@ -1760,7 +1770,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                 if (linkedItems.length === 0) return null;
                 return (
                   <div className="mb-4 p-3 bg-purple-50 rounded-xl border border-purple-100">
-                    <p className="text-[9px] font-black text-purple-600 uppercase mb-2"><i className="fas fa-link mr-1"></i>Package Includes:</p>
+                    <p className="text-[9px] font-black text-purple-600 uppercase mb-2"><i className="fas fa-link mr-1"></i>Whats in the package:</p>
                     <div className="space-y-3">
                       {linkedItems.map(({ item: linkedItem, qty, lockedVariantId, lockedVariantLabel, lockedVariantColor }) => {
                         const hasVars = linkedItem.hasVariants && linkedItem.variants && linkedItem.variants.length > 0;
@@ -1948,6 +1958,27 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                                   {lv.variantLabel}
                                 </span>
                               ))}
+                            </div>
+                          )}
+                          {/* Package included items */}
+                          {item.linkedItems && item.linkedItems.length > 0 && (
+                            <div className="mt-1.5 pl-2 border-l-2 border-purple-200 space-y-0.5">
+                              {item.linkedItems.map(li => {
+                                const linkedGear = allGear.find(g => g.id === li.itemId);
+                                if (!linkedGear) return null;
+                                const resolvedVariant = li.variantId
+                                  ? li.variantLabel || linkedGear.variants?.find(v => v.id === li.variantId)?.color?.label
+                                  : item.linkedVariants?.find(lv => lv.itemId === li.itemId)?.variantLabel;
+                                return (
+                                  <div key={li.itemId} className="flex items-center gap-1.5">
+                                    <span className="text-[7px] text-purple-400">↳</span>
+                                    <span className="text-[8px] font-bold text-slate-500">{linkedGear.name} ×{li.qty}</span>
+                                    {resolvedVariant && (
+                                      <span className="text-[7px] font-bold text-teal-500 bg-teal-50 px-1 py-0.5 rounded">{resolvedVariant}</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                           <p className="text-[9px] font-bold text-slate-400">RM {item.price} × {item.qty} = RM {item.price * item.qty}</p>
