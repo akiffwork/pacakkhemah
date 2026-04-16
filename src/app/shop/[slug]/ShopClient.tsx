@@ -614,13 +614,17 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
     const item = allGear.find(g => g.id === itemId);
     if (!item) return 0;
 
-    // Package: check all linked child items
+    // Package: check all linked child items (with variant awareness)
     if (item.linkedItems && item.linkedItems.length > 0) {
       let minPackages = Infinity;
       for (const li of item.linkedItems) {
         if (li.qty <= 0) continue;
-        const childStock = getItemStock(li.itemId);
-        const canFulfill = Math.floor(childStock / li.qty);
+        // FIX 1: Use locked variantId for stock check
+        const childStock = getItemStock(li.itemId, li.variantId || undefined);
+        // FIX 2: Subtract child items already consumed by cart (addons + other packages)
+        const childInCart = getEffectiveInCart(li.itemId, li.variantId || undefined);
+        const childAvailable = Math.max(0, childStock - childInCart);
+        const canFulfill = Math.floor(childAvailable / li.qty);
         minPackages = Math.min(minPackages, canFulfill);
       }
       if (minPackages === Infinity) minPackages = 0;
@@ -700,12 +704,17 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
       if (cartItem) {
         const vid = cartItem.selectedVariant?.id;
         
-        // Calculate the TRUE available stock (accounting for dates and bookings)
         const variantAvail = vid ? getAvailableStock(cartItem.id, vid) : getAvailableStock(cartItem.id);
         const totalAvail = getAvailableStock(cartItem.id);
         const totalItemInCart = getEffectiveInCart(cartItem.id);
 
-        // Block the '+' click if they are hitting the variant ceiling OR the overall item ceiling
+        // FIX 3: Variant-level cross-deduction (addons consumed by packages and vice versa)
+        if (vid) {
+          const variantInCart = getEffectiveInCart(cartItem.id, vid);
+          if (variantInCart >= variantAvail) return;
+        }
+
+        // Block if hitting variant ceiling or overall item ceiling
         if (cartItem.qty >= variantAvail || totalItemInCart >= totalAvail) {
           return; 
         }
@@ -1018,6 +1027,8 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
             ...(i.linkedVariants?.length ? { linkedVariants: i.linkedVariants } : {}),
           })),
           totalAmount: total,
+          depositAmount: Math.round(dep),
+          rentalAmount: Math.round(total - dep),
           pickupLocation: fulfillmentType === "pickup" ? selectedHub : deliveryAddress,
           fulfillmentType,
           deliveryZone: selectedZone?.name || null,
@@ -1632,7 +1643,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                           {colors.map(c => {
                             const isActive = selectedColor === c.label;
                             const variantForColor = selectedItem!.variants!.find(v => v.color?.label === c.label && (!selectedSize || v.size === selectedSize));
-                            const outOfStock = variantForColor ? getAvailableStock(selectedItem!.id, variantForColor.id) === 0 : false;
+                            const outOfStock = variantForColor ? (getAvailableStock(selectedItem!.id, variantForColor.id) - getEffectiveInCart(selectedItem!.id, variantForColor.id)) <= 0 : false;
                             return (
                               <button
                                 key={c.label}
@@ -1661,7 +1672,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                           {sizes.map(s => {
                             const isActive = selectedSize === s;
                             const variantForSize = selectedItem!.variants!.find(v => v.size === s && (!selectedColor || v.color?.label === selectedColor));
-                            const outOfStock = variantForSize ? getAvailableStock(selectedItem!.id, variantForSize.id) === 0 : false;
+                            const outOfStock = variantForSize ? (getAvailableStock(selectedItem!.id, variantForSize.id) - getEffectiveInCart(selectedItem!.id, variantForSize.id)) <= 0 : false;
                             return (
                               <button
                                 key={s}
@@ -1681,7 +1692,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                     {selectedVariant && (
                       <p className="text-[10px] font-bold text-slate-400">
                         <i className="fas fa-box mr-1"></i>
-                        {getAvailableStock(selectedItem!.id, selectedVariant.id)} available
+                        {Math.max(0, getAvailableStock(selectedItem!.id, selectedVariant.id) - getEffectiveInCart(selectedItem!.id, selectedVariant.id))} available
                       </p>
                     )}
                   </div>
@@ -1854,11 +1865,12 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                 const vid = selectedVariant?.id;
                 const cartKey = vid ? `${selectedItem.id}__${vid}` : selectedItem.id;
                 
-                const variantInCart = cart.find(i => getCartKey(i) === cartKey)?.qty || 0;
+                const displayQty = cart.find(i => getCartKey(i) === cartKey)?.qty || 0;
+                const effectiveVariantInCart = vid ? getEffectiveInCart(selectedItem.id, vid) : getEffectiveInCart(selectedItem.id);
                 const totalItemInCart = getEffectiveInCart(selectedItem.id);
                 const variantAvail = vid ? getAvailableStock(selectedItem.id, vid) : getAvailableStock(selectedItem.id);
                 const totalAvail = getAvailableStock(selectedItem.id); 
-                const canAdd = !needsVariant && !needsLinkedVars && (variantInCart < variantAvail) && (totalItemInCart < totalAvail);
+                const canAdd = !needsVariant && !needsLinkedVars && (effectiveVariantInCart < variantAvail) && (totalItemInCart < totalAvail);
 
                 // Build linkedVariants for cart — merge vendor-locked + customer-picked
                 const linkedVarsForCart: LinkedVariantSelection[] = [];
@@ -1877,13 +1889,13 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                   : needsLinkedVars ? `Select variant for ${unPickedCount} item(s)`
                   : canAdd ? "Add to Cart" : variantAvail === 0 ? "Sold Out" : "Max Added";
 
-                return variantInCart > 0 && !needsVariant && !needsLinkedVars ? (
+                return displayQty > 0 && !needsVariant && !needsLinkedVars ? (
                   <div className="flex items-center gap-2">
                     <button onClick={() => updateCartQty(cartKey, -1)}
                       className="w-12 h-12 rounded-xl bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-500 flex items-center justify-center text-lg font-black transition-colors">
-                      {variantInCart === 1 ? <i className="fas fa-trash text-sm"></i> : "−"}
+                      {displayQty === 1 ? <i className="fas fa-trash text-sm"></i> : "−"}
                     </button>
-                    <span className="flex-1 text-center text-lg font-black text-[#062c24]">{variantInCart}</span>
+                    <span className="flex-1 text-center text-lg font-black text-[#062c24]">{displayQty}</span>
                     <button onClick={() => canAdd && addToCart(selectedItem, selectedVariant || undefined, true, linkedVarsForCart.length > 0 ? linkedVarsForCart : undefined)} disabled={!canAdd}
                       className={`w-12 h-12 rounded-xl flex items-center justify-center text-lg font-black transition-colors ${canAdd ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100" : "bg-slate-50 text-slate-300 cursor-not-allowed"}`}>
                       +
