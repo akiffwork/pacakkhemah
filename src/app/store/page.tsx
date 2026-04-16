@@ -16,6 +16,7 @@ import StorefrontTab from "@/components/StorefrontTab";
 import SettingsTab from "@/components/SettingsTab";
 import OrdersTab from "@/components/OrdersTab";
 import ReviewsTab from "@/components/ReviewsTab";
+import InsightsTab from "@/components/InsightsTab";
 import UpdatesTab from "@/components/UpdatesTab";
 import ReferralsTab from "@/components/ReferralsTab";
 import WelcomeTour from "@/components/vendor/WelcomeTour";
@@ -56,7 +57,7 @@ type VendorData = {
   order_count?: number;
 };
 
-type Tab = "analytics" | "orders" | "reviews" | "updates" | "documents" | "inventory" | "storefront" | "referrals" | "settings";
+type Tab = "analytics" | "orders" | "reviews" | "insights" | "updates" | "documents" | "inventory" | "storefront" | "referrals" | "settings";
 
 // --- LOGIN SCREEN ---
 function LoginScreen() {
@@ -239,6 +240,7 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
     { id: "analytics", label: "Dashboard", icon: "fa-chart-line" },
     { id: "orders", label: "Orders", icon: "fa-shopping-bag" },
     { id: "reviews", label: "Reviews", icon: "fa-star" },
+    { id: "insights", label: "Insights", icon: "fa-brain" },
     { id: "updates", label: "Updates", icon: "fa-bullhorn" },
     { id: "documents", label: "Documents", icon: "fa-file-contract" },
     { id: "inventory", label: "Inventory", icon: "fa-boxes" },
@@ -332,6 +334,7 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
         {activeTab === "analytics" && <AnalyticsTab vendorId={vendorId} vendorData={vendorData} />}
         {activeTab === "orders" && <OrdersTab vendorId={vendorId} vendorName={vendorData.name} />}
         {activeTab === "reviews" && <ReviewsTab vendorId={vendorId} />}
+        {activeTab === "insights" && <InsightsTab vendorId={vendorId} />}
         {activeTab === "updates" && <UpdatesTab vendorId={vendorId} />}
         {activeTab === "documents" && <DocumentsTab vendorId={vendorId} vendorData={vendorData} />}
         {activeTab === "inventory" && <InventoryTab vendorId={vendorId} />}
