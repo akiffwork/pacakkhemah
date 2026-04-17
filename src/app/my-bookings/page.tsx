@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import { collection, query, where, getDocs } from "firebase/firestore";
 
 type SavedOrder = {
   id: string;
@@ -96,8 +96,7 @@ export default function MyBookingsPage() {
     try {
       const q = query(
         collection(db, "orders"),
-        where("customerPhone", "==", searchPhone),
-        orderBy("createdAt", "desc")
+        where("customerPhone", "==", searchPhone)
       );
       const snap = await getDocs(q);
       const results: SavedOrder[] = [];
@@ -123,6 +122,8 @@ export default function MyBookingsPage() {
         });
       }
 
+      // Sort by date descending (client-side to avoid composite index)
+      results.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
       setOrders(results);
 
       // Save phone for next visit

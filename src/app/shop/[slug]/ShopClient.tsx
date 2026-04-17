@@ -371,6 +371,12 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<TimeSlot | null>(null);
   const [useCombo, setUseCombo] = useState(false);
   const [isSending, setIsSending] = useState(false);
+
+  // ── My Bookings (customer order history for this vendor) ──
+  const [myBookings, setMyBookings] = useState<{ id: string; items: { name: string; qty: number; price: number; variantLabel?: string }[]; totalAmount: number; rentalAmount?: number; depositAmount?: number; bookingDates: { start: string; end: string }; status: string; createdAt: string }[]>([]);
+  const [myBookingsPhone, setMyBookingsPhone] = useState("");
+  const [myBookingsLoading, setMyBookingsLoading] = useState(false);
+  const [myBookingsSearched, setMyBookingsSearched] = useState(false);
   
   const cpRef = useRef<any>(null);
   const opRef = useRef<any>(null);
@@ -575,6 +581,52 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   // ═══════════════════════════════════════════════════════════════════════════
   // CART FUNCTIONS
   // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── My Bookings: auto-load from localStorage ──
+  useEffect(() => {
+    if (!vendorId) return;
+    try {
+      const saved = localStorage.getItem("pk_customer");
+      if (saved) {
+        const { phone } = JSON.parse(saved);
+        if (phone) {
+          const local = phone.startsWith("60") ? "0" + phone.slice(2) : phone;
+          setMyBookingsPhone(local);
+          lookupMyBookings(phone);
+        }
+      }
+    } catch { /* ignore */ }
+  }, [vendorId]);
+
+  async function lookupMyBookings(rawPhone?: string) {
+    const digits = (rawPhone || myBookingsPhone).replace(/\D/g, "");
+    const searchPhone = digits.startsWith("60") ? digits : digits.startsWith("0") ? "60" + digits.slice(1) : "60" + digits;
+    if (searchPhone.length < 10) return;
+
+    setMyBookingsLoading(true);
+    setMyBookingsSearched(true);
+    try {
+      const q = query(collection(db, "orders"), where("vendorId", "==", vendorId), where("customerPhone", "==", searchPhone));
+      const snap = await getDocs(q);
+      const results = snap.docs.filter(d => !d.data().deleted).map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          items: data.items || [],
+          totalAmount: data.totalAmount || 0,
+          rentalAmount: data.rentalAmount,
+          depositAmount: data.depositAmount,
+          bookingDates: data.bookingDates || { start: "", end: "" },
+          status: data.status || "pending",
+          createdAt: data.createdAt?.toDate?.()?.toISOString?.() || "",
+        };
+      });
+      // Sort by date descending (client-side to avoid composite index)
+      results.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+      setMyBookings(results);
+    } catch (e) { console.error("Bookings lookup:", e); }
+    finally { setMyBookingsLoading(false); }
+  }
 
   function getItemStock(itemId: string, variantId?: string): number {
     const item = allGear.find(g => g.id === itemId);
@@ -1071,12 +1123,24 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
 
       // ═══ Create order in orders collection ═══
       try {
+        // Pre-fill customer info from localStorage (saved during previous agreement)
+        let savedPhone = "";
+        let savedName = "";
+        try {
+          const pk = localStorage.getItem("pk_customer");
+          if (pk) {
+            const parsed = JSON.parse(pk);
+            savedPhone = parsed.phone || "";
+            savedName = parsed.name || "";
+          }
+        } catch { /* ignore */ }
+
         const orderData = {
           vendorId,
           vendorName: vendorData?.name || "",
           vendorSlug: vendorData?.slug || "",
-          customerPhone: "",
-          customerName: "",
+          customerPhone: savedPhone,
+          customerName: savedName,
           items: cart.map(i => ({
             id: i.id, name: i.name, qty: i.qty, price: i.price,
             addSetup: i.addSetup || false,
@@ -1397,6 +1461,72 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
               </Section>
               </div>
             )}
+
+            {/* My Bookings Section */}
+            <Section title="My Bookings" icon="fa-receipt" defaultOpen={false}>
+              {!myBookingsSearched ? (
+                <div className="space-y-2">
+                  <p className="text-[10px] text-slate-400 font-medium">Pernah booking sini? Masukkan nombor WhatsApp untuk lihat sejarah tempahan.</p>
+                  <div className="flex gap-2">
+                    <div className="flex-1 flex">
+                      <span className="flex items-center bg-slate-100 border border-r-0 border-slate-200 px-2.5 rounded-l-xl text-[10px] font-bold text-slate-500 shrink-0">+60</span>
+                      <input type="tel" value={myBookingsPhone} onChange={e => setMyBookingsPhone(e.target.value.replace(/[^0-9\-\s]/g, ""))}
+                        placeholder="012-345 6789"
+                        className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-r-xl text-xs font-bold outline-none focus:border-emerald-400"
+                        onKeyDown={e => e.key === "Enter" && lookupMyBookings()} />
+                    </div>
+                    <button onClick={() => lookupMyBookings()} className="bg-[#062c24] text-white px-4 rounded-xl text-[10px] font-black uppercase shrink-0 hover:bg-emerald-800 transition-colors">
+                      <i className="fas fa-search"></i>
+                    </button>
+                  </div>
+                </div>
+              ) : myBookingsLoading ? (
+                <div className="py-6 text-center"><i className="fas fa-spinner fa-spin text-slate-300 text-lg"></i></div>
+              ) : myBookings.length === 0 ? (
+                <div className="py-4 text-center">
+                  <p className="text-[10px] text-slate-400 font-bold">Tiada tempahan dijumpai</p>
+                  <button onClick={() => { setMyBookingsSearched(false); setMyBookingsPhone(""); }}
+                    className="text-[9px] font-bold text-emerald-600 mt-1 hover:underline">Cuba nombor lain</button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[9px] font-bold text-slate-400">{myBookings.length} tempahan dijumpai</p>
+                  {myBookings.slice(0, 5).map(b => {
+                    const statusStyle: Record<string, string> = {
+                      pending: "bg-amber-50 text-amber-600", confirmed: "bg-blue-50 text-blue-600",
+                      completed: "bg-emerald-50 text-emerald-600", cancelled: "bg-red-50 text-red-500",
+                    };
+                    return (
+                      <div key={b.id} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-[#062c24]">
+                              {b.bookingDates.start ? new Date(b.bookingDates.start).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "2-digit" }) : "—"}
+                            </span>
+                            <span className="text-[8px] text-slate-300">→</span>
+                            <span className="text-[10px] font-bold text-[#062c24]">
+                              {b.bookingDates.end ? new Date(b.bookingDates.end).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "2-digit" }) : "—"}
+                            </span>
+                          </div>
+                          <span className={`text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase ${statusStyle[b.status] || "bg-slate-100 text-slate-400"}`}>
+                            {b.status}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <p className="text-[9px] text-slate-500 truncate flex-1">{b.items.map(i => `${i.name} ×${i.qty}`).join(", ")}</p>
+                          <span className="text-[10px] font-black text-emerald-600 ml-2 shrink-0">RM{b.rentalAmount ?? b.totalAmount}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {myBookings.length > 5 && (
+                    <p className="text-[9px] text-center text-slate-400 font-bold">+ {myBookings.length - 5} lagi tempahan</p>
+                  )}
+                  <button onClick={() => { setMyBookingsSearched(false); setMyBookingsPhone(""); }}
+                    className="text-[9px] font-bold text-emerald-600 hover:underline">Tukar nombor</button>
+                </div>
+              )}
+            </Section>
 
             <Section title="Pick Your Date" icon="fa-calendar-alt" defaultOpen={true}>
               <div id="demo-dates" className="flex gap-3">
