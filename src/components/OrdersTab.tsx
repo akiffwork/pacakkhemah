@@ -531,7 +531,13 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                 <div className="flex items-center gap-3">
                   <div className="text-right">
                     <p className="text-lg font-black text-emerald-600">RM {order.totalAmount}</p>
-                    <p className="text-[9px] text-slate-400">{formatDate(order.createdAt)}</p>
+                    {order.depositAmount && order.paymentStatus === "deposit_paid" ? (
+                      <p className="text-[8px] text-amber-600 font-bold">Baki: RM{(order.rentalAmount ?? order.totalAmount - order.depositAmount)}</p>
+                    ) : order.paymentStatus === "refunded" ? (
+                      <p className="text-[8px] text-blue-600 font-bold">Deposit refunded</p>
+                    ) : (
+                      <p className="text-[9px] text-slate-400">{formatDate(order.createdAt)}</p>
+                    )}
                   </div>
 
                   <button
@@ -732,6 +738,80 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                   </button>
                 ))}
               </div>
+
+              {/* Payment Summary — changes based on status */}
+              {selectedOrder.depositAmount ? (() => {
+                const ps = selectedOrder.paymentStatus || "unpaid";
+                const deposit = selectedOrder.depositAmount || 0;
+                const rental = selectedOrder.rentalAmount ?? (selectedOrder.totalAmount - deposit);
+                const total = selectedOrder.totalAmount;
+
+                return (
+                  <div className={`mt-3 p-3 rounded-xl border text-xs ${
+                    ps === "unpaid" ? "bg-red-50 border-red-100" :
+                    ps === "deposit_paid" ? "bg-amber-50 border-amber-100" :
+                    ps === "full_paid" ? "bg-emerald-50 border-emerald-100" :
+                    "bg-slate-50 border-slate-200"
+                  }`}>
+                    {ps === "unpaid" && (
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between">
+                          <span className="text-red-500 font-bold">Amount Due</span>
+                          <span className="font-black text-red-600">RM {total}</span>
+                        </div>
+                        <p className="text-[9px] text-red-400">Customer belum buat sebarang bayaran</p>
+                      </div>
+                    )}
+                    {ps === "deposit_paid" && (
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between">
+                          <span className="text-emerald-600 font-bold"><i className="fas fa-check-circle mr-1"></i>Deposit Paid</span>
+                          <span className="font-black text-emerald-600">RM {deposit}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-amber-600 font-bold"><i className="fas fa-clock mr-1"></i>Remaining Balance</span>
+                          <span className="font-black text-amber-700">RM {rental}</span>
+                        </div>
+                        <p className="text-[9px] text-amber-500">Baki RM{rental} perlu dibayar sebelum pickup</p>
+                      </div>
+                    )}
+                    {ps === "full_paid" && (
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between">
+                          <span className="text-emerald-600 font-bold"><i className="fas fa-check-circle mr-1"></i>Rental Paid</span>
+                          <span className="font-black text-emerald-600">RM {rental}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-emerald-600 font-bold"><i className="fas fa-check-circle mr-1"></i>Deposit Paid</span>
+                          <span className="font-black text-emerald-600">RM {deposit}</span>
+                        </div>
+                        <div className="flex justify-between pt-1.5 border-t border-emerald-200">
+                          <span className="text-emerald-700 font-black">Total Collected</span>
+                          <span className="font-black text-emerald-700">RM {total}</span>
+                        </div>
+                        <p className="text-[9px] text-emerald-500">Semua bayaran telah diterima. Deposit RM{deposit} akan dipulangkan selepas gear dipulangkan.</p>
+                      </div>
+                    )}
+                    {ps === "refunded" && (
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between">
+                          <span className="text-slate-500 font-bold"><i className="fas fa-check-circle mr-1"></i>Rental Collected</span>
+                          <span className="font-black text-slate-600">RM {rental}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-blue-600 font-bold"><i className="fas fa-undo mr-1"></i>Deposit Refunded</span>
+                          <span className="font-black text-blue-600">− RM {deposit}</span>
+                        </div>
+                        <div className="flex justify-between pt-1.5 border-t border-slate-200">
+                          <span className="text-[#062c24] font-black">Net Revenue</span>
+                          <span className="font-black text-[#062c24]">RM {rental}</span>
+                        </div>
+                        <p className="text-[9px] text-slate-400">Deposit RM{deposit} telah dipulangkan kepada pelanggan</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })() : null}
             </div>
 
             {/* Status Actions */}
