@@ -4,12 +4,13 @@ import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, onSnapshot } from "firebase/firestore";
 import {
   signInWithPopup, GoogleAuthProvider,
   signInWithEmailAndPassword, sendPasswordResetEmail, signOut, onAuthStateChanged, User,
 } from "firebase/auth";
 import AnalyticsTab from "@/components/AnalyticsTab";
+import HomeTab from "@/components/HomeTab";
 import DocumentsTab from "@/components/DocumentsTab";
 import InventoryTab from "@/components/InventoryTab";
 import StorefrontTab from "@/components/StorefrontTab";
@@ -57,7 +58,7 @@ type VendorData = {
   order_count?: number;
 };
 
-type Tab = "analytics" | "orders" | "reviews" | "insights" | "updates" | "documents" | "inventory" | "storefront" | "referrals" | "settings";
+type Tab = "home" | "calendar" | "orders" | "reviews" | "insights" | "analytics" | "updates" | "documents" | "inventory" | "storefront" | "referrals" | "settings";
 
 // --- LOGIN SCREEN ---
 function LoginScreen() {
@@ -158,7 +159,8 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
   const router = useRouter();
   const tabParam = searchParams.get("tab") as Tab | null;
   const adminOverride = searchParams.get("admin_override");
-  const [activeTab, setActiveTab] = useState<Tab>(tabParam || "analytics");
+  const [activeTab, setActiveTab] = useState<Tab>(tabParam || "home");
+  const [menuOpen, setMenuOpen] = useState(false);
   
   // Tour states
   const [showWelcomeTour, setShowWelcomeTour] = useState(false);
@@ -190,8 +192,14 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
   }, [vendorData, isAdminOverride]);
 
   function handleTabChange(tab: Tab) {
+    // Calendar is a full-screen route (too large to embed)
+    if (tab === "calendar") {
+      const params = new URLSearchParams();
+      if (adminOverride) params.set("v", adminOverride);
+      router.push(`/calendar${params.toString() ? "?" + params.toString() : ""}`);
+      return;
+    }
     setActiveTab(tab);
-    // Preserve admin_override parameter if present
     const params = new URLSearchParams();
     params.set("tab", tab);
     if (adminOverride) params.set("admin_override", adminOverride);
@@ -205,7 +213,7 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
       inventory: "inventory",
       settings: "settings",
     };
-    const targetTab = tabMap[tab] || "analytics";
+    const targetTab = tabMap[tab] || "home";
     setActiveTab(targetTab);
     // Preserve admin_override parameter if present
     const params = new URLSearchParams();
@@ -236,17 +244,39 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
     await signOut(auth);
   }
 
-  const tabs: { id: Tab; label: string; icon: string }[] = [
-    { id: "analytics", label: "Dashboard", icon: "fa-chart-line" },
-    { id: "orders", label: "Orders", icon: "fa-shopping-bag" },
+  // Compute today/tomorrow for calendar badge
+  const [pendingCount, setPendingCount] = useState(0);
+  const [todayCalendarCount, setTodayCalendarCount] = useState(0);
+
+  useEffect(() => {
+    if (!vendorId) return;
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+    const ordersQuery = query(collection(db, "orders"), where("vendorId", "==", vendorId));
+    const unsub = onSnapshot(ordersQuery, (snap) => {
+      let pending = 0, todayCount = 0;
+      snap.docs.forEach((d) => {
+        const o = d.data();
+        if (o.deleted) return;
+        if (o.status === "pending") pending++;
+        if ((o.status === "confirmed" || o.status === "pending") &&
+            (o.bookingDates?.start === todayStr || o.bookingDates?.end === todayStr)) {
+          todayCount++;
+        }
+      });
+      setPendingCount(pending);
+      setTodayCalendarCount(todayCount);
+    });
+    return () => unsub();
+  }, [vendorId]);
+
+  const primaryTabs: { id: Tab; label: string; icon: string; badge?: number }[] = [
+    { id: "home", label: "Home", icon: "fa-home" },
+    { id: "calendar", label: "Calendar", icon: "fa-calendar-alt", badge: todayCalendarCount || undefined },
+    { id: "orders", label: "Orders", icon: "fa-shopping-bag", badge: pendingCount || undefined },
     { id: "reviews", label: "Reviews", icon: "fa-star" },
     { id: "insights", label: "Insights", icon: "fa-brain" },
-    { id: "updates", label: "Updates", icon: "fa-bullhorn" },
-    { id: "documents", label: "Documents", icon: "fa-file-contract" },
-    { id: "inventory", label: "Inventory", icon: "fa-boxes" },
-    { id: "storefront", label: "Storefront", icon: "fa-store" },
-    { id: "referrals", label: "Referrals", icon: "fa-gift" },
-    { id: "settings", label: "Settings", icon: "fa-cog" },
   ];
 
   const shopUrl = vendorData.slug ? `/shop/${vendorData.slug}` : `/shop?v=${vendorId}`;
@@ -254,7 +284,7 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
   const creditColor = credits > 10 ? "text-emerald-600 bg-emerald-50 border-emerald-100" : credits > 0 ? "text-amber-600 bg-amber-50 border-amber-100" : "text-red-600 bg-red-50 border-red-100";
 
   return (
-    <div className="min-h-screen pb-32" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f8fafc", color: "#062c24" }}>
+    <div className="min-h-screen pb-24" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f8fafc", color: "#062c24" }}>
 
       {/* Welcome Tour */}
       <WelcomeTour
@@ -279,58 +309,101 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
         onClose={() => setShowFirstOrderTour(false)}
       />
 
-      {/* Sticky Header */}
-      <header className="bg-white/90 backdrop-blur-xl border border-slate-100 shadow-sm sticky top-4 z-40 mx-4 mt-4 rounded-[2rem] p-4 space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+      {/* Menu overlay */}
+      {menuOpen && (
+        <div className="fixed inset-0 bg-black/40 z-[60]" onClick={() => setMenuOpen(false)}>
+          <div className="absolute top-0 right-0 w-72 max-w-[85vw] h-full bg-white shadow-2xl p-5 overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-sm font-black uppercase">More</h3>
+              <button onClick={() => setMenuOpen(false)} className="w-9 h-9 bg-slate-100 rounded-full flex items-center justify-center">
+                <i className="fas fa-times text-sm text-slate-400"></i>
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              <MenuItem icon="fa-chart-line" label="Analytics" onClick={() => { handleTabChange("analytics"); setMenuOpen(false); }} />
+              <MenuItem icon="fa-boxes" label="Inventory" onClick={() => { handleTabChange("inventory"); setMenuOpen(false); }} />
+              <MenuItem icon="fa-store" label="Storefront" onClick={() => { handleTabChange("storefront"); setMenuOpen(false); }} />
+              <MenuItem icon="fa-bullhorn" label="Updates" onClick={() => { handleTabChange("updates"); setMenuOpen(false); }} />
+              <MenuItem icon="fa-file-contract" label="Documents" onClick={() => { handleTabChange("documents"); setMenuOpen(false); }} />
+              <MenuItem icon="fa-gift" label="Referrals" onClick={() => { handleTabChange("referrals"); setMenuOpen(false); }} />
+              <MenuItem icon="fa-cog" label="Settings" onClick={() => { handleTabChange("settings"); setMenuOpen(false); }} />
+              <div className="border-t border-slate-100 my-3"></div>
+              <a href={shopUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 transition-colors">
+                <div className="w-9 h-9 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center">
+                  <i className="fas fa-external-link-alt text-xs"></i>
+                </div>
+                <span className="text-sm font-bold text-[#062c24]">View Live Shop</span>
+              </a>
+              <button onClick={() => { logout(); setMenuOpen(false); }} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-red-50 transition-colors">
+                <div className="w-9 h-9 bg-red-50 text-red-500 rounded-lg flex items-center justify-center">
+                  <i className="fas fa-power-off text-xs"></i>
+                </div>
+                <span className="text-sm font-bold text-red-500">Logout</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sticky Header - Compact */}
+      <header className="bg-white/95 backdrop-blur-xl border border-slate-100 shadow-sm sticky top-2 z-40 mx-3 mt-3 rounded-[1.5rem] p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
             {vendorData.image ? (
-              <img src={vendorData.image} alt={vendorData.name} className="w-11 h-11 rounded-2xl object-cover shrink-0 border border-slate-100" />
+              <img src={vendorData.image} alt={vendorData.name} className="w-10 h-10 rounded-xl object-cover shrink-0 border border-slate-100" />
             ) : (
-              <div className="w-11 h-11 bg-[#062c24] text-white rounded-2xl flex items-center justify-center font-black text-lg shrink-0">
+              <div className="w-10 h-10 bg-[#062c24] text-white rounded-xl flex items-center justify-center font-black text-sm shrink-0">
                 {vendorData.name?.charAt(0) || "V"}
               </div>
             )}
             <div className="min-w-0">
-              <h1 className="text-sm font-black text-[#062c24] uppercase leading-none truncate">{vendorData.name}</h1>
-              <div className="flex items-center gap-2 mt-1">
-                <span className={`text-[9px] font-black px-2 py-0.5 rounded-md border ${creditColor}`}>
-                  <i className="fas fa-coins mr-1"></i>{credits} Credits
+              <h1 className="text-xs font-black text-[#062c24] uppercase leading-none truncate">{vendorData.name}</h1>
+              <div className="flex items-center gap-1.5 mt-1">
+                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border ${creditColor}`}>
+                  <i className="fas fa-coins mr-0.5"></i>{credits}
                 </span>
                 {vendorData.status === "pending" && (
-                  <span className="text-[9px] font-black px-2 py-0.5 rounded-md bg-amber-50 text-amber-600 border border-amber-100">Pending</span>
+                  <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100">Pending</span>
                 )}
               </div>
             </div>
           </div>
 
-          <div className="flex gap-2 shrink-0">
-            <Link href="/calendar" className="w-11 h-11 flex items-center justify-center bg-blue-50 text-blue-500 rounded-xl hover:bg-blue-100 border border-blue-100 transition-all" title="Availability Calendar">
-              <i className="fas fa-calendar-alt text-sm"></i>
-            </Link>
-            <Link href={shopUrl} target="_blank" className="w-11 h-11 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 border border-emerald-100 transition-all" title="View Live Shop">
-              <i className="fas fa-external-link-alt text-sm"></i>
-            </Link>
-            <button onClick={logout} className="w-11 h-11 flex items-center justify-center bg-red-50 text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all">
-              <i className="fas fa-power-off text-sm"></i>
-            </button>
-          </div>
-        </div>
-
-        <div className="flex gap-2 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
-          {tabs.map(t => (
-            <button key={t.id} onClick={() => handleTabChange(t.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap shrink-0 transition-all min-h-[44px] ${
-                activeTab === t.id ? "bg-[#062c24] text-white shadow-md" : "bg-slate-100 text-slate-500 hover:text-[#062c24] hover:bg-slate-200"
-              }`}>
-              <i className={`fas ${t.icon}`}></i>
-              <span>{t.label}</span>
-            </button>
-          ))}
+          <button onClick={() => setMenuOpen(true)} className="w-10 h-10 flex items-center justify-center bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-all shrink-0 relative">
+            <i className="fas fa-bars text-sm"></i>
+          </button>
         </div>
       </header>
 
+      {/* Bottom Tab Bar - Mobile-first Primary Navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-xl border-t border-slate-100 shadow-[0_-4px_20px_rgba(0,0,0,0.04)]" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+        <div className="max-w-xl mx-auto flex items-center justify-around px-1 py-1.5">
+          {primaryTabs.map(t => {
+            const isActive = activeTab === t.id;
+            return (
+              <button key={t.id} onClick={() => handleTabChange(t.id)}
+                className={`relative flex flex-col items-center justify-center gap-0.5 min-w-[56px] min-h-[52px] px-2 py-1.5 rounded-xl transition-all ${
+                  isActive ? "text-[#062c24]" : "text-slate-400 hover:text-slate-600"
+                }`}>
+                <div className="relative">
+                  <i className={`fas ${t.icon} text-base`}></i>
+                  {t.badge !== undefined && (
+                    <span className="absolute -top-1.5 -right-2 bg-red-500 text-white text-[8px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center shadow-sm">
+                      {t.badge > 9 ? "9+" : t.badge}
+                    </span>
+                  )}
+                </div>
+                <span className={`text-[9px] font-black uppercase leading-none ${isActive ? "opacity-100" : "opacity-70"}`}>{t.label}</span>
+                {isActive && <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-[#062c24] rounded-full"></span>}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
       {/* Tab Content */}
-      <div className="max-w-7xl mx-auto px-4 mt-6">
+      <div className="max-w-7xl mx-auto px-3 mt-4">
+        {activeTab === "home" && <HomeTab vendorId={vendorId} vendorData={vendorData} onNavigate={(tab: string) => handleTabChange(tab as Tab)} />}
         {activeTab === "analytics" && <AnalyticsTab vendorId={vendorId} vendorData={vendorData} />}
         {activeTab === "orders" && <OrdersTab vendorId={vendorId} vendorName={vendorData.name} />}
         {activeTab === "reviews" && <ReviewsTab vendorId={vendorId} />}
@@ -465,5 +538,19 @@ export default function StorePage() {
     }>
       <StorePageContent />
     </Suspense>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// MENU ITEM (drawer)
+// ═══════════════════════════════════════════════════════════
+function MenuItem({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 transition-colors active:scale-95">
+      <div className="w-9 h-9 bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center shrink-0">
+        <i className={`fas ${icon} text-xs`}></i>
+      </div>
+      <span className="text-sm font-bold text-[#062c24]">{label}</span>
+    </button>
   );
 }
