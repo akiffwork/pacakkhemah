@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, orderBy } from "firebase/firestore";
+import { collection, query, where, onSnapshot, orderBy, addDoc, getDocs, doc, getDoc, serverTimestamp } from "firebase/firestore";
 
 type Order = {
   id: string;
@@ -68,6 +68,30 @@ type View = "customers" | "heatmap" | "items" | "forecast" | "promos";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+const DEFAULT_TIERS = [
+  { id: "gold", minBookings: 10, discount: 15, label: "Gold" },
+  { id: "silver", minBookings: 5, discount: 10, label: "Silver" },
+  { id: "bronze", minBookings: 2, discount: 5, label: "Bronze" },
+];
+
+const TIER_STYLES: Record<string, { icon: string; bgClass: string; badgeClass: string }> = {
+  gold: { icon: "fa-crown", bgClass: "bg-amber-100 text-amber-700", badgeClass: "bg-amber-50 text-amber-600 border-amber-200" },
+  silver: { icon: "fa-medal", bgClass: "bg-slate-200 text-slate-700", badgeClass: "bg-slate-100 text-slate-600 border-slate-200" },
+  bronze: { icon: "fa-award", bgClass: "bg-orange-100 text-orange-700", badgeClass: "bg-orange-50 text-orange-600 border-orange-200" },
+};
+
+type LoyaltyConfig = {
+  enabled: boolean;
+  tiers: { id: string; minBookings: number; discount: number; label: string }[];
+  appliesTo?: { type: "all" | "specific"; itemIds?: string[] };
+};
+
+function generateLoyaltyCode(name: string): string {
+  const clean = name.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 5);
+  const rand = Math.random().toString(36).substring(2, 5).toUpperCase();
+  return `${clean}-${rand}`;
+}
+
 export default function InsightsTab({ vendorId }: { vendorId: string }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -75,6 +99,36 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
   const [view, setView] = useState<View>("customers");
   const [custSearch, setCustSearch] = useState("");
   const [custSort, setCustSort] = useState<"spent" | "bookings" | "recent">("spent");
+  const [existingLoyaltyCodes, setExistingLoyaltyCodes] = useState<Record<string, string>>({});
+  const [rewardSending, setRewardSending] = useState<string | null>(null);
+  const [rewardToast, setRewardToast] = useState<string | null>(null);
+  const [loyaltyConfig, setLoyaltyConfig] = useState<LoyaltyConfig>({ enabled: false, tiers: DEFAULT_TIERS });
+
+  // Load loyalty settings from vendor doc
+  useEffect(() => {
+    async function loadLoyalty() {
+      try {
+        const snap = await getDoc(doc(db, "vendors", vendorId));
+        if (snap.exists() && snap.data().loyalty) {
+          setLoyaltyConfig({ ...{ enabled: false, tiers: DEFAULT_TIERS }, ...snap.data().loyalty });
+        }
+      } catch { /* ignore */ }
+    }
+    loadLoyalty();
+  }, [vendorId]);
+
+  function getLoyaltyTier(completedBookings: number) {
+    if (!loyaltyConfig.enabled) return null;
+    // Sort tiers descending by minBookings so highest tier matches first
+    const sorted = [...loyaltyConfig.tiers].sort((a, b) => b.minBookings - a.minBookings);
+    for (const tier of sorted) {
+      if (completedBookings >= tier.minBookings) {
+        const style = TIER_STYLES[tier.id] || { icon: "fa-star", bgClass: "bg-slate-200 text-slate-600", badgeClass: "bg-slate-100 text-slate-600 border-slate-200" };
+        return { ...tier, ...style };
+      }
+    }
+    return null;
+  }
 
   useEffect(() => {
     const q1 = query(collection(db, "orders"), where("vendorId", "==", vendorId), orderBy("createdAt", "desc"));
@@ -87,8 +141,65 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
     const unsub2 = onSnapshot(q2, snap => {
       setReviews(snap.docs.map(d => ({ id: d.id, ...d.data() } as Review)));
     });
-    return () => { unsub1(); unsub2(); };
+
+    // Load existing loyalty codes from referrals
+    const unsub3 = onSnapshot(collection(db, "vendors", vendorId, "referrals"), snap => {
+      const codes: Record<string, string> = {};
+      snap.docs.forEach(d => {
+        const data = d.data();
+        if (data.isLoyalty && data.assignedTo?.phone) {
+          codes[data.assignedTo.phone.replace(/\D/g, "")] = data.code;
+        }
+      });
+      setExistingLoyaltyCodes(codes);
+    });
+
+    return () => { unsub1(); unsub2(); unsub3(); };
   }, [vendorId]);
+
+  // Auto-generate loyalty code and open WhatsApp
+  async function sendLoyaltyReward(customer: Customer) {
+    const tier = getLoyaltyTier(customer.completedBookings);
+    if (!tier) return;
+
+    setRewardSending(customer.phone);
+    try {
+      const existingCode = existingLoyaltyCodes[customer.phone];
+      let code = existingCode;
+
+      if (!code) {
+        code = generateLoyaltyCode(customer.name);
+        await addDoc(collection(db, "vendors", vendorId, "referrals"), {
+          code,
+          assignedTo: { name: customer.name, phone: customer.phone },
+          discountType: "percent" as const,
+          discountValue: tier.discount,
+          maxUses: 1,
+          usedCount: 0,
+          usedBy: [],
+          expiresAt: null,
+          isActive: true,
+          isLoyalty: true,
+          loyaltyTier: tier.id,
+          ...(loyaltyConfig.appliesTo ? { appliesTo: loyaltyConfig.appliesTo } : {}),
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      const appliesNote = loyaltyConfig.appliesTo?.type === "specific" && loyaltyConfig.appliesTo.itemIds?.length
+        ? `\n\n*Nota: Kod ini hanya sah untuk item tertentu sahaja.`
+        : "";
+      const msg = `Hi ${customer.name}! 🎉\n\nTerima kasih kerana setia bersama kami! Anda telah mencapai status *${tier.label}* selepas ${customer.completedBookings} tempahan.\n\nSebagai penghargaan, gunakan kod *${code}* untuk *${tier.discount}% OFF* tempahan seterusnya!${appliesNote}\n\nJom camping lagi! 🏕️`;
+      window.open(`https://wa.me/${customer.phone}?text=${encodeURIComponent(msg)}`, "_blank");
+
+      setRewardToast(`Reward sent to ${customer.name}!`);
+      setTimeout(() => setRewardToast(null), 3000);
+    } catch (e) {
+      console.error("Loyalty reward error:", e);
+    } finally {
+      setRewardSending(null);
+    }
+  }
 
   // ═══════════════════════════════════════════════════════════
   // CUSTOMER DATABASE — aggregate from orders
@@ -255,6 +366,8 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
   const repeatRate = totalCustomers > 0 ? Math.round((repeatCustomers / totalCustomers) * 100) : 0;
   const atRiskCount = customers.filter(c => c.status === "at_risk").length;
   const topItem = itemPerformance[0];
+  const loyaltyEligible = customers.filter(c => getLoyaltyTier(c.completedBookings) !== null).length;
+  const rewardsNotSent = customers.filter(c => getLoyaltyTier(c.completedBookings) !== null && !existingLoyaltyCodes[c.phone]).length;
 
   // ═══════════════════════════════════════════════════════════
   // REVENUE FORECAST — next 30/60/90 days from confirmed bookings
@@ -406,9 +519,18 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
           <p className="text-[8px] text-amber-500 mt-1">60+ days inactive</p>
         </div>
         <div className="bg-white rounded-2xl p-4 border border-slate-100">
-          <p className="text-[9px] font-black text-slate-400 uppercase">Avg Duration</p>
-          <p className="text-2xl font-black text-[#062c24]">{heatmapData.avgNights}</p>
-          <p className="text-[8px] text-slate-300 mt-1">Nights per booking</p>
+          <p className="text-[9px] font-black text-slate-400 uppercase">Loyalty</p>
+          {loyaltyConfig.enabled ? (
+            <>
+              <p className="text-2xl font-black text-[#062c24]">{loyaltyEligible}</p>
+              <p className="text-[8px] text-emerald-600 mt-1">{rewardsNotSent > 0 ? `${rewardsNotSent} reward${rewardsNotSent > 1 ? "s" : ""} pending` : "All rewarded"}</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-black text-slate-300 mt-1">Disabled</p>
+              <p className="text-[8px] text-slate-300 mt-0.5">Enable in Settings → Loyalty</p>
+            </>
+          )}
         </div>
         <div className="bg-white rounded-2xl p-4 border border-slate-100">
           <p className="text-[9px] font-black text-slate-400 uppercase">Top Item</p>
@@ -416,6 +538,19 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
           <p className="text-[8px] text-emerald-600 mt-1">{topItem ? `RM${topItem.totalRevenue} • ${topItem.timesRented}x rented` : ""}</p>
         </div>
       </div>
+
+      {/* Rewards Pending Alert */}
+      {loyaltyConfig.enabled && rewardsNotSent > 0 && view === "customers" && (
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3">
+          <div className="w-10 h-10 bg-amber-500 text-white rounded-xl flex items-center justify-center shrink-0">
+            <i className="fas fa-gift"></i>
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-black text-amber-900">{rewardsNotSent} loyalty reward{rewardsNotSent > 1 ? "s" : ""} ready to send</p>
+            <p className="text-[10px] text-amber-700 font-bold">Scroll down to send via WhatsApp</p>
+          </div>
+        </div>
+      )}
 
       {/* View Toggle */}
       <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
@@ -463,21 +598,34 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
               <p className="text-[10px] text-slate-300 mt-1">Customer profiles are built from completed orders</p>
             </div>
           ) : (
-            customers.map(c => (
+            customers.map(c => {
+              const tier = getLoyaltyTier(c.completedBookings);
+              const hasExistingCode = !!existingLoyaltyCodes[c.phone];
+              const isSending = rewardSending === c.phone;
+              return (
               <div key={c.phone} className={`bg-white rounded-2xl border overflow-hidden transition-all ${
                 c.status === "at_risk" ? "border-amber-200" : c.status === "lost" ? "border-red-200" : "border-slate-100"
               }`}>
                 <div className="p-4">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm ${
-                        c.status === "active" ? "bg-emerald-100 text-emerald-600" :
-                        c.status === "at_risk" ? "bg-amber-100 text-amber-600" : "bg-red-100 text-red-500"
+                      <div className={`relative w-10 h-10 rounded-full flex items-center justify-center font-black text-sm ${
+                        tier ? tier.bgClass : (
+                          c.status === "active" ? "bg-emerald-100 text-emerald-600" :
+                          c.status === "at_risk" ? "bg-amber-100 text-amber-600" : "bg-red-100 text-red-500"
+                        )
                       }`}>
-                        {c.name[0]?.toUpperCase() || "?"}
+                        {tier ? <i className={`fas ${tier.icon} text-xs`}></i> : (c.name[0]?.toUpperCase() || "?")}
                       </div>
                       <div>
-                        <p className="text-sm font-black text-[#062c24]">{c.name}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-black text-[#062c24]">{c.name}</p>
+                          {tier && (
+                            <span className={`text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase border ${tier.badgeClass}`}>
+                              {tier.label}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-[9px] text-slate-400 font-bold">{c.phone}</p>
                       </div>
                     </div>
@@ -490,6 +638,38 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
                       </span>
                     </div>
                   </div>
+
+                  {/* Loyalty Reward Banner */}
+                  {tier && (
+                    <div className={`mb-3 p-3 rounded-xl border flex items-center gap-3 ${
+                      hasExistingCode ? "bg-emerald-50 border-emerald-100" : "bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200"
+                    }`}>
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                        hasExistingCode ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"
+                      }`}>
+                        <i className={`fas ${hasExistingCode ? "fa-check" : "fa-gift"} text-sm`}></i>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {hasExistingCode ? (
+                          <>
+                            <p className="text-[10px] font-black text-emerald-700">Reward sent</p>
+                            <p className="text-[8px] text-emerald-600 font-bold">Code: {existingLoyaltyCodes[c.phone]}</p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-[10px] font-black text-amber-800">{tier.label} reward ready!</p>
+                            <p className="text-[8px] text-amber-600 font-bold">{tier.discount}% OFF for {c.completedBookings} bookings</p>
+                          </>
+                        )}
+                      </div>
+                      {!hasExistingCode && (
+                        <button onClick={() => sendLoyaltyReward(c)} disabled={isSending}
+                          className="bg-[#062c24] text-white px-3 py-2 rounded-xl text-[8px] font-black uppercase shrink-0 hover:bg-emerald-800 transition-colors disabled:opacity-50">
+                          {isSending ? <i className="fas fa-spinner fa-spin"></i> : <><i className="fab fa-whatsapp mr-1"></i>Send</>}
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {/* Stats Row */}
                   <div className="grid grid-cols-4 gap-2 mb-3">
@@ -538,7 +718,8 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
                   </div>
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
@@ -904,6 +1085,14 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Reward Toast */}
+      {rewardToast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-2xl text-xs font-black uppercase flex items-center gap-2 animate-[slideUp_0.3s_ease-out]">
+          <i className="fas fa-check-circle"></i> {rewardToast}
+          <style>{`@keyframes slideUp { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
         </div>
       )}
     </div>

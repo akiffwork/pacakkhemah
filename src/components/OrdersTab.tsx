@@ -926,7 +926,8 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                 const items = selectedOrder.items.map(i => i.name).join(", ");
                 const dates = selectedOrder.bookingDates;
                 const total = selectedOrder.totalAmount;
-                const deposit = Math.round(total * 0.5);
+                const rental = selectedOrder.rentalAmount ?? total;
+                const deposit = selectedOrder.depositAmount ?? Math.round(total - rental);
 
                 const templates = [
                   {
@@ -934,7 +935,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                     icon: "fa-check-circle",
                     color: "bg-blue-50 text-blue-700 border-blue-100",
                     show: selectedOrder.status === "pending" || selectedOrder.status === "confirmed",
-                    msg: `Assalamualaikum ${name} 👋\n\n✅ *Tempahan anda telah disahkan!*\n\n📦 Item: ${items}\n📅 Tarikh: ${dates.start} → ${dates.end}\n💰 Jumlah: RM${total}\n\nSila buat bayaran deposit RM${deposit} ke akaun berikut untuk mengesahkan tempahan:\n\n🏦 [Bank/No Akaun]\n\nSelepas bayaran, sila hantar bukti pembayaran di sini.\n\nTerima kasih! 🏕️`,
+                    msg: `Assalamualaikum ${name} 👋\n\n✅ *Tempahan anda telah disahkan!*\n\n📦 Item: ${items}\n📅 Tarikh: ${dates.start} → ${dates.end}\n💰 Sewaan: RM${rental}\n💳 Deposit: RM${deposit}\n💵 Jumlah: RM${total}\n\nSila buat bayaran deposit RM${deposit} ke akaun berikut untuk mengesahkan tempahan:\n\n🏦 [Bank/No Akaun]\n\nSelepas bayaran, sila hantar bukti pembayaran di sini.\n\nTerima kasih! 🏕️`,
                   },
                   {
                     label: "Deposit Received",
@@ -969,7 +970,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                     icon: "fa-receipt",
                     color: "bg-purple-50 text-purple-700 border-purple-100",
                     show: true,
-                    msg: `Assalamualaikum ${name} 👋\n\n💰 *Peringatan Baki Bayaran*\n\nBaki yang perlu dijelaskan:\n📦 ${items}\n💵 Jumlah: RM${total}\n💳 Deposit dibayar: RM${deposit}\n💰 Baki: RM${total - deposit}\n\nSila buat bayaran sebelum tarikh pickup.\n\n🏦 [Bank/No Akaun]\n\nTerima kasih! 🙏`,
+                    msg: `Assalamualaikum ${name} 👋\n\n💰 *Peringatan Baki Bayaran*\n\nBaki yang perlu dijelaskan:\n📦 ${items}\n💵 Sewaan: RM${rental}\n💳 Deposit dibayar: RM${deposit}\n💰 Baki sewaan: RM${rental - deposit > 0 ? rental - deposit : 0}\n💵 Jumlah keseluruhan: RM${total}\n\nSila buat bayaran sebelum tarikh pickup.\n\n🏦 [Bank/No Akaun]\n\nTerima kasih! 🙏`,
                   },
                   {
                     label: "Thank You",

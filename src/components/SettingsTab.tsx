@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { db, auth } from "@/lib/firebase";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, updateDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { sendPasswordResetEmail } from "firebase/auth";
 
 type DeliveryZone = { name: string; fee: number };
@@ -42,6 +42,11 @@ type SettingsTabProps = {
     security_deposit?: number; security_deposit_type?: string;
     is_vacation?: boolean; allow_stacking?: boolean; rules?: string[];
     services?: ServicesConfig;
+    loyalty?: {
+      enabled: boolean;
+      tiers: { id: string; minBookings: number; discount: number; label: string }[];
+      appliesTo?: { type: "all" | "specific"; itemIds?: string[] };
+    };
   };
   onRestartTour?: () => void;
 };
@@ -98,14 +103,35 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
   const [services, setServices] = useState<ServicesConfig>(vendorData.services || DEFAULT_SERVICES);
   const [newZone, setNewZone] = useState({ name: "", fee: 0 });
 
+  // Loyalty fields
+  const [loyaltyEnabled, setLoyaltyEnabled] = useState(vendorData.loyalty?.enabled ?? false);
+  const [loyaltyTiers, setLoyaltyTiers] = useState<{ id: string; minBookings: number; discount: number; label: string }[]>(
+    vendorData.loyalty?.tiers ?? [
+      { id: "bronze", minBookings: 2, discount: 5, label: "Bronze" },
+      { id: "silver", minBookings: 5, discount: 10, label: "Silver" },
+      { id: "gold", minBookings: 10, discount: 15, label: "Gold" },
+    ]
+  );
+  const [loyaltyAppliesTo, setLoyaltyAppliesTo] = useState<"all" | "specific">(vendorData.loyalty?.appliesTo?.type ?? "all");
+  const [loyaltyItemIds, setLoyaltyItemIds] = useState<string[]>(vendorData.loyalty?.appliesTo?.itemIds ?? []);
+  const [allGear, setAllGear] = useState<{ id: string; name: string }[]>([]);
+
+  // Load gear for item targeting
+  useEffect(() => {
+    getDocs(query(collection(db, "gear"), where("vendorId", "==", vendorId))).then(snap => {
+      setAllGear(snap.docs.filter(d => !d.data().deleted).map(d => ({ id: d.id, name: d.data().name })));
+    }).catch(() => {});
+  }, [vendorId]);
+
   // Save states
   const [savedAccount, setSavedAccount] = useState(false);
   const [savedLogistics, setSavedLogistics] = useState(false);
   const [savedServices, setSavedServices] = useState(false);
+  const [savedLoyalty, setSavedLoyalty] = useState(false);
   const [resetSent, setResetSent] = useState(false);
 
   // Active section for mobile
-  const [activeSection, setActiveSection] = useState<"account" | "logistics" | "services" | "help">("account");
+  const [activeSection, setActiveSection] = useState<"account" | "logistics" | "services" | "loyalty" | "help">("account");
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
 
@@ -145,6 +171,24 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
       showToast("Services saved!");
       setTimeout(() => setSavedServices(false), 2000);
     } catch { showToast("Failed to save services", "error"); }
+  }
+
+  async function saveLoyalty() {
+    try {
+      await updateDoc(doc(db, "vendors", vendorId), {
+        loyalty: {
+          enabled: loyaltyEnabled,
+          tiers: loyaltyTiers,
+          appliesTo: {
+            type: loyaltyAppliesTo,
+            ...(loyaltyAppliesTo === "specific" ? { itemIds: loyaltyItemIds } : {}),
+          },
+        },
+      });
+      setSavedLoyalty(true);
+      showToast("Loyalty settings saved!");
+      setTimeout(() => setSavedLoyalty(false), 2000);
+    } catch { showToast("Failed to save loyalty settings", "error"); }
   }
 
   async function sendPasswordReset() {
@@ -222,11 +266,12 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
   }
 
   const sectionTabs = [
-    { id: "account", label: "Account", icon: "fa-user" },
-    { id: "logistics", label: "Logistics", icon: "fa-truck" },
-    { id: "services", label: "Delivery & Setup", icon: "fa-concierge-bell" },
-    { id: "help", label: "Help", icon: "fa-life-ring" },
-  ] as const;
+    { id: "account" as const, label: "Account", icon: "fa-user" },
+    { id: "logistics" as const, label: "Logistics", icon: "fa-truck" },
+    { id: "services" as const, label: "Delivery & Setup", icon: "fa-concierge-bell" },
+    { id: "loyalty" as const, label: "Loyalty", icon: "fa-crown" },
+    { id: "help" as const, label: "Help", icon: "fa-life-ring" },
+  ];
 
   return (
     <div className="space-y-6">
@@ -595,6 +640,139 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
           <button onClick={saveServices}
             className={`w-full py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg transition-all ${savedServices ? "bg-emerald-500 text-white" : "bg-[#062c24] text-white hover:bg-emerald-900"}`}>
             {savedServices ? "✓ Services Saved!" : "Save Services Settings"}
+          </button>
+        </div>
+      )}
+
+      {/* Loyalty Rewards */}
+      {activeSection === "loyalty" && (
+        <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+          <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-6">Loyalty Rewards</h3>
+
+          {/* Enable Toggle */}
+          <div className={`p-4 rounded-2xl border transition-all mb-6 ${loyaltyEnabled ? "bg-emerald-50 border-emerald-200" : "bg-slate-50 border-slate-100"}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-black text-[#062c24]"><i className="fas fa-crown text-amber-500 mr-2"></i>Auto Loyalty Rewards</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">Automatically reward repeat customers with discount codes</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" checked={loyaltyEnabled} onChange={e => setLoyaltyEnabled(e.target.checked)} className="sr-only peer" />
+                <div className="w-11 h-6 bg-slate-200 peer-checked:bg-emerald-500 rounded-full transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
+              </label>
+            </div>
+          </div>
+
+          {loyaltyEnabled && (
+            <div className="space-y-6">
+              {/* Tier Configuration */}
+              <div>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Reward Tiers</p>
+                <div className="space-y-3">
+                  {loyaltyTiers.map((tier, i) => {
+                    const tierIcons: Record<string, string> = { bronze: "fa-award", silver: "fa-medal", gold: "fa-crown" };
+                    const tierColors: Record<string, string> = { bronze: "bg-orange-100 text-orange-600", silver: "bg-slate-200 text-slate-600", gold: "bg-amber-100 text-amber-700" };
+                    return (
+                      <div key={tier.id} className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${tierColors[tier.id] || "bg-slate-100 text-slate-500"}`}>
+                            <i className={`fas ${tierIcons[tier.id] || "fa-star"} text-xs`}></i>
+                          </div>
+                          <span className="text-sm font-black text-[#062c24] uppercase">{tier.label}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Min Bookings</label>
+                            <input type="number" value={tier.minBookings} min={1}
+                              onChange={e => {
+                                const updated = [...loyaltyTiers];
+                                updated[i] = { ...tier, minBookings: Number(e.target.value) || 1 };
+                                setLoyaltyTiers(updated);
+                              }}
+                              className={inputCls} />
+                          </div>
+                          <div>
+                            <label className="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Discount (%)</label>
+                            <input type="number" value={tier.discount} min={1} max={100}
+                              onChange={e => {
+                                const updated = [...loyaltyTiers];
+                                updated[i] = { ...tier, discount: Number(e.target.value) || 0 };
+                                setLoyaltyTiers(updated);
+                              }}
+                              className={inputCls} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Applies To */}
+              <div>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Reward Applies To</p>
+                <div className="flex gap-2 mb-3">
+                  <button onClick={() => setLoyaltyAppliesTo("all")}
+                    className={`flex-1 py-3 rounded-xl text-xs font-black uppercase transition-all ${
+                      loyaltyAppliesTo === "all" ? "bg-[#062c24] text-white" : "bg-slate-50 text-slate-500 border border-slate-200"
+                    }`}>
+                    <i className="fas fa-globe mr-1.5"></i>All Items
+                  </button>
+                  <button onClick={() => setLoyaltyAppliesTo("specific")}
+                    className={`flex-1 py-3 rounded-xl text-xs font-black uppercase transition-all ${
+                      loyaltyAppliesTo === "specific" ? "bg-[#062c24] text-white" : "bg-slate-50 text-slate-500 border border-slate-200"
+                    }`}>
+                    <i className="fas fa-list mr-1.5"></i>Specific Items
+                  </button>
+                </div>
+
+                {loyaltyAppliesTo === "specific" && (
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 max-h-52 overflow-y-auto space-y-1.5">
+                    {allGear.length === 0 ? (
+                      <p className="text-[10px] text-slate-400 text-center py-4">No items found. Add gear in Inventory first.</p>
+                    ) : (
+                      allGear.map(g => (
+                        <label key={g.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-white cursor-pointer transition-colors">
+                          <input type="checkbox"
+                            checked={loyaltyItemIds.includes(g.id)}
+                            onChange={e => {
+                              if (e.target.checked) setLoyaltyItemIds(prev => [...prev, g.id]);
+                              else setLoyaltyItemIds(prev => prev.filter(id => id !== g.id));
+                            }}
+                            className="w-4 h-4 accent-emerald-500 rounded" />
+                          <span className="text-xs font-bold text-[#062c24]">{g.name}</span>
+                        </label>
+                      ))
+                    )}
+                    {loyaltyAppliesTo === "specific" && loyaltyItemIds.length > 0 && (
+                      <p className="text-[8px] text-emerald-600 font-bold mt-2">{loyaltyItemIds.length} item{loyaltyItemIds.length > 1 ? "s" : ""} selected</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Preview */}
+              <div className="bg-gradient-to-br from-[#062c24] to-emerald-800 rounded-2xl p-5 text-white">
+                <p className="text-[9px] font-black text-emerald-400 uppercase mb-3"><i className="fas fa-eye mr-1"></i>Preview</p>
+                <div className="space-y-2">
+                  {loyaltyTiers.map(tier => (
+                    <div key={tier.id} className="flex items-center justify-between bg-white/10 rounded-xl px-3 py-2">
+                      <span className="text-xs font-bold">{tier.label} ({tier.minBookings}+ bookings)</span>
+                      <span className="text-xs font-black text-emerald-400">{tier.discount}% OFF</span>
+                    </div>
+                  ))}
+                  <p className="text-[8px] text-white/50 mt-2">
+                    Applies to: {loyaltyAppliesTo === "all" ? "All items" : `${loyaltyItemIds.length} selected item${loyaltyItemIds.length !== 1 ? "s" : ""}`}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Save */}
+          <button onClick={saveLoyalty}
+            className={`w-full mt-6 py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg transition-all ${savedLoyalty ? "bg-emerald-500 text-white" : "bg-[#062c24] text-white hover:bg-emerald-900"}`}>
+            {savedLoyalty ? "✓ Loyalty Settings Saved!" : "Save Loyalty Settings"}
           </button>
         </div>
       )}

@@ -56,6 +56,12 @@ type VendorData = {
   };
   gear_count?: number;
   order_count?: number;
+  loyalty?: {
+    enabled: boolean;
+    tiers: { id: string; minBookings: number; discount: number; label: string }[];
+    appliesTo?: { type: "all" | "specific"; itemIds?: string[] };
+  };
+  [key: string]: any; // pass-through for SettingsTab
 };
 
 type Tab = "home" | "calendar" | "orders" | "reviews" | "insights" | "analytics" | "updates" | "documents" | "inventory" | "storefront" | "referrals" | "settings";
