@@ -103,7 +103,7 @@ type GearItem = {
 type LinkedVariantSelection = { itemId: string; variantId: string; variantLabel: string; variantColor?: string };
 type CartItem = GearItem & { qty: number; addSetup?: boolean; selectedVariant?: GearVariant; linkedVariants?: LinkedVariantSelection[] };
 type AvailRule = { itemId?: string; variantId?: string; type?: string; start: string; end?: string; qty?: number };
-type Discount = { type: string; trigger_nights?: number; discount_percent: number; discount_fixed?: number; code?: string; deleted?: boolean; is_public?: boolean };
+type Discount = { type: string; trigger_nights?: number; discount_percent: number; discount_fixed?: number; code?: string; deleted?: boolean; is_public?: boolean; appliesTo?: { type: "all" | "specific"; itemIds?: string[] } };
 type VendorPost = { id: string; content: string; image?: string; pinned?: boolean; createdAt: any };
 type Review = { id: string; customerName: string; rating: number; comment?: string | null; createdAt: any; isVerified?: boolean };
 
@@ -851,9 +851,20 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   if (rule) { const fn = (rule.trigger_nights ?? 0) - 1; const dn = nights - fn; if (dn > 0) autoDisc = dailyTotal * dn * (rule.discount_percent / 100); }
   
   // Promo discount
-  const promoDisc = appliedPromo
-    ? (appliedPromo.discount_fixed ? appliedPromo.discount_fixed : sub * (appliedPromo.discount_percent / 100))
-    : 0;
+  // Promo discount — respects appliesTo for item-specific codes
+  const promoDisc = (() => {
+    if (!appliedPromo) return 0;
+    
+    // Calculate eligible subtotal based on appliesTo
+    let eligibleSub = sub;
+    if (appliedPromo.appliesTo?.type === "specific" && appliedPromo.appliesTo.itemIds?.length) {
+      const eligibleIds = new Set(appliedPromo.appliesTo.itemIds);
+      eligibleSub = cart.reduce((s, i) => eligibleIds.has(i.id) ? s + (i.price * i.qty * nights) : s, 0);
+    }
+    
+    if (appliedPromo.discount_fixed) return Math.min(appliedPromo.discount_fixed, eligibleSub);
+    return eligibleSub * (appliedPromo.discount_percent / 100);
+  })();
   const allowStacking = vendorData?.allow_stacking === true;
   let finalDiscount = 0, showAuto = false, showPromo = false;
   if (allowStacking) { finalDiscount = autoDisc + promoDisc; if (autoDisc > 0) showAuto = true; if (promoDisc > 0) showPromo = true; }
@@ -953,10 +964,12 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
           code: ref.code,
           discount_percent: ref.discountType === "percent" ? ref.discountValue : 0,
           discount_fixed: ref.discountType === "fixed" ? ref.discountValue : 0,
+          ...(ref.appliesTo ? { appliesTo: ref.appliesTo } : {}),
         };
         setAppliedPromo(asDiscount);
         const label = ref.discountType === "percent" ? `${ref.discountValue}% Off` : `RM${ref.discountValue} Off`;
-        setPromoMsg({ text: `Success! ${label} Applied`, success: true });
+        const itemNote = ref.appliesTo?.type === "specific" ? " (selected items only)" : "";
+        setPromoMsg({ text: `Success! ${label} Applied${itemNote}`, success: true });
         return;
       }
     } catch (e) {
