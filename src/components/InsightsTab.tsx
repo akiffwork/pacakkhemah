@@ -17,6 +17,10 @@ type Order = {
   paymentStatus?: string;
   createdAt: any;
   completedAt?: any;
+  promoCode?: string;
+  promoDiscount?: number;
+  promoType?: string;
+  autoDiscount?: number;
 };
 
 type Review = {
@@ -49,7 +53,17 @@ type ItemPerf = {
   lastRented: string;
 };
 
-type View = "customers" | "heatmap" | "items";
+type PromoPerf = {
+  code: string;
+  timesUsed: number;
+  totalDiscount: number;
+  totalRevenue: number;
+  avgOrderValue: number;
+  conversionLift: number;
+  lastUsed: string;
+};
+
+type View = "customers" | "heatmap" | "items" | "forecast" | "promos";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -242,6 +256,116 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
   const atRiskCount = customers.filter(c => c.status === "at_risk").length;
   const topItem = itemPerformance[0];
 
+  // ═══════════════════════════════════════════════════════════
+  // REVENUE FORECAST — next 30/60/90 days from confirmed bookings
+  // ═══════════════════════════════════════════════════════════
+  const forecast = (() => {
+    const today = new Date();
+    const todayStr = today.toISOString().split("T")[0];
+    const futureOrders = orders.filter(o =>
+      (o.status === "confirmed" || o.status === "pending") &&
+      o.bookingDates?.start >= todayStr
+    );
+
+    function sumInDays(days: number) {
+      const cutoff = new Date(today);
+      cutoff.setDate(cutoff.getDate() + days);
+      const cutoffStr = cutoff.toISOString().split("T")[0];
+      const matched = futureOrders.filter(o => o.bookingDates.start <= cutoffStr);
+      return {
+        revenue: matched.reduce((s, o) => s + (o.rentalAmount ?? o.totalAmount ?? 0), 0),
+        orders: matched.length,
+      };
+    }
+
+    const next7 = sumInDays(7);
+    const next30 = sumInDays(30);
+    const next60 = sumInDays(60);
+    const next90 = sumInDays(90);
+
+    // Weekly breakdown for next 8 weeks
+    const weeks: { label: string; revenue: number; orders: number }[] = [];
+    for (let i = 0; i < 8; i++) {
+      const weekStart = new Date(today);
+      weekStart.setDate(weekStart.getDate() + i * 7);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      const wStart = weekStart.toISOString().split("T")[0];
+      const wEnd = weekEnd.toISOString().split("T")[0];
+      const weekOrders = futureOrders.filter(o => o.bookingDates.start >= wStart && o.bookingDates.start <= wEnd);
+      weeks.push({
+        label: `${weekStart.getDate()} ${MONTHS[weekStart.getMonth()]}`,
+        revenue: weekOrders.reduce((s, o) => s + (o.rentalAmount ?? o.totalAmount ?? 0), 0),
+        orders: weekOrders.length,
+      });
+    }
+
+    // Upcoming bookings list (next 5)
+    const upcoming = futureOrders
+      .sort((a, b) => a.bookingDates.start.localeCompare(b.bookingDates.start))
+      .slice(0, 5);
+
+    // Compare to last 30 days
+    const past30Start = new Date(today);
+    past30Start.setDate(past30Start.getDate() - 30);
+    const past30Str = past30Start.toISOString().split("T")[0];
+    const past30Orders = orders.filter(o =>
+      o.status !== "cancelled" &&
+      o.createdAt?.toDate?.()?.toISOString?.()?.split("T")[0] >= past30Str
+    );
+    const past30Revenue = past30Orders.reduce((s, o) => s + (o.rentalAmount ?? o.totalAmount ?? 0), 0);
+    const trend = past30Revenue > 0 ? Math.round(((next30.revenue - past30Revenue) / past30Revenue) * 100) : 0;
+
+    return { next7, next30, next60, next90, weeks, upcoming, trend };
+  })();
+
+  // ═══════════════════════════════════════════════════════════
+  // PROMO CODE ANALYTICS — per code performance
+  // ═══════════════════════════════════════════════════════════
+  const promoAnalytics = (() => {
+    const ordersWithPromo = orders.filter(o => o.promoCode && o.status !== "cancelled");
+    const ordersWithoutPromo = orders.filter(o => !o.promoCode && o.status !== "cancelled");
+
+    // Per-code breakdown
+    const codeMap: Record<string, PromoPerf> = {};
+    for (const o of ordersWithPromo) {
+      const code = o.promoCode!;
+      if (!codeMap[code]) {
+        codeMap[code] = { code, timesUsed: 0, totalDiscount: 0, totalRevenue: 0, avgOrderValue: 0, conversionLift: 0, lastUsed: "" };
+      }
+      const p = codeMap[code];
+      p.timesUsed++;
+      p.totalDiscount += o.promoDiscount || 0;
+      p.totalRevenue += o.rentalAmount ?? o.totalAmount ?? 0;
+      const dateStr = o.createdAt?.toDate?.()?.toISOString?.() || "";
+      if (!p.lastUsed || dateStr > p.lastUsed) p.lastUsed = dateStr;
+    }
+
+    for (const p of Object.values(codeMap)) {
+      p.avgOrderValue = p.timesUsed > 0 ? Math.round(p.totalRevenue / p.timesUsed) : 0;
+    }
+
+    const promos = Object.values(codeMap).sort((a, b) => b.totalRevenue - a.totalRevenue);
+
+    // Summary stats
+    const totalPromoOrders = ordersWithPromo.length;
+    const totalPromoRevenue = ordersWithPromo.reduce((s, o) => s + (o.rentalAmount ?? o.totalAmount ?? 0), 0);
+    const totalDiscountGiven = ordersWithPromo.reduce((s, o) => s + (o.promoDiscount || 0), 0);
+    const avgPromoOrder = totalPromoOrders > 0 ? Math.round(totalPromoRevenue / totalPromoOrders) : 0;
+    const avgNonPromoOrder = ordersWithoutPromo.length > 0
+      ? Math.round(ordersWithoutPromo.reduce((s, o) => s + (o.rentalAmount ?? o.totalAmount ?? 0), 0) / ordersWithoutPromo.length)
+      : 0;
+    const promoRate = orders.filter(o => o.status !== "cancelled").length > 0
+      ? Math.round((totalPromoOrders / orders.filter(o => o.status !== "cancelled").length) * 100)
+      : 0;
+
+    // Auto discount (extended stay) stats
+    const autoDiscOrders = orders.filter(o => o.autoDiscount && o.autoDiscount > 0 && o.status !== "cancelled");
+    const totalAutoDiscount = autoDiscOrders.reduce((s, o) => s + (o.autoDiscount || 0), 0);
+
+    return { promos, totalPromoOrders, totalPromoRevenue, totalDiscountGiven, avgPromoOrder, avgNonPromoOrder, promoRate, autoDiscOrders: autoDiscOrders.length, totalAutoDiscount };
+  })();
+
   function formatDate(str: string): string {
     if (!str) return "—";
     try { return new Date(str).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" }); }
@@ -294,11 +418,13 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
       </div>
 
       {/* View Toggle */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
         {([
           { id: "customers" as View, label: "Customers", icon: "fa-users" },
           { id: "heatmap" as View, label: "Demand", icon: "fa-chart-bar" },
           { id: "items" as View, label: "Items", icon: "fa-box" },
+          { id: "forecast" as View, label: "Forecast", icon: "fa-chart-line" },
+          { id: "promos" as View, label: "Promos", icon: "fa-tags" },
         ]).map(v => (
           <button key={v.id} onClick={() => setView(v.id)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${
@@ -556,6 +682,227 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
                 </div>
               );
             })
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════
+          REVENUE FORECAST VIEW
+          ═══════════════════════════════════════════════════════════ */}
+      {view === "forecast" && (
+        <div className="space-y-4">
+          {/* Forecast Cards */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-white rounded-2xl p-4 border border-slate-100">
+              <p className="text-[8px] font-black text-slate-400 uppercase">Next 7 Days</p>
+              <p className="text-xl font-black text-emerald-600 mt-1">RM{forecast.next7.revenue.toLocaleString()}</p>
+              <p className="text-[8px] text-slate-300 mt-0.5">{forecast.next7.orders} booking{forecast.next7.orders !== 1 ? "s" : ""}</p>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-slate-100">
+              <p className="text-[8px] font-black text-slate-400 uppercase">Next 30 Days</p>
+              <p className="text-xl font-black text-[#062c24] mt-1">RM{forecast.next30.revenue.toLocaleString()}</p>
+              <p className="text-[8px] text-slate-300 mt-0.5">{forecast.next30.orders} booking{forecast.next30.orders !== 1 ? "s" : ""}</p>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-slate-100">
+              <p className="text-[8px] font-black text-slate-400 uppercase">Next 60 Days</p>
+              <p className="text-lg font-black text-[#062c24] mt-1">RM{forecast.next60.revenue.toLocaleString()}</p>
+              <p className="text-[8px] text-slate-300 mt-0.5">{forecast.next60.orders} bookings</p>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-slate-100">
+              <p className="text-[8px] font-black text-slate-400 uppercase">Next 90 Days</p>
+              <p className="text-lg font-black text-[#062c24] mt-1">RM{forecast.next90.revenue.toLocaleString()}</p>
+              <p className="text-[8px] text-slate-300 mt-0.5">{forecast.next90.orders} bookings</p>
+            </div>
+          </div>
+
+          {/* Trend Indicator */}
+          {forecast.trend !== 0 && (
+            <div className={`rounded-2xl p-4 flex items-center gap-3 ${forecast.trend > 0 ? "bg-emerald-50 border border-emerald-100" : "bg-red-50 border border-red-100"}`}>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${forecast.trend > 0 ? "bg-emerald-100 text-emerald-600" : "bg-red-100 text-red-500"}`}>
+                <i className={`fas ${forecast.trend > 0 ? "fa-arrow-up" : "fa-arrow-down"}`}></i>
+              </div>
+              <div>
+                <p className={`text-sm font-black ${forecast.trend > 0 ? "text-emerald-700" : "text-red-600"}`}>
+                  {forecast.trend > 0 ? "+" : ""}{forecast.trend}% vs last 30 days
+                </p>
+                <p className="text-[9px] text-slate-500">Comparing confirmed bookings ahead vs past month</p>
+              </div>
+            </div>
+          )}
+
+          {/* Weekly Breakdown Chart */}
+          <div className="bg-white rounded-2xl p-5 border border-slate-100">
+            <p className="text-[9px] font-black text-slate-400 uppercase mb-4">Weekly Revenue Forecast (8 Weeks)</p>
+            <div className="flex items-end gap-2 h-32">
+              {forecast.weeks.map((w, i) => {
+                const maxRev = Math.max(...forecast.weeks.map(x => x.revenue), 1);
+                const h = (w.revenue / maxRev) * 100;
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                    {w.revenue > 0 && <p className="text-[7px] font-bold text-emerald-600">RM{w.revenue}</p>}
+                    <div className="w-full bg-slate-50 rounded-t-md relative" style={{ height: "100%" }}>
+                      <div className={`absolute bottom-0 w-full rounded-t-md transition-all duration-500 ${i === 0 ? "bg-emerald-500" : "bg-emerald-300"}`}
+                        style={{ height: `${h}%`, minHeight: w.revenue > 0 ? "4px" : "0" }}></div>
+                    </div>
+                    <p className="text-[6px] font-bold text-slate-400 leading-none">{w.label}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Upcoming Bookings */}
+          {forecast.upcoming.length > 0 && (
+            <div className="bg-white rounded-2xl p-5 border border-slate-100">
+              <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Upcoming Bookings</p>
+              <div className="space-y-2">
+                {forecast.upcoming.map((o, i) => (
+                  <div key={o.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${
+                      o.status === "confirmed" ? "bg-blue-100 text-blue-600" : "bg-amber-100 text-amber-600"
+                    }`}>
+                      {new Date(o.bookingDates.start).getDate()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-black text-[#062c24] truncate">{o.customerName || "Customer"}</p>
+                      <p className="text-[8px] text-slate-400 truncate">{o.items.map(it => `${it.name} ×${it.qty}`).join(", ")}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-xs font-black text-emerald-600">RM{o.rentalAmount ?? o.totalAmount}</p>
+                      <p className="text-[7px] text-slate-400">{formatDate(o.bookingDates.start)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {forecast.next30.orders === 0 && (
+            <div className="bg-gradient-to-br from-[#062c24] to-emerald-800 rounded-2xl p-5 text-white text-center">
+              <i className="fas fa-chart-line text-2xl text-emerald-400 mb-3"></i>
+              <p className="text-sm font-black uppercase mb-1">No upcoming bookings</p>
+              <p className="text-xs text-white/60">Share your shop link to get more orders!</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════
+          PROMO CODE ANALYTICS VIEW
+          ═══════════════════════════════════════════════════════════ */}
+      {view === "promos" && (
+        <div className="space-y-4">
+          {/* Summary */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-white rounded-2xl p-4 border border-slate-100">
+              <p className="text-[8px] font-black text-slate-400 uppercase">Promo Orders</p>
+              <p className="text-2xl font-black text-[#062c24] mt-1">{promoAnalytics.totalPromoOrders}</p>
+              <p className="text-[8px] text-slate-300 mt-0.5">{promoAnalytics.promoRate}% of all orders</p>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-slate-100">
+              <p className="text-[8px] font-black text-slate-400 uppercase">Revenue from Promos</p>
+              <p className="text-2xl font-black text-emerald-600 mt-1">RM{promoAnalytics.totalPromoRevenue.toLocaleString()}</p>
+              <p className="text-[8px] text-slate-300 mt-0.5">RM{promoAnalytics.totalDiscountGiven} discounted</p>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-slate-100">
+              <p className="text-[8px] font-black text-slate-400 uppercase">Avg Promo Order</p>
+              <p className="text-xl font-black text-[#062c24] mt-1">RM{promoAnalytics.avgPromoOrder}</p>
+              <p className="text-[8px] text-slate-300 mt-0.5">vs RM{promoAnalytics.avgNonPromoOrder} without</p>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-slate-100">
+              <p className="text-[8px] font-black text-slate-400 uppercase">Extended Stay</p>
+              <p className="text-xl font-black text-blue-600 mt-1">{promoAnalytics.autoDiscOrders}</p>
+              <p className="text-[8px] text-slate-300 mt-0.5">RM{promoAnalytics.totalAutoDiscount} discounted</p>
+            </div>
+          </div>
+
+          {/* Promo vs Non-Promo comparison */}
+          {promoAnalytics.avgPromoOrder > 0 && promoAnalytics.avgNonPromoOrder > 0 && (
+            <div className="bg-white rounded-2xl p-5 border border-slate-100">
+              <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Avg Order Value Comparison</p>
+              <div className="space-y-3">
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-[10px] font-bold text-slate-500"><i className="fas fa-tag text-emerald-500 mr-1"></i>With Promo</span>
+                    <span className="text-xs font-black text-[#062c24]">RM{promoAnalytics.avgPromoOrder}</span>
+                  </div>
+                  <div className="bg-slate-100 rounded-full h-3 overflow-hidden">
+                    <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${Math.min(100, (promoAnalytics.avgPromoOrder / Math.max(promoAnalytics.avgPromoOrder, promoAnalytics.avgNonPromoOrder)) * 100)}%` }}></div>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-[10px] font-bold text-slate-500"><i className="fas fa-shopping-bag text-slate-400 mr-1"></i>Without Promo</span>
+                    <span className="text-xs font-black text-[#062c24]">RM{promoAnalytics.avgNonPromoOrder}</span>
+                  </div>
+                  <div className="bg-slate-100 rounded-full h-3 overflow-hidden">
+                    <div className="h-full bg-slate-400 rounded-full" style={{ width: `${Math.min(100, (promoAnalytics.avgNonPromoOrder / Math.max(promoAnalytics.avgPromoOrder, promoAnalytics.avgNonPromoOrder)) * 100)}%` }}></div>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[8px] text-slate-400 mt-3 text-center">
+                <i className="fas fa-lightbulb text-amber-400 mr-1"></i>
+                {promoAnalytics.avgPromoOrder > promoAnalytics.avgNonPromoOrder
+                  ? "Promo customers spend more per order — promos are driving larger carts!"
+                  : promoAnalytics.avgPromoOrder < promoAnalytics.avgNonPromoOrder
+                  ? "Non-promo orders are higher value — promos attract budget customers"
+                  : "Similar order values with and without promos"}
+              </p>
+            </div>
+          )}
+
+          {/* Per-Code Performance */}
+          <div className="bg-white rounded-2xl p-5 border border-slate-100">
+            <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Code Performance</p>
+            {promoAnalytics.promos.length === 0 ? (
+              <div className="text-center py-8">
+                <i className="fas fa-tags text-slate-200 text-3xl mb-3"></i>
+                <p className="text-sm font-bold text-slate-400">No promo codes used yet</p>
+                <p className="text-[10px] text-slate-300 mt-1">Create codes in Referrals tab and they'll appear here when used</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {promoAnalytics.promos.map((p, i) => {
+                  const maxRev = promoAnalytics.promos[0]?.totalRevenue || 1;
+                  const bar = (p.totalRevenue / maxRev) * 100;
+                  return (
+                    <div key={p.code} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[9px] font-black ${
+                            i === 0 ? "bg-amber-100 text-amber-600" : i === 1 ? "bg-slate-200 text-slate-600" : "bg-slate-100 text-slate-400"
+                          }`}>{i + 1}</span>
+                          <span className="text-sm font-black text-[#062c24] tracking-wider">{p.code}</span>
+                        </div>
+                        <span className="text-xs font-black text-emerald-600">RM{p.totalRevenue.toLocaleString()}</span>
+                      </div>
+                      <div className="bg-slate-200 rounded-full h-1.5 mb-2 overflow-hidden">
+                        <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${bar}%` }}></div>
+                      </div>
+                      <div className="flex items-center gap-3 text-[8px] font-bold text-slate-400">
+                        <span><i className="fas fa-check-circle text-emerald-500 mr-0.5"></i>{p.timesUsed}× used</span>
+                        <span><i className="fas fa-tag text-red-400 mr-0.5"></i>RM{p.totalDiscount} off given</span>
+                        <span><i className="fas fa-receipt mr-0.5"></i>Avg RM{p.avgOrderValue}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Insight */}
+          {promoAnalytics.totalPromoOrders > 0 && (
+            <div className="bg-gradient-to-br from-[#062c24] to-emerald-800 rounded-2xl p-5 text-white">
+              <p className="text-[9px] font-black text-emerald-400 uppercase mb-3"><i className="fas fa-brain mr-1"></i>Promo Insights</p>
+              <div className="space-y-2 text-xs text-white/80">
+                {promoAnalytics.promoRate > 30 && <p>📊 {promoAnalytics.promoRate}% of orders use promos — healthy promo adoption.</p>}
+                {promoAnalytics.promoRate > 0 && promoAnalytics.promoRate <= 10 && <p>📊 Only {promoAnalytics.promoRate}% use promos — consider promoting your codes more actively.</p>}
+                {promoAnalytics.totalDiscountGiven > 0 && <p>💸 RM{promoAnalytics.totalDiscountGiven} total discounts given, generating RM{promoAnalytics.totalPromoRevenue} in revenue.</p>}
+                {promoAnalytics.avgPromoOrder > promoAnalytics.avgNonPromoOrder && <p>✅ Promo customers spend RM{promoAnalytics.avgPromoOrder - promoAnalytics.avgNonPromoOrder} more per order — promos encourage larger carts.</p>}
+                {promoAnalytics.autoDiscOrders > 0 && <p>🌙 Extended stay discount used {promoAnalytics.autoDiscOrders} times — customers are booking longer trips!</p>}
+              </div>
+            </div>
           )}
         </div>
       )}

@@ -1162,6 +1162,12 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
           bookingDates: { start: pickupDate, end: returnDate },
           status: "pending" as const,
           createdAt: serverTimestamp(),
+          ...(appliedPromo ? {
+            promoCode: appliedPromo.code,
+            promoDiscount: Math.round(promoDisc),
+            promoType: appliedPromo.discount_fixed ? "fixed" : "percent",
+          } : {}),
+          ...(showAuto ? { autoDiscount: Math.round(autoDisc) } : {}),
         };
         const orderRef = await addDoc(collection(db, "orders"), orderData);
 
