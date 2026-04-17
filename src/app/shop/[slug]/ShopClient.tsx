@@ -646,18 +646,66 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         if (item.qty > maxAvail) { changed = true; return { ...item, qty: maxAvail }; }
         return item;
       }).filter(i => i.qty > 0);
-      return changed ? clamped : prev;
+      return changed ? revalidateCart(clamped) : prev;
     });
   }, [selectedDates, availRules]);
+
+  // Helper: count how many of an item/variant are consumed in a given cart array
+  function countInCart(cartArr: CartItem[], itemId: string, variantId?: string): number {
+    let count = 0;
+    for (const ci of cartArr) {
+      if (ci.id === itemId && (!variantId || ci.selectedVariant?.id === variantId)) count += ci.qty;
+      if (ci.linkedItems) {
+        for (const li of ci.linkedItems) {
+          if (li.itemId === itemId) {
+            const rv = li.variantId || ci.linkedVariants?.find(lv => lv.itemId === itemId)?.variantId;
+            if (!variantId || rv === variantId) count += (li.qty || 1) * ci.qty;
+          }
+        }
+      }
+    }
+    return count;
+  }
+
+  // After any cart change, clamp packages whose shared children are over-consumed
+  function revalidateCart(cartArr: CartItem[]): CartItem[] {
+    let changed = false;
+    const result = cartArr.map(ci => {
+      const gear = allGear.find(g => g.id === ci.id);
+      if (!gear?.linkedItems?.length) return ci;
+
+      let maxPkgs = Infinity;
+      for (const li of gear.linkedItems) {
+        if (li.qty <= 0) continue;
+        const childStock = getItemStock(li.itemId, li.variantId || undefined);
+        const childUsed = countInCart(cartArr, li.itemId, li.variantId || undefined);
+        // How many of THIS child does THIS package consume?
+        const thisConsumes = (li.qty || 1) * ci.qty;
+        // Available for this package = childStock - (childUsed - thisConsumes) → then /li.qty
+        const usedByOthers = childUsed - thisConsumes;
+        const availForThis = Math.max(0, childStock - usedByOthers);
+        maxPkgs = Math.min(maxPkgs, Math.floor(availForThis / li.qty));
+      }
+      const cap = Math.min(maxPkgs === Infinity ? 0 : maxPkgs, gear.stock || 0);
+      if (ci.qty > cap) { changed = true; return { ...ci, qty: cap }; }
+      return ci;
+    }).filter(i => i.qty > 0);
+    return changed ? result : cartArr;
+  }
 
   function addToCart(item: GearItem, variant?: GearVariant, keepOpen?: boolean, linkedVars?: LinkedVariantSelection[]) {
     const cartKey = variant ? `${item.id}__${variant.id}` :
       linkedVars?.length ? `${item.id}__pkg_${linkedVars.map(v => v.variantId).sort().join("_")}` : item.id;
     const cartPrice = variant ? variant.price : item.price;
     setCart(prev => {
+      let next: CartItem[];
       const ex = prev.find(i => getCartKey(i) === cartKey);
-      if (ex) return prev.map(i => getCartKey(i) === cartKey ? { ...i, qty: i.qty + 1 } : i);
-      return [...prev, { ...item, price: cartPrice, qty: 1, addSetup: false, selectedVariant: variant, linkedVariants: linkedVars }];
+      if (ex) {
+        next = prev.map(i => getCartKey(i) === cartKey ? { ...i, qty: i.qty + 1 } : i);
+      } else {
+        next = [...prev, { ...item, price: cartPrice, qty: 1, addSetup: false, selectedVariant: variant, linkedVariants: linkedVars }];
+      }
+      return revalidateCart(next);
     });
     if (!keepOpen) {
       setShowItemModal(false);
@@ -721,7 +769,10 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
       }
     }
 
-    setCart(prev => prev.map(i => getCartKey(i) === key ? { ...i, qty: Math.max(0, i.qty + delta) } : i).filter(i => i.qty > 0));
+    setCart(prev => {
+      const updated = prev.map(i => getCartKey(i) === key ? { ...i, qty: Math.max(0, i.qty + delta) } : i).filter(i => i.qty > 0);
+      return revalidateCart(updated);
+    });
   }
 
   function toggleItemSetup(cartKey: string) {
@@ -1023,6 +1074,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         const orderData = {
           vendorId,
           vendorName: vendorData?.name || "",
+          vendorSlug: vendorData?.slug || "",
           customerPhone: "",
           customerName: "",
           items: cart.map(i => ({
@@ -1411,6 +1463,13 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                           {linkedItems.length > 0 && <span className="bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase"><i className="fas fa-link mr-0.5"></i>{linkedItems.length} items</span>}
                         </div>
                         {inCart > 0 && <span className="absolute top-2 right-2 bg-emerald-500 text-white text-[9px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-lg">{inCart}</span>}
+                        {/* Available stock indicator for packages */}
+                        {item.type === "package" && avail > 0 && avail <= 3 && !inCart && (
+                          <span className="absolute top-2 right-2 bg-amber-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full shadow-lg">{avail} left</span>
+                        )}
+                        {item.type === "package" && avail === 0 && !inCart && (
+                          <span className="absolute top-2 right-2 bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full shadow-lg">Sold Out</span>
+                        )}
                         {!inCart && (
                           <button
                             onClick={(e) => { e.stopPropagation(); shareItem(item); }}
@@ -1770,7 +1829,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                 if (linkedItems.length === 0) return null;
                 return (
                   <div className="mb-4 p-3 bg-purple-50 rounded-xl border border-purple-100">
-                    <p className="text-[9px] font-black text-purple-600 uppercase mb-2"><i className="fas fa-link mr-1"></i>Whats in the package:</p>
+                    <p className="text-[9px] font-black text-purple-600 uppercase mb-2"><i className="fas fa-link mr-1"></i>Package Includes:</p>
                     <div className="space-y-3">
                       {linkedItems.map(({ item: linkedItem, qty, lockedVariantId, lockedVariantLabel, lockedVariantColor }) => {
                         const hasVars = linkedItem.hasVariants && linkedItem.variants && linkedItem.variants.length > 0;
