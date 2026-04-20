@@ -7,31 +7,39 @@ import { collection, onSnapshot } from "firebase/firestore";
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from "firebase/auth";
 import DashboardTab from "@/components/admin/DashboardTab";
 import VendorsTab from "@/components/admin/VendorsTab";
+import OrdersTab from "@/components/admin/OrdersTab"; // Added OrdersTab import
 import FinanceTab from "@/components/admin/FinanceTab";
 import ContentTab from "@/components/admin/ContentTab";
 import AdminSettingsTab from "@/components/admin/SettingsTab";
 import CampsitesTab from "@/components/admin/CampsitesTab";
 
 const ADMIN_EMAIL = "akiff.work@gmail.com";
-type View = "dashboard" | "vendors" | "finance" | "content" | "campsites" | "settings";
-
-const NAV_ITEMS: { id: View; label: string; icon: string }[] = [
-  { id: "dashboard", label: "Dashboard", icon: "fa-chart-pie" },
-  { id: "vendors", label: "Vendors", icon: "fa-store" },
-  { id: "finance", label: "Finance", icon: "fa-wallet" },
-  { id: "content", label: "Content", icon: "fa-layer-group" },
-  { id: "campsites", label: "Campsites", icon: "fa-campground" },
-  { id: "settings", label: "Settings", icon: "fa-cog" },
-];
+type View = "dashboard" | "vendors" | "orders" | "finance" | "content" | "campsites" | "settings"; // Added "orders"
 
 const PAGE_TITLES: Record<View, string> = {
   dashboard: "Overview", 
-  vendors: "Vendor Management",
   finance: "Financials", 
-  content: "Content Manager", 
+  vendors: "Vendor Management",
+  orders: "Platform Orders", // Added orders title
   campsites: "Campsite Directory",
+  content: "Content Manager", 
   settings: "System Settings",
 };
+
+const NAV_CATEGORIES = ["Insights", "Operations", "Platform", "System"] as const;
+
+const NAV_ITEMS: { id: View; label: string; icon: string; category: typeof NAV_CATEGORIES[number] }[] = [
+  { id: "dashboard", label: "Overview", icon: "fa-chart-pie", category: "Insights" },
+  { id: "finance", label: "Finance", icon: "fa-wallet", category: "Insights" },
+  
+  { id: "vendors", label: "Vendors", icon: "fa-store", category: "Operations" },
+  { id: "orders", label: "Orders", icon: "fa-receipt", category: "Operations" }, // Added orders tab
+  
+  { id: "campsites", label: "Campsites", icon: "fa-campground", category: "Platform" },
+  { id: "content", label: "Site Content", icon: "fa-layer-group", category: "Platform" },
+  
+  { id: "settings", label: "Settings", icon: "fa-cog", category: "System" },
+];
 
 function AdminGate({ onError }: { onError: boolean }) {
   const [loading, setLoading] = useState(false);
@@ -82,19 +90,48 @@ function AdminShell({ user, allVendors }: { user: User; allVendors: any[] }) {
             </div>
             <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-white/50 hover:text-white"><i className="fas fa-times"></i></button>
           </div>
-          <nav className="space-y-1 px-4">
-            {NAV_ITEMS.map(item => (
-              <button key={item.id} onClick={() => { setActiveView(item.id); setSidebarOpen(false); }}
-                className={`w-full flex items-center justify-between gap-4 px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wide transition-all ${activeView === item.id ? "bg-white/10 border-l-4 border-emerald-500 text-white" : "text-emerald-100/70 hover:bg-white/5 hover:text-white"}`}>
-                <span className="flex items-center gap-3"><i className={`fas ${item.icon} w-5`}></i> {item.label}</span>
-                {item.id === "vendors" && pending > 0 && (
-                  <span className="bg-amber-400 text-[#062c24] text-[8px] font-black px-1.5 py-0.5 rounded-full">{pending}</span>
-                )}
-              </button>
-            ))}
+          
+          {/* Updated Navigation using Categories */}
+          <nav className="space-y-6 px-4 py-4">
+            {NAV_CATEGORIES.map(category => {
+              const categoryItems = NAV_ITEMS.filter(item => item.category === category);
+              if (categoryItems.length === 0) return null;
+
+              return (
+                <div key={category}>
+                  <p className="px-4 text-[9px] font-black text-emerald-500/60 uppercase tracking-[0.2em] mb-2">
+                    {category}
+                  </p>
+                  <div className="space-y-1">
+                    {categoryItems.map(item => (
+                      <button
+                        key={item.id}
+                        onClick={() => { setActiveView(item.id); setSidebarOpen(false); }}
+                        className={`w-full flex items-center justify-between gap-4 px-4 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all ${
+                          activeView === item.id 
+                            ? "bg-white/10 border-l-4 border-emerald-500 text-white" 
+                            : "text-emerald-100/70 hover:bg-white/5 hover:text-white border-l-4 border-transparent"
+                        }`}
+                      >
+                        <span className="flex items-center gap-3">
+                          <i className={`fas ${item.icon} w-5 text-center`}></i> 
+                          {item.label}
+                        </span>
+                        {item.id === "vendors" && pending > 0 && (
+                          <span className="bg-amber-400 text-[#062c24] text-[8px] font-black px-1.5 py-0.5 rounded-full text-center min-w-[20px]">
+                            {pending}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </nav>
         </div>
-        <div className="p-6 border-t border-white/10">
+        
+        <div className="p-6 border-t border-white/10 shrink-0">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-8 h-8 rounded-full bg-emerald-900 flex items-center justify-center text-[10px] font-bold">A</div>
             <div className="overflow-hidden">
@@ -121,10 +158,11 @@ function AdminShell({ user, allVendors }: { user: User; allVendors: any[] }) {
 
         <div className="flex-1 overflow-y-auto p-4 lg:p-8" style={{ scrollbarWidth: "thin" }}>
           {activeView === "dashboard" && <DashboardTab allVendors={allVendors} onNavigate={setActiveView} />}
-          {activeView === "vendors" && <VendorsTab allVendors={allVendors} />}
           {activeView === "finance" && <FinanceTab />}
-          {activeView === "content" && <ContentTab />}
+          {activeView === "vendors" && <VendorsTab allVendors={allVendors} />}
+          {activeView === "orders" && <OrdersTab />} {/* Added Orders tab render */}
           {activeView === "campsites" && <CampsitesTab />}
+          {activeView === "content" && <ContentTab />}
           {activeView === "settings" && <AdminSettingsTab />}
         </div>
       </main>
