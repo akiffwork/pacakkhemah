@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
-import { doc, updateDoc, deleteDoc, increment, arrayUnion, arrayRemove, collection, query, where, getDocs, writeBatch } from "firebase/firestore";
+import { doc, updateDoc, deleteDoc, increment, arrayUnion, arrayRemove, collection, query, where, getDocs, getDoc, writeBatch } from "firebase/firestore";
 
 type Badge = "verified" | "id_verified" | "top_rated" | "fast_responder" | "premium";
 
