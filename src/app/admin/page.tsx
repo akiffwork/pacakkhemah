@@ -74,8 +74,25 @@ function AdminGate({ onError }: { onError: boolean }) {
 function AdminShell({ user, allVendors }: { user: User; allVendors: any[] }) {
   const [activeView, setActiveView] = useState<View>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [orderCounts, setOrderCounts] = useState({ pending: 0, total: 0 });
 
-  const pending = allVendors.filter(v => v.status === "pending").length;
+  // Load order counts for badges
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "orders"), snap => {
+      let pending = 0, total = 0;
+      snap.docs.forEach(d => {
+        const o = d.data();
+        if (o.deleted) return;
+        total++;
+        if (o.status === "pending") pending++;
+      });
+      setOrderCounts({ pending, total });
+    });
+    return () => unsub();
+  }, []);
+
+  const pendingVendors = allVendors.filter(v => v.status === "pending").length;
+  const totalAlerts = pendingVendors + orderCounts.pending;
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50" style={{ fontFamily: "'Inter', sans-serif" }}>
@@ -117,9 +134,14 @@ function AdminShell({ user, allVendors }: { user: User; allVendors: any[] }) {
                           <i className={`fas ${item.icon} w-5 text-center`}></i> 
                           {item.label}
                         </span>
-                        {item.id === "vendors" && pending > 0 && (
+                        {item.id === "vendors" && pendingVendors > 0 && (
                           <span className="bg-amber-400 text-[#062c24] text-[8px] font-black px-1.5 py-0.5 rounded-full text-center min-w-[20px]">
-                            {pending}
+                            {pendingVendors}
+                          </span>
+                        )}
+                        {item.id === "orders" && orderCounts.pending > 0 && (
+                          <span className="bg-red-400 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full text-center min-w-[20px]">
+                            {orderCounts.pending}
                           </span>
                         )}
                       </button>
@@ -146,14 +168,25 @@ function AdminShell({ user, allVendors }: { user: User; allVendors: any[] }) {
       <main className="flex-1 flex flex-col h-screen overflow-hidden w-full">
         <header className="bg-white/80 backdrop-blur-md h-16 lg:h-20 flex items-center justify-between px-4 lg:px-8 border-b border-slate-200 shrink-0">
           <div className="flex items-center gap-4">
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden w-10 h-10 bg-white border border-slate-200 rounded-xl text-slate-500 flex items-center justify-center">
+            <button onClick={() => setSidebarOpen(true)} className="lg:hidden relative w-10 h-10 bg-white border border-slate-200 rounded-xl text-slate-500 flex items-center justify-center">
               <i className="fas fa-bars"></i>
+              {totalAlerts > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[7px] font-black rounded-full flex items-center justify-center">{totalAlerts}</span>}
             </button>
             <h2 className="text-lg lg:text-xl font-black text-[#062c24] uppercase tracking-tight">{PAGE_TITLES[activeView]}</h2>
           </div>
-          <Link href="/directory" target="_blank" className="px-3 py-2 lg:px-4 bg-slate-100 text-slate-500 rounded-xl text-[9px] lg:text-[10px] font-bold uppercase hover:bg-emerald-50 hover:text-emerald-600 transition-all flex items-center gap-2">
-            <i className="fas fa-external-link-alt"></i><span className="hidden sm:inline">Directory</span>
-          </Link>
+          <div className="flex items-center gap-2">
+            {/* Notification Bell */}
+            {totalAlerts > 0 && (
+              <button onClick={() => setActiveView(pendingVendors > 0 ? "vendors" : "orders")} 
+                className="relative w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-500 hover:bg-amber-50 hover:text-amber-600 transition-colors">
+                <i className="fas fa-bell text-sm"></i>
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center animate-pulse">{totalAlerts}</span>
+              </button>
+            )}
+            <Link href="/directory" target="_blank" className="px-3 py-2 lg:px-4 bg-slate-100 text-slate-500 rounded-xl text-[9px] lg:text-[10px] font-bold uppercase hover:bg-emerald-50 hover:text-emerald-600 transition-all flex items-center gap-2">
+              <i className="fas fa-external-link-alt"></i><span className="hidden sm:inline">Directory</span>
+            </Link>
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 lg:p-8" style={{ scrollbarWidth: "thin" }}>
