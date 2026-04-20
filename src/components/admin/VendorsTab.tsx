@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
-import { doc, updateDoc, deleteDoc, increment, arrayUnion, arrayRemove, collection, query, where, getDocs, getDoc, writeBatch } from "firebase/firestore";
+import { doc, updateDoc, deleteDoc, increment, arrayUnion, arrayRemove, collection, query, where, getDocs, writeBatch } from "firebase/firestore";
 
 type Badge = "verified" | "id_verified" | "top_rated" | "fast_responder" | "premium";
 
@@ -23,7 +23,6 @@ type Vendor = {
   referralRewarded?: boolean;
 };
 
-// Badge configuration
 const BADGE_CONFIG: Record<Badge, { label: string; icon: string; bg: string; text: string; type: "auto" | "manual" }> = {
   verified: { label: "Verified", icon: "fa-check-circle", bg: "bg-emerald-50", text: "text-emerald-600", type: "auto" },
   id_verified: { label: "ID Verified", icon: "fa-id-card", bg: "bg-teal-50", text: "text-teal-600", type: "manual" },
@@ -34,16 +33,16 @@ const BADGE_CONFIG: Record<Badge, { label: string; icon: string; bg: string; tex
 
 const MANUAL_BADGES: Badge[] = ["id_verified", "premium"];
 
-export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
+export default function VendorsTab({ allVendors, onNavigate }: { allVendors: Vendor[], onNavigate?: (view: any) => void }) {
   const [search, setSearch] = useState("");
   const [badgeModalVendor, setBadgeModalVendor] = useState<Vendor | null>(null);
   const [filter, setFilter] = useState<"all" | "pending" | "premium" | "mockup">("all");
   const [referralReward, setReferralReward] = useState(5);
   const [rewardingId, setRewardingId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  
   function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
 
-  // Load referral reward setting
   useEffect(() => {
     getDoc(doc(db, "settings", "referral_config")).then(snap => {
       if (snap.exists() && snap.data().rewardCredits) {
@@ -52,10 +51,8 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
     }).catch(() => {});
   }, []);
 
-  // Count pending for badge
   const pendingCount = allVendors.filter(v => v.status === "pending").length;
 
-  // Filter vendors (now shows ALL vendors, not just approved)
   const filtered = allVendors.filter(v => {
     const matchSearch = !search ||
       v.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -67,16 +64,6 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
     if (filter === "mockup") return matchSearch && v.is_mockup === true;
     return matchSearch;
   });
-
-  async function manualTopUp(id: string, name: string) {
-    const amt = prompt(`Add credits for ${name}:`, "10");
-    if (amt && !isNaN(Number(amt))) {
-      try {
-        await updateDoc(doc(db, "vendors", id), { credits: increment(Number(amt)) });
-        showToast(`+${amt} credits added to ${name}`);
-      } catch { showToast("Failed to add credits", "error"); }
-    }
-  }
 
   async function suspendVendor(id: string) {
     if (!confirm("Suspend this vendor?")) return;
@@ -93,7 +80,6 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
       showToast("✅ Vendor approved!");
     } catch { showToast("Failed to approve", "error"); }
     
-    // Auto-reward referrer
     const vendor = allVendors.find(v => v.id === id);
     if (vendor?.referredBy && !vendor.referralRewarded) {
       await rewardReferrer(id, vendor.referredBy);
@@ -162,37 +148,31 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
 
     setDeletingId(vendorId);
     try {
-      // 1. Delete all gear
       const gearSnap = await getDocs(query(collection(db, "gear"), where("vendorId", "==", vendorId)));
       const batch1 = writeBatch(db);
       gearSnap.docs.forEach(d => batch1.delete(d.ref));
       if (!gearSnap.empty) await batch1.commit();
 
-      // 2. Delete all orders
       const ordersSnap = await getDocs(query(collection(db, "orders"), where("vendorId", "==", vendorId)));
       const batch2 = writeBatch(db);
       ordersSnap.docs.forEach(d => batch2.delete(d.ref));
       if (!ordersSnap.empty) await batch2.commit();
 
-      // 3. Delete all analytics
       const analyticsSnap = await getDocs(query(collection(db, "analytics"), where("vendorId", "==", vendorId)));
       const batch3 = writeBatch(db);
       analyticsSnap.docs.forEach(d => batch3.delete(d.ref));
       if (!analyticsSnap.empty) await batch3.commit();
 
-      // 4. Delete all reviews
       const reviewsSnap = await getDocs(query(collection(db, "reviews"), where("vendorId", "==", vendorId)));
       const batch4 = writeBatch(db);
       reviewsSnap.docs.forEach(d => batch4.delete(d.ref));
       if (!reviewsSnap.empty) await batch4.commit();
 
-      // 5. Delete all agreements
       const agreementsSnap = await getDocs(query(collection(db, "agreements"), where("vendorId", "==", vendorId)));
       const batch5 = writeBatch(db);
       agreementsSnap.docs.forEach(d => batch5.delete(d.ref));
       if (!agreementsSnap.empty) await batch5.commit();
 
-      // 6. Delete subcollections (availability, settings, discounts)
       for (const sub of ["availability", "settings", "discounts"]) {
         const subSnap = await getDocs(collection(db, "vendors", vendorId, sub));
         if (!subSnap.empty) {
@@ -202,7 +182,6 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
         }
       }
 
-      // 7. Delete vendor doc itself
       await deleteDoc(doc(db, "vendors", vendorId));
 
       alert(`✅ ${vendorName} and all related data permanently deleted.`);
@@ -215,7 +194,6 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
     }
   }
 
-  // Calculate auto badges for display
   function getAutoBadges(v: Vendor): Badge[] {
     const badges: Badge[] = [];
     if (v.status === "approved") badges.push("verified");
@@ -230,7 +208,6 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
 
   return (
     <div className="space-y-6">
-      {/* Search + Filter Bar */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-white p-4 rounded-2xl border border-slate-100 shadow-sm gap-4">
         <div className="relative w-full lg:w-96">
           <i className="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
@@ -239,7 +216,6 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
             className="w-full bg-slate-50 border border-slate-100 pl-10 pr-4 py-3 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 transition-all" />
         </div>
         <div className="flex items-center gap-3">
-          {/* Filter Pills */}
           <div className="flex bg-slate-100 rounded-lg p-1">
             {([
               { id: "all" as const, label: "All" },
@@ -274,7 +250,6 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
         </div>
       </div>
 
-      {/* Vendor Table */}
       <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[800px]">
@@ -317,14 +292,12 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                     </td>
                     <td className="p-5">
                       <div className="flex items-center gap-1 flex-wrap">
-                        {/* Show Pending badge prominently */}
                         {isPending && (
                           <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full text-[8px] font-black border border-amber-200">
                             <i className="fas fa-clock"></i>
                             Pending Approval
                           </span>
                         )}
-                        {/* Referral badge */}
                         {v.referredBy && (
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold border ${v.referralRewarded ? "bg-emerald-50 text-emerald-600 border-emerald-200" : "bg-purple-50 text-purple-600 border-purple-200"}`}>
                             <i className={`fas ${v.referralRewarded ? "fa-check-circle" : "fa-gift"}`}></i>
@@ -332,7 +305,6 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                             {v.referralRewarded && <span className="opacity-60">(Rewarded)</span>}
                           </span>
                         )}
-                        {/* Show other badges */}
                         {!isPending && allBadges.length > 0 ? (
                           allBadges.map(badge => {
                             const config = BADGE_CONFIG[badge];
@@ -369,14 +341,12 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                     </td>
                     <td className="p-5 text-right pr-8">
                       <div className="flex justify-end gap-2">
-                        {/* Approve Button (for pending vendors) */}
                         {isPending && (
                           <button onClick={() => approveVendor(v.id)}
                             className="w-8 h-8 rounded-lg bg-emerald-500 text-white flex items-center justify-center hover:bg-emerald-600 transition-all shadow-sm" title="Approve Vendor">
                             <i className="fas fa-check text-[10px]"></i>
                           </button>
                         )}
-                        {/* Manual Referral Reward Button */}
                         {v.referredBy && !v.referralRewarded && !isPending && (
                           <button onClick={() => rewardReferrer(v.id, v.referredBy!)}
                             disabled={rewardingId === v.id}
@@ -384,7 +354,6 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                             <i className={`fas ${rewardingId === v.id ? "fa-spinner fa-spin" : "fa-gift"} text-[10px]`}></i>
                           </button>
                         )}
-                        {/* Badge Manager Button */}
                         <button onClick={() => setBadgeModalVendor(v)}
                           className="w-8 h-8 rounded-lg bg-amber-50 text-amber-500 flex items-center justify-center hover:bg-amber-500 hover:text-white transition-all" title="Manage Badges">
                           <i className="fas fa-award text-[10px]"></i>
@@ -393,10 +362,13 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                           className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-500 flex items-center justify-center hover:bg-indigo-500 hover:text-white transition-all" title="View as Vendor">
                           <i className="fas fa-key text-[10px]"></i>
                         </a>
-                        <button onClick={() => manualTopUp(v.id, v.name)}
-                          className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-500 flex items-center justify-center hover:bg-emerald-500 hover:text-white transition-all" title="Add Credits">
-                          <i className="fas fa-plus text-[10px]"></i>
+                        
+                        {/* REPLACED MANUAL TOP UP WITH NAVIGATE TO FINANCE */}
+                        <button onClick={() => onNavigate?.("finance")}
+                          className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center hover:bg-emerald-500 hover:text-white transition-all" title="Top Up in Finance">
+                          <i className="fas fa-wallet text-[10px]"></i>
                         </button>
+                        
                         {!isPending ? (
                           <button onClick={() => suspendVendor(v.id)}
                             className="w-8 h-8 rounded-lg bg-red-50 text-red-400 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all" title="Suspend">
@@ -409,7 +381,6 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                             <i className={`fas ${deletingId === v.id ? "fa-spinner fa-spin" : "fa-times"} text-[10px]`}></i>
                           </button>
                         )}
-                        {/* Permanent Delete */}
                         <button onClick={() => deleteVendor(v.id, v.name)}
                           disabled={deletingId === v.id}
                           className="w-8 h-8 rounded-lg bg-red-100 text-red-500 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all disabled:opacity-50" title="Permanently Delete">
@@ -425,11 +396,9 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
         </div>
       </div>
 
-      {/* Badge Management Modal */}
       {badgeModalVendor && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
-            {/* Header */}
             <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-6 text-white">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -448,7 +417,6 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
             </div>
 
             <div className="p-6 space-y-6">
-              {/* Auto Badges (Read Only) */}
               <div>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
                   <i className="fas fa-robot mr-1"></i> Auto Badges (System Calculated)
@@ -483,7 +451,6 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                 </div>
               </div>
 
-              {/* Manual Badges (Admin Can Toggle) */}
               <div>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
                   <i className="fas fa-hand-pointer mr-1"></i> Manual Badges (Admin Assigned)
@@ -517,7 +484,6 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
                 </div>
               </div>
 
-              {/* Mock-up Toggle */}
               <div className="border-t border-slate-100 pt-6">
                 <div className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${badgeModalVendor.is_mockup ? "bg-purple-50 border-purple-200" : "bg-slate-50 border-slate-100"}`}>
                   <div className="flex items-center gap-3">
@@ -538,7 +504,6 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
               </div>
             </div>
 
-            {/* Footer */}
             <div className="border-t border-slate-100 p-4 bg-slate-50">
               <button onClick={() => setBadgeModalVendor(null)} className="w-full bg-[#062c24] text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-800 transition-all">
                 Done
@@ -548,7 +513,6 @@ export default function VendorsTab({ allVendors }: { allVendors: Vendor[] }) {
         </div>
       )}
 
-      {/* Toast */}
       {toast && (
         <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[500] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[10px] font-black uppercase tracking-widest animate-[toastIn_0.3s_ease-out] ${
           toast.type === "success" ? "bg-emerald-600" : "bg-red-500"
