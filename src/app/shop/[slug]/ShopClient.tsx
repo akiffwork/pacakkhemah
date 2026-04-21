@@ -9,10 +9,21 @@ import {
   runTransaction, serverTimestamp, addDoc, orderBy,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
-import flatpickr from "flatpickr";
 import "flatpickr/dist/flatpickr.min.css";
 import AdBanner from "@/components/AdBanner";
 import DemoShopGuide from "@/components/DemoShopGuide";
+
+// Lazy-load flatpickr JS only when a date picker is actually mounted.
+// CSS stays static above so Next.js can route-scope it without TS friction.
+// Saves ~40KB JS from the initial bundle.
+type FlatpickrFn = typeof import("flatpickr").default;
+let _flatpickrPromise: Promise<FlatpickrFn> | null = null;
+function loadFlatpickr(): Promise<FlatpickrFn> {
+  if (!_flatpickrPromise) {
+    _flatpickrPromise = import("flatpickr").then(mod => mod.default);
+  }
+  return _flatpickrPromise;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -494,49 +505,59 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
 
   useEffect(() => {
     if (!vendorData) return;
+    let cancelled = false;
     const blocked: any[] = availRules.filter(r => r.type === "block").map(r => ({ from: r.start, to: r.end || r.start }));
     const offDays = Object.entries(weeklyOff).filter(([, v]) => v).map(([k]) => Number(k));
     if (offDays.length) blocked.push((date: Date) => offDays.includes(date.getDay()));
-    cpRef.current = flatpickr("#checkin-date", {
-      minDate: "today", dateFormat: "Y-m-d", disable: blocked,
-      onChange: ([d]) => { setSelectedDates(prev => [d, prev[1]]); opRef.current?.set("minDate", d); },
+    loadFlatpickr().then(flatpickr => {
+      if (cancelled) return;
+      cpRef.current = flatpickr("#checkin-date", {
+        minDate: "today", dateFormat: "Y-m-d", disable: blocked,
+        onChange: ([d]) => { setSelectedDates(prev => [d, prev[1]]); opRef.current?.set("minDate", d); },
+      });
+      opRef.current = flatpickr("#checkout-date", {
+        minDate: "today", dateFormat: "Y-m-d", disable: blocked,
+        onChange: ([d]) => setSelectedDates(prev => [prev[0], d]),
+      });
     });
-    opRef.current = flatpickr("#checkout-date", {
-      minDate: "today", dateFormat: "Y-m-d", disable: blocked,
-      onChange: ([d]) => setSelectedDates(prev => [prev[0], d]),
-    });
-    return () => { cpRef.current?.destroy(); opRef.current?.destroy(); };
+    return () => { cancelled = true; cpRef.current?.destroy(); opRef.current?.destroy(); };
   }, [vendorData, availRules, weeklyOff]);
 
   // Cart modal date pickers
   useEffect(() => {
     if (!showCart || !vendorData) return;
+    let cancelled = false;
     const blocked: any[] = availRules.filter(r => r.type === "block").map(r => ({ from: r.start, to: r.end || r.start }));
     const offDays = Object.entries(weeklyOff).filter(([, v]) => v).map(([k]) => Number(k));
     if (offDays.length) blocked.push((date: Date) => offDays.includes(date.getDay()));
 
-    setTimeout(() => {
-      cartCpRef.current = flatpickr("#cart-checkin-date", {
-        minDate: "today", dateFormat: "Y-m-d", disable: blocked,
-        defaultDate: selectedDates[0] || undefined,
-        onChange: ([d]) => {
-          setSelectedDates(prev => [d, prev[1]]);
-          cpRef.current?.setDate(d);
-          opRef.current?.set("minDate", d);
-          cartOpRef.current?.set("minDate", d);
-        },
-      });
-      cartOpRef.current = flatpickr("#cart-checkout-date", {
-        minDate: selectedDates[0] || "today", dateFormat: "Y-m-d", disable: blocked,
-        defaultDate: selectedDates[1] || undefined,
-        onChange: ([d]) => {
-          setSelectedDates(prev => [prev[0], d]);
-          opRef.current?.setDate(d);
-        },
-      });
-    }, 50);
+    loadFlatpickr().then(flatpickr => {
+      if (cancelled) return;
+      // defer one tick so the modal inputs are in the DOM
+      setTimeout(() => {
+        if (cancelled) return;
+        cartCpRef.current = flatpickr("#cart-checkin-date", {
+          minDate: "today", dateFormat: "Y-m-d", disable: blocked,
+          defaultDate: selectedDates[0] || undefined,
+          onChange: ([d]) => {
+            setSelectedDates(prev => [d, prev[1]]);
+            cpRef.current?.setDate(d);
+            opRef.current?.set("minDate", d);
+            cartOpRef.current?.set("minDate", d);
+          },
+        });
+        cartOpRef.current = flatpickr("#cart-checkout-date", {
+          minDate: selectedDates[0] || "today", dateFormat: "Y-m-d", disable: blocked,
+          defaultDate: selectedDates[1] || undefined,
+          onChange: ([d]) => {
+            setSelectedDates(prev => [prev[0], d]);
+            opRef.current?.setDate(d);
+          },
+        });
+      }, 50);
+    });
 
-    return () => { cartCpRef.current?.destroy(); cartOpRef.current?.destroy(); };
+    return () => { cancelled = true; cartCpRef.current?.destroy(); cartOpRef.current?.destroy(); };
   }, [showCart, vendorData, availRules, weeklyOff]);
 
   // Auto-open item modal from URL param
@@ -1982,7 +2003,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                 if (linkedItems.length === 0) return null;
                 return (
                   <div className="mb-4 p-3 bg-purple-50 rounded-xl border border-purple-100">
-                    <p className="text-[9px] font-black text-purple-600 uppercase mb-2"><i className="fas fa-link mr-1"></i>Everything You Get:</p>
+                    <p className="text-[9px] font-black text-purple-600 uppercase mb-2"><i className="fas fa-link mr-1"></i>Package Includes:</p>
                     <div className="space-y-3">
                       {linkedItems.map(({ item: linkedItem, qty, lockedVariantId, lockedVariantLabel, lockedVariantColor }) => {
                         const hasVars = linkedItem.hasVariants && linkedItem.variants && linkedItem.variants.length > 0;
