@@ -1611,22 +1611,26 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                           {hasSetupOption && <span className="bg-blue-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase"><i className="fas fa-tools mr-0.5"></i>Setup</span>}
                           {linkedItems.length > 0 && <span className="bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase"><i className="fas fa-link mr-0.5"></i>{linkedItems.length} items</span>}
                         </div>
-                        {inCart > 0 && <span className="absolute top-2 right-2 bg-emerald-500 text-white text-[9px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-lg">{inCart}</span>}
-                        {/* Available stock indicator for packages */}
-                        {item.type === "package" && avail > 0 && avail <= 3 && !inCart && (
-                          <span className="absolute top-2 right-2 bg-amber-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full shadow-lg">{avail} left</span>
-                        )}
-                        {item.type === "package" && avail === 0 && !inCart && (
-                          <span className="absolute top-2 right-2 bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full shadow-lg">Sold Out</span>
-                        )}
-                        {!inCart && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); shareItem(item); }}
-                            className="absolute top-2 right-2 w-8 h-8 bg-black/40 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-black/60 shadow-md transition-all"
-                          >
-                            <i className="fas fa-share-alt text-[10px]"></i>
-                          </button>
-                        )}
+                        <div className="absolute top-2 right-2 flex flex-col items-end gap-1 z-10">
+                          {inCart > 0 && (
+                            <span className="bg-emerald-500 text-white text-[9px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-lg">{inCart}</span>
+                          )}
+                          {/* Available stock indicator for packages */}
+                          {item.type === "package" && avail > 0 && avail <= 3 && !inCart && (
+                            <span className="bg-amber-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full shadow-lg">{avail} left</span>
+                          )}
+                          {item.type === "package" && avail === 0 && !inCart && (
+                            <span className="bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full shadow-lg">Sold Out</span>
+                          )}
+                          {!inCart && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); shareItem(item); }}
+                              className="w-8 h-8 bg-black/40 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-black/60 shadow-md transition-all"
+                            >
+                              <i className="fas fa-share-alt text-[10px]"></i>
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <div className="p-3">
                         <p className="text-[10px] font-black uppercase truncate text-[#062c24]">{item.name}</p>
