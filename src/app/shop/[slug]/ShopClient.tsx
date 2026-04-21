@@ -1982,7 +1982,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                 if (linkedItems.length === 0) return null;
                 return (
                   <div className="mb-4 p-3 bg-purple-50 rounded-xl border border-purple-100">
-                    <p className="text-[9px] font-black text-purple-600 uppercase mb-2"><i className="fas fa-link mr-1"></i>Package Includes:</p>
+                    <p className="text-[9px] font-black text-purple-600 uppercase mb-2"><i className="fas fa-link mr-1"></i>Everything You Get:</p>
                     <div className="space-y-3">
                       {linkedItems.map(({ item: linkedItem, qty, lockedVariantId, lockedVariantLabel, lockedVariantColor }) => {
                         const hasVars = linkedItem.hasVariants && linkedItem.variants && linkedItem.variants.length > 0;
