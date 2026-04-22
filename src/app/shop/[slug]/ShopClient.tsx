@@ -12,6 +12,11 @@ import { onAuthStateChanged } from "firebase/auth";
 import "flatpickr/dist/flatpickr.min.css";
 import AdBanner from "@/components/AdBanner";
 import DemoShopGuide from "@/components/DemoShopGuide";
+import BlockScreen from "@/components/shop/BlockScreen";
+import Section from "@/components/shop/Section";
+import ImageCarousel from "@/components/shop/ImageCarousel";
+import MockupBanner from "@/components/shop/MockupBanner";
+import { Badge, BadgeIcon, BadgePill } from "@/components/shop/Badges";
 
 // Lazy-load flatpickr JS only when a date picker is actually mounted.
 // CSS stays static above so Next.js can route-scope it without TS friction.
@@ -31,8 +36,6 @@ function loadFlatpickr(): Promise<FlatpickrFn> {
 
 type DeliveryZone = { name: string; fee: number };
 type TimeSlot = { time: string; label: string };
-
-type Badge = "verified" | "id_verified" | "top_rated" | "fast_responder" | "premium";
 
 type ServicesConfig = {
   delivery: {
@@ -124,198 +127,8 @@ type FulfillmentType = "pickup" | "delivery";
 // COMPONENTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-function BlockScreen({ message, icon, iconBg }: { message: string; icon: string; iconBg: string }) {
-  return (
-    <div className="fixed inset-0 bg-[#062c24]/95 backdrop-blur-md z-[100] flex items-center justify-center p-8 text-center">
-      <div>
-        <div className={`w-20 h-20 ${iconBg} rounded-full flex items-center justify-center mx-auto mb-6 text-3xl`}>
-          <i className={`fas ${icon}`}></i>
-        </div>
-        <h2 className="text-white text-3xl font-black uppercase mb-2">{message}</h2>
-        <Link href="/directory" className="inline-block bg-white text-[#062c24] px-8 py-4 rounded-2xl font-black uppercase text-xs mt-4">Back</Link>
-      </div>
-    </div>
-  );
-}
-
-function Section({ title, icon, defaultOpen = true, children }: { title: string; icon: string; defaultOpen?: boolean; children: React.ReactNode }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
-      <button onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors rounded-2xl">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center text-sm">
-            <i className={`fas ${icon}`}></i>
-          </div>
-          <span className="text-sm font-black text-[#062c24] uppercase tracking-wide">{title}</span>
-        </div>
-        <i className={`fas fa-chevron-down text-slate-300 text-xs transition-transform duration-200 ${open ? "rotate-180" : ""}`}></i>
-      </button>
-      {open && (
-        <div className="px-4 pb-4">{children}</div>
-      )}
-    </div>
-  );
-}
-
-function ImageCarousel({ images }: { images: string[] }) {
-  const [current, setCurrent] = useState(0);
-  const [touchStart, setTouchStart] = useState(0);
-  const [touchEnd, setTouchEnd] = useState(0);
-
-  const goTo = (index: number) => {
-    if (index < 0) setCurrent(images.length - 1);
-    else if (index >= images.length) setCurrent(0);
-    else setCurrent(index);
-  };
-
-  const handleTouchStart = (e: React.TouchEvent) => setTouchStart(e.targetTouches[0].clientX);
-  const handleTouchMove = (e: React.TouchEvent) => setTouchEnd(e.targetTouches[0].clientX);
-  const handleTouchEnd = () => {
-    if (touchStart - touchEnd > 75) goTo(current + 1);
-    if (touchStart - touchEnd < -75) goTo(current - 1);
-  };
-
-  return (
-    <div className="relative aspect-square rounded-t-[2rem] overflow-hidden"
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}>
-      {/* Images */}
-      <div className="flex transition-transform duration-300 ease-out h-full"
-        style={{ transform: `translateX(-${current * 100}%)` }}>
-        {images.map((img, i) => (
-          <img key={i} src={img} className="w-full h-full object-cover flex-shrink-0" alt={`Image ${i + 1}`} loading="lazy" />
-        ))}
-      </div>
-      
-      {/* Arrow buttons */}
-      {images.length > 1 && (
-        <>
-          <button onClick={() => goTo(current - 1)} 
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-slate-600 hover:bg-white shadow-lg z-10">
-            <i className="fas fa-chevron-left text-xs"></i>
-          </button>
-          <button onClick={() => goTo(current + 1)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-slate-600 hover:bg-white shadow-lg z-10">
-            <i className="fas fa-chevron-right text-xs"></i>
-          </button>
-        </>
-      )}
-      
-      {/* Dots indicator */}
-      {images.length > 1 && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
-          {images.map((_, i) => (
-            <button key={i} onClick={() => setCurrent(i)}
-              className={`w-2 h-2 rounded-full transition-all ${i === current ? "bg-white w-4" : "bg-white/50 hover:bg-white/70"}`} />
-          ))}
-        </div>
-      )}
-      
-      {/* Image counter */}
-      <div className="absolute bottom-3 right-3 bg-black/50 text-white text-[9px] font-bold px-2 py-1 rounded-full z-10">
-        {current + 1} / {images.length}
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// BADGE SYSTEM
-// ═══════════════════════════════════════════════════════════════════════════
-
-const BADGE_CONFIG: Record<Badge, { label: string; icon: string; bg: string; text: string; border: string }> = {
-  verified: {
-    label: "Verified",
-    icon: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-    bg: "bg-emerald-50",
-    text: "text-emerald-600",
-    border: "border-emerald-200",
-  },
-  id_verified: {
-    label: "ID Verified",
-    icon: "M15 9h3.75M15 12h3.75M15 15h3.75M4.5 19.5h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5zm6-10.125a1.875 1.875 0 11-3.75 0 1.875 1.875 0 013.75 0zm1.294 6.336a6.721 6.721 0 01-3.17.789 6.721 6.721 0 01-3.168-.789 3.376 3.376 0 016.338 0z",
-    bg: "bg-teal-50",
-    text: "text-teal-600",
-    border: "border-teal-200",
-  },
-  top_rated: {
-    label: "Top Rated",
-    icon: "M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z",
-    bg: "bg-amber-50",
-    text: "text-amber-600",
-    border: "border-amber-200",
-  },
-  fast_responder: {
-    label: "Fast Responder",
-    icon: "M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z",
-    bg: "bg-blue-50",
-    text: "text-blue-600",
-    border: "border-blue-200",
-  },
-  premium: {
-    label: "Premium",
-    icon: "M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M7.73 9.728a6.726 6.726 0 002.748 1.35m8.272-6.842V4.5c0 2.108-.966 3.99-2.48 5.228m2.48-5.492a46.32 46.32 0 012.916.52 6.003 6.003 0 01-5.395 4.972m0 0a6.726 6.726 0 01-2.749 1.35m0 0a6.772 6.772 0 01-3.044 0",
-    bg: "bg-purple-50",
-    text: "text-purple-600",
-    border: "border-purple-200",
-  },
-};
-
-function BadgeIcon({ badge, size = "sm" }: { badge: Badge; size?: "sm" | "md" | "lg" }) {
-  const config = BADGE_CONFIG[badge];
-  const sizeClasses = {
-    sm: "w-5 h-5 p-0.5",
-    md: "w-6 h-6 p-1",
-    lg: "w-8 h-8 p-1.5",
-  };
-  
-  return (
-    <div className={`${sizeClasses[size]} ${config.bg} ${config.text} rounded-full border ${config.border} flex items-center justify-center`} title={config.label}>
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-full h-full">
-        <path strokeLinecap="round" strokeLinejoin="round" d={config.icon} />
-      </svg>
-    </div>
-  );
-}
-
-function BadgePill({ badge }: { badge: Badge }) {
-  const config = BADGE_CONFIG[badge];
-  return (
-    <div className={`inline-flex items-center gap-1.5 ${config.bg} ${config.text} border ${config.border} px-2 py-1 rounded-full`}>
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-        <path strokeLinecap="round" strokeLinejoin="round" d={config.icon} />
-      </svg>
-      <span className="text-[9px] font-bold uppercase tracking-wide">{config.label}</span>
-    </div>
-  );
-}
-
-function MockupBanner() {
-  return (
-    <div className="bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white">
-      <div className="max-w-4xl mx-auto px-4 py-3">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-              <i className="fas fa-store text-lg"></i>
-            </div>
-            <div className="text-center sm:text-left">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-white/70">Demo Shop</p>
-              <p className="text-sm font-black">This could be YOUR store!</p>
-            </div>
-          </div>
-          <Link href="/register-vendor" className="bg-white text-indigo-600 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-all shadow-lg flex items-center gap-2">
-            <i className="fas fa-rocket"></i>
-            Register Now
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
-}
+// All shop subcomponents (BlockScreen, Section, ImageCarousel, BadgeIcon,
+// BadgePill, MockupBanner) live in src/components/shop/ and are imported above.
 
 // Mock-up vendor ID constant
 const MOCKUP_VENDOR_ID = "UHdf5wMhsPbwi7qFGPSloXGdbu53";
