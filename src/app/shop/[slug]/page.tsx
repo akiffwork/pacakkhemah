@@ -4,12 +4,50 @@ import ShopClient from "./ShopClient";
 const PROJECT_ID = "kuantan-unplugged";
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 
-// Helper: extract string field from Firestore REST response
+// ─────────────────────────────────────────────────────────────────────────────
+// Firestore REST helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
 function str(doc: any, field: string): string {
   return doc?.fields?.[field]?.stringValue || "";
 }
 
-// Fetch vendor by slug (query) or by ID (direct get)
+// Convert a Firestore REST document into a plain JS object.
+// Handles the common types we use in vendor docs.
+function parseFirestoreDoc(doc: any): any {
+  if (!doc?.fields) return {};
+  const out: any = {};
+  for (const [key, val] of Object.entries<any>(doc.fields)) {
+    out[key] = parseFirestoreValue(val);
+  }
+  return out;
+}
+
+function parseFirestoreValue(val: any): any {
+  if (val == null) return null;
+  if (val.stringValue !== undefined) return val.stringValue;
+  if (val.integerValue !== undefined) return Number(val.integerValue);
+  if (val.doubleValue !== undefined) return val.doubleValue;
+  if (val.booleanValue !== undefined) return val.booleanValue;
+  if (val.nullValue !== undefined) return null;
+  if (val.timestampValue !== undefined) return val.timestampValue;
+  if (val.arrayValue !== undefined) {
+    return (val.arrayValue.values || []).map(parseFirestoreValue);
+  }
+  if (val.mapValue !== undefined) {
+    const obj: any = {};
+    for (const [k, v] of Object.entries<any>(val.mapValue.fields || {})) {
+      obj[k] = parseFirestoreValue(v);
+    }
+    return obj;
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vendor + gear fetchers (shared between metadata and initial render)
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function getVendorData(slugOrId: string) {
   try {
     // 1. Try slug query
@@ -48,12 +86,11 @@ async function getVendorData(slugOrId: string) {
       return { id: slugOrId, doc };
     }
   } catch (e) {
-    console.error("Metadata vendor fetch error:", e);
+    console.error("Vendor fetch error:", e);
   }
   return null;
 }
 
-// Fetch gear item by ID
 async function getGearItem(itemId: string) {
   try {
     const res = await fetch(`${FIRESTORE_BASE}/gear/${itemId}`, {
@@ -63,10 +100,14 @@ async function getGearItem(itemId: string) {
       return await res.json();
     }
   } catch (e) {
-    console.error("Metadata gear fetch error:", e);
+    console.error("Gear fetch error:", e);
   }
   return null;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Metadata (unchanged behavior)
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function generateMetadata({
   params,
@@ -91,7 +132,6 @@ export async function generateMetadata({
   const vendorCity = str(vendor.doc, "city") || "";
   const vendorTagline = str(vendor.doc, "tagline") || "";
 
-  // Item-specific metadata
   if (itemId) {
     const gear = await getGearItem(itemId);
     if (gear) {
@@ -104,7 +144,9 @@ export async function generateMetadata({
         vendorImage;
 
       const title = `${itemName} — RM${itemPrice}/night | ${vendorName}`;
-      const description = itemDesc || `Sewa ${itemName} dari ${vendorName}${vendorCity ? ` di ${vendorCity}` : ""}. Pacak Khemah — platform sewa peralatan camping.`;
+      const description =
+        itemDesc ||
+        `Sewa ${itemName} dari ${vendorName}${vendorCity ? ` di ${vendorCity}` : ""}. Pacak Khemah — platform sewa peralatan camping.`;
 
       return {
         title,
@@ -126,9 +168,10 @@ export async function generateMetadata({
     }
   }
 
-  // Vendor-level metadata (no specific item)
   const title = `${vendorName} — Sewa Peralatan Camping | Pacak Khemah`;
-  const description = vendorTagline || `Sewa peralatan camping dari ${vendorName}${vendorCity ? ` di ${vendorCity}` : ""}. Pacak Khemah — platform sewa peralatan camping Malaysia.`;
+  const description =
+    vendorTagline ||
+    `Sewa peralatan camping dari ${vendorName}${vendorCity ? ` di ${vendorCity}` : ""}. Pacak Khemah — platform sewa peralatan camping Malaysia.`;
 
   return {
     title,
@@ -149,6 +192,28 @@ export async function generateMetadata({
   };
 }
 
-export default function ShopPage({ params }: { params: Promise<{ slug: string }> }) {
-  return <ShopClient params={params} />;
+// ─────────────────────────────────────────────────────────────────────────────
+// Page — fetches vendor on the server and seeds ShopClient
+// ─────────────────────────────────────────────────────────────────────────────
+
+export default async function ShopPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const vendor = await getVendorData(slug);
+
+  // If we can't find a vendor server-side, let ShopClient handle the redirect
+  // to /directory (its existing behavior). We just don't pass initial data.
+  const initialVendor = vendor ? parseFirestoreDoc(vendor.doc) : null;
+  const initialVendorId = vendor?.id || null;
+
+  return (
+    <ShopClient
+      params={params}
+      initialVendor={initialVendor}
+      initialVendorId={initialVendorId}
+    />
+  );
 }

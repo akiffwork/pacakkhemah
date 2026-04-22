@@ -325,26 +325,46 @@ const ADMIN_WHATSAPP = "601136904336";
 // MAIN SHOP PAGE
 // ═══════════════════════════════════════════════════════════════════════════
 
-export default function ShopPage({ params }: { params: Promise<{ slug: string }> }) {
+export default function ShopPage({
+  params,
+  initialVendor,
+  initialVendorId,
+}: {
+  params: Promise<{ slug: string }>;
+  initialVendor?: VendorData | null;
+  initialVendorId?: string | null;
+}) {
   return (
     <Suspense fallback={
       <div className="fixed inset-0 bg-[#062c24] flex items-center justify-center">
         <div className="w-16 h-16 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
       </div>
     }>
-      <ShopPageContent params={params} />
+      <ShopPageContent
+        params={params}
+        initialVendor={initialVendor}
+        initialVendorId={initialVendorId}
+      />
     </Suspense>
   );
 }
 
-function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
+function ShopPageContent({
+  params,
+  initialVendor,
+  initialVendorId,
+}: {
+  params: Promise<{ slug: string }>;
+  initialVendor?: VendorData | null;
+  initialVendorId?: string | null;
+}) {
   const searchParams = useSearchParams();
   const resolvedParams = use(params);
   const slug = resolvedParams.slug;
   
-  // Core state
-  const [vendorId, setVendorId] = useState<string | null>(null);
-  const [vendorData, setVendorData] = useState<VendorData | null>(null);
+  // Core state — seed from server if available
+  const [vendorId, setVendorId] = useState<string | null>(initialVendorId ?? null);
+  const [vendorData, setVendorData] = useState<VendorData | null>(initialVendor ?? null);
   const [allGear, setAllGear] = useState<GearItem[]>([]);
   const [availRules, setAvailRules] = useState<AvailRule[]>([]);
   const [weeklyOff, setWeeklyOff] = useState<Record<number, boolean>>({});
@@ -403,6 +423,9 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   }, [showShareToast]);
 
   useEffect(() => {
+    // If server already provided vendorId, skip the client-side lookup.
+    if (initialVendorId) { setVendorId(initialVendorId); return; }
+
     const v = searchParams.get("v");
     if (v) { 
       // Direct vendor ID from query param
@@ -418,7 +441,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
     } else { 
       window.location.href = "/directory"; 
     }
-  }, [slug, searchParams]);
+  }, [slug, searchParams, initialVendorId]);
 
   async function lookupSlugOrId(slugOrId: string) {
     try {
@@ -463,10 +486,17 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   async function loadShop() {
     if (!vendorId) return;
     try {
-      const vSnap = await getDoc(doc(db, "vendors", vendorId));
-      if (!vSnap.exists()) return;
-      const vData = vSnap.data() as VendorData;
-      setVendorData(vData);
+      // If vendor was seeded from the server, reuse it; otherwise fetch it.
+      let vData: VendorData;
+      if (vendorData) {
+        vData = vendorData;
+      } else {
+        const vSnap = await getDoc(doc(db, "vendors", vendorId));
+        if (!vSnap.exists()) return;
+        vData = vSnap.data() as VendorData;
+        setVendorData(vData);
+      }
+
       setSelectedHub((vData.pickup?.[0] || vData.city) ?? "");
       
       // Set default zone if zones exist
