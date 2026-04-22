@@ -18,19 +18,50 @@ export default function AdBanner({ variant = "card", className = "" }: AdBannerP
   const isLoaded = useRef(false);
 
   useEffect(() => {
-    if (isLoaded.current) return;
-    
-    try {
-      if (typeof window !== "undefined" && adRef.current) {
-        (window.adsbygoogle = window.adsbygoogle || []).push({});
-        isLoaded.current = true;
+    if (isLoaded.current || typeof window === "undefined" || !adRef.current) return;
+
+    // Wait for the AdSense script to be ready. With `strategy="lazyOnload"` in
+    // layout.tsx, the script loads after the page is idle, so we poll briefly
+    // and only push the ad then. Cap the wait so a blocked script doesn't run
+    // forever.
+    let attempts = 0;
+    const MAX_ATTEMPTS = 40; // 40 * 500ms = 20s cap
+
+    const trySchedule = () => {
+      if (isLoaded.current) return;
+      if (typeof window.adsbygoogle !== "undefined") {
+        try {
+          (window.adsbygoogle = window.adsbygoogle || []).push({});
+          isLoaded.current = true;
+          return;
+        } catch (e) {
+          console.error("AdSense push error:", e);
+          isLoaded.current = true;
+          return;
+        }
       }
-    } catch (e) {
-      console.error("AdSense error:", e);
-    }
+      if (++attempts < MAX_ATTEMPTS) {
+        setTimeout(trySchedule, 500);
+      }
+    };
+
+    // Wait until the browser is idle before doing ANYTHING ad-related.
+    // This keeps ads off the critical rendering path.
+    const idle =
+      typeof (window as any).requestIdleCallback === "function"
+        ? (window as any).requestIdleCallback
+        : (cb: () => void) => setTimeout(cb, 2000);
+
+    const handle = idle(trySchedule, { timeout: 5000 });
+
+    return () => {
+      if (typeof (window as any).cancelIdleCallback === "function") {
+        try { (window as any).cancelIdleCallback(handle); } catch {}
+      }
+    };
   }, []);
 
-  // Card variant - looks like a vendor card in directory
+  // Card variant
   if (variant === "card") {
     return (
       <div className={`bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm ${className}`}>
@@ -56,7 +87,7 @@ export default function AdBanner({ variant = "card", className = "" }: AdBannerP
     );
   }
 
-  // Inline variant - for cart/checkout flow
+  // Inline variant
   if (variant === "inline") {
     return (
       <div className={`bg-slate-50 rounded-xl border border-slate-100 p-4 ${className}`}>
@@ -77,7 +108,7 @@ export default function AdBanner({ variant = "card", className = "" }: AdBannerP
     );
   }
 
-  // Minimal variant - very subtle
+  // Minimal variant
   return (
     <div className={`text-center ${className}`}>
       <span className="text-[7px] font-bold text-slate-300 uppercase tracking-widest">Ad</span>

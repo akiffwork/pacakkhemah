@@ -1395,7 +1395,15 @@ function ShopPageContent({
 
       {/* Hero Header */}
       <header className="bg-[#062c24] text-white relative overflow-hidden">
-        <div className="absolute inset-0 opacity-40" style={{ backgroundImage: "url('/pattern-chevron.png')", backgroundSize: "300px" }} />
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 opacity-[0.08] pointer-events-none"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'><path fill='none' stroke='white' stroke-width='1.2' d='M0 30 L30 0 L60 30 M0 60 L30 30 L60 60'/></svg>\")",
+            backgroundSize: "60px 60px",
+          }}
+        />
         <div className="absolute inset-0 bg-gradient-to-b from-[#062c24] via-[#062c24]/50 to-[#062c24]/90" />
 
         {/* Nav row */}

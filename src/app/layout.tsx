@@ -12,8 +12,7 @@ const inter = Inter({
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  // Removed userScalable: false and maximumScale: 1 for a11y compliance.
   themeColor: "#062c24",
 };
 
@@ -33,7 +32,6 @@ export const metadata: Metadata = {
   authors: [{ name: "Pacak Khemah" }],
   creator: "Pacak Khemah",
 
-  // PWA
   manifest: "/manifest",
   appleWebApp: {
     capable: true,
@@ -55,26 +53,20 @@ export const metadata: Metadata = {
     description:
       "Sewa peralatan camping dari vendor dipercayai. Khemah, kerusi, dapur & lagi. Tempah melalui WhatsApp.",
     images: [
-      {
-        url: "/pacak-khemah.png",
-        width: 512,
-        height: 512,
-        alt: "Pacak Khemah Logo",
-      },
+      { url: "/pacak-khemah.png", width: 512, height: 512, alt: "Pacak Khemah Logo" },
     ],
   },
   twitter: {
     card: "summary",
     title: "Pacak Khemah — Sewa Gear Camping Malaysia",
-    description:
-      "Sewa peralatan camping dari vendor dipercayai. Tempah melalui WhatsApp.",
+    description: "Sewa peralatan camping dari vendor dipercayai. Tempah melalui WhatsApp.",
     images: ["/pacak-khemah.png"],
   },
-  robots: {
-    index: true,
-    follow: true,
-  },
+  robots: { index: true, follow: true },
 };
+
+const FA_URL =
+  "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css";
 
 export default function RootLayout({
   children,
@@ -84,10 +76,34 @@ export default function RootLayout({
   return (
     <html lang="ms" className={inter.variable}>
       <head>
-        <link
-          rel="stylesheet"
-          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+        {/* Preconnect to external origins so DNS+TLS happens during HTML parse */}
+        <link rel="preconnect" href="https://firestore.googleapis.com" />
+        <link rel="preconnect" href="https://firebasestorage.googleapis.com" />
+        <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossOrigin="anonymous" />
+
+        {/* Font Awesome: inject as non-blocking stylesheet.
+            Small inline script runs synchronously during <head> parsing,
+            appends the stylesheet with media="print" (non-blocking),
+            then flips to media="all" once loaded. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+(function(){
+  var l = document.createElement('link');
+  l.rel = 'stylesheet';
+  l.href = '${FA_URL}';
+  l.media = 'print';
+  l.onload = function(){ this.media = 'all'; };
+  document.head.appendChild(l);
+})();
+            `.trim(),
+          }}
         />
+        {/* Fallback for users without JS */}
+        <noscript>
+          <link rel="stylesheet" href={FA_URL} />
+        </noscript>
+
         {/* PWA iOS icons */}
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
@@ -95,19 +111,19 @@ export default function RootLayout({
       <body className={inter.className}>
         {children}
 
-        {/* Google AdSense */}
+        {/* AdSense — lazy: only loads after the page is idle */}
         <Script
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2429364031062979"
-          strategy="afterInteractive"
+          strategy="lazyOnload"
           crossOrigin="anonymous"
         />
 
-        {/* Google Analytics */}
+        {/* Google Analytics — lazy */}
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-129EPBWVDH"
-          strategy="afterInteractive"
+          strategy="lazyOnload"
         />
-        <Script id="google-analytics" strategy="afterInteractive">
+        <Script id="google-analytics" strategy="lazyOnload">
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
