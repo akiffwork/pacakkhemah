@@ -454,9 +454,20 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
 
   useEffect(() => {
     if (!vendorId) return;
-    const unsub = onAuthStateChanged(auth, () => { loadShop(); });
-    return () => unsub();
+    // Load shop immediately. Don't wait for auth.
+    loadShop();
+    return;
   }, [vendorId]);
+
+  // Separate auth listener: only re-evaluates ownership when user or vendorData changes.
+  // No refetch — ownership is a boolean flip, not a data reload.
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (!vendorData?.owner_uid) return;
+      setIsOwner(!!(user && user.uid === vendorData.owner_uid));
+    });
+    return () => unsub();
+  }, [vendorData?.owner_uid]);
 
   async function loadShop() {
     if (!vendorId) return;
@@ -488,19 +499,23 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         if (!hasCredits) { setBlockState("nocredits"); return; }
       } else if (!isApproved || isVacation) { setOwnerPreview(true); }
       
-      const [gearSnap, availSnap, discSnap, postsSnap, reviewsSnap] = await Promise.all([
-        getDocsFromServer(query(collection(db, "gear"), where("vendorId", "==", vendorId))),
+      const [gearSnap, availSnap, discSnap, postsSnap, reviewsSnap, weeklyOffSnap] = await Promise.all([
+        // Gear rarely changes — use cached read (falls back to server if no cache)
+        getDocs(query(collection(db, "gear"), where("vendorId", "==", vendorId))),
+        // Availability MUST be fresh to prevent double-booking
         getDocsFromServer(collection(db, "vendors", vendorId, "availability")),
-        getDocsFromServer(collection(db, "vendors", vendorId, "discounts")),
-        getDocsFromServer(collection(db, "vendors", vendorId, "posts")),
+        // Discounts rarely change
+        getDocs(collection(db, "vendors", vendorId, "discounts")),
+        // Posts rarely change
+        getDocs(collection(db, "vendors", vendorId, "posts")),
+        // Reviews rarely change
         getDocs(query(collection(db, "reviews"), where("vendorId", "==", vendorId), where("status", "==", "published"), orderBy("createdAt", "desc"))),
+        // Parallelize weeklyOff instead of awaiting serially after
+        getDoc(doc(db, "vendors", vendorId, "settings", "weeklyOff")).catch(() => null),
       ]);
       setAllGear(gearSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted));
       setAvailRules(availSnap.docs.map(d => d.data() as AvailRule));
-      try {
-        const weeklyOffSnap = await getDoc(doc(db, "vendors", vendorId, "settings", "weeklyOff"));
-        setWeeklyOff(weeklyOffSnap.exists() ? weeklyOffSnap.data() as Record<number, boolean> : {});
-      } catch { setWeeklyOff({}); }
+      setWeeklyOff(weeklyOffSnap?.exists() ? weeklyOffSnap.data() as Record<number, boolean> : {});
       setDiscounts(discSnap.docs.map(d => d.data() as Discount).filter(d => !d.deleted));
       setPosts(postsSnap.docs.map(d => ({ id: d.id, ...d.data() } as VendorPost)).sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
