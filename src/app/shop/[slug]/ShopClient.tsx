@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useRef, use, Suspense } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
 import {
@@ -187,15 +186,7 @@ function ImageCarousel({ images }: { images: string[] }) {
       <div className="flex transition-transform duration-300 ease-out h-full"
         style={{ transform: `translateX(-${current * 100}%)` }}>
         {images.map((img, i) => (
-          <div key={i} className="relative w-full h-full flex-shrink-0">
-            <Image
-              src={img}
-              alt={`Image ${i + 1}`}
-              fill
-              sizes="(max-width: 640px) 100vw, 448px"
-              className="object-cover"
-            />
-          </div>
+          <img key={i} src={img} className="w-full h-full object-cover flex-shrink-0" alt={`Image ${i + 1}`} loading="lazy" />
         ))}
       </div>
       
@@ -1397,15 +1388,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         {/* Centered profile */}
         <div id="demo-hero" className="relative z-10 flex flex-col items-center text-center px-6 pt-6 pb-2">
           <div className="w-20 h-20 bg-white rounded-2xl p-1 shadow-2xl mb-4">
-            <Image
-              src={vendorData?.image || "/pacak-khemah.png"}
-              width={80}
-              height={80}
-              priority
-              sizes="80px"
-              className="w-full h-full object-cover rounded-[0.9rem]"
-              alt="logo"
-            />
+            <img src={vendorData?.image || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-[0.9rem]" alt="logo" />
           </div>
           
           {/* Vendor Name + Badges */}
@@ -1651,13 +1634,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                   return (
                     <div key={item.id} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm stagger-in relative" style={{ animationDelay: `${idx * 50}ms` }}>
                       <div className="aspect-square relative cursor-pointer" onClick={() => { setSelectedItem(item); setSelectedVariant(null); setLinkedVarSelections({}); setShowItemModal(true); }}>
-                        <Image
-                          src={item.images?.[0] || item.img || "/placeholder.jpg"}
-                          alt={item.name}
-                          fill
-                          sizes="(max-width: 640px) 50vw, 33vw"
-                          className="object-cover"
-                        />
+                        <img src={item.images?.[0] || item.img || "/placeholder.jpg"} className="w-full h-full object-cover" alt={item.name} loading="lazy" />
                         {hasMultipleImages && (
                           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
                             {item.images!.slice(0, 5).map((_, i) => (
@@ -1769,16 +1746,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                 <div key={post.id} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
                   {post.pinned && <span className="inline-block bg-amber-100 text-amber-600 text-[8px] font-black px-2 py-0.5 rounded-md uppercase mb-2"><i className="fas fa-thumbtack mr-1"></i>Pinned</span>}
                   <p className="text-sm text-slate-700 whitespace-pre-wrap">{post.content}</p>
-                  {post.image && (
-                    <Image
-                      src={post.image}
-                      alt=""
-                      width={800}
-                      height={400}
-                      sizes="(max-width: 640px) 100vw, 600px"
-                      className="mt-3 rounded-xl w-full max-h-64 object-cover h-auto"
-                    />
-                  )}
+                  {post.image && <img src={post.image} className="mt-3 rounded-xl w-full max-h-64 object-cover" alt="" loading="lazy" />}
                   <p className="text-[9px] text-slate-400 mt-2">{post.createdAt?.seconds ? formatTimeAgo(new Date(post.createdAt.seconds * 1000)) : ""}</p>
                 </div>
               ))
@@ -1880,15 +1848,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
               {(selectedItem.images?.length || 0) > 1 ? (
                 <ImageCarousel images={selectedItem.images!} />
               ) : (
-                <div className="relative w-full aspect-square">
-                  <Image
-                    src={selectedItem.images?.[0] || selectedItem.img || "/placeholder.jpg"}
-                    alt={selectedItem.name}
-                    fill
-                    sizes="(max-width: 640px) 100vw, 448px"
-                    className="object-cover rounded-t-[2rem]"
-                  />
-                </div>
+                <img src={selectedItem.images?.[0] || selectedItem.img || "/placeholder.jpg"} className="w-full aspect-square object-cover rounded-t-[2rem]" alt={selectedItem.name} />
               )}
               <button onClick={() => setShowItemModal(false)} className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 shadow-lg z-20">
                 <i className="fas fa-times"></i>
@@ -2084,14 +2044,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
                         return (
                           <div key={linkedItem.id} className="bg-white rounded-lg p-2.5 border border-purple-100">
                             <div className="flex items-center gap-2 mb-1">
-                              <Image
-                                src={linkedItem.images?.[0] || linkedItem.img || "/placeholder.jpg"}
-                                alt={linkedItem.name}
-                                width={36}
-                                height={36}
-                                sizes="36px"
-                                className="w-9 h-9 rounded-lg object-cover shrink-0"
-                              />
+                              <img src={linkedItem.images?.[0] || linkedItem.img || "/placeholder.jpg"} className="w-9 h-9 rounded-lg object-cover shrink-0" alt={linkedItem.name} loading="lazy" />
                               <div className="flex-1 min-w-0">
                                 <p className="text-[10px] font-black text-purple-700 truncate">{linkedItem.name}</p>
                                 <p className="text-[9px] text-purple-500">Qty: {qty} • RM {displayPrice}/night</p>
