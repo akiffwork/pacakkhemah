@@ -866,7 +866,7 @@ function ShopPageContent({
   async function sendWhatsAppOrder() {
     if (isSending) return;
     setIsSending(true);
-    try {
+
     const pickupDate = (cpRef.current as any)?._input?.value;
     const returnDate = (opRef.current as any)?._input?.value;
     
@@ -960,8 +960,21 @@ function ShopPageContent({
         pricingSection;
     }
 
-    // Analytics & credits - Skip for mock-up shops
-    if (!isMockupShop) {
+    // ═════════════════════════════════════════════════════════════════════════
+    // CRITICAL: Open WhatsApp NOW — synchronously, before any await.
+    // Mobile browsers (esp. Chrome/Safari on iOS + some Android builds) block
+    // window.open() as a popup if it runs AFTER an await. By opening here we
+    // keep the call inside the user-gesture window. All Firestore writes
+    // happen in the background after the tab is already navigating.
+    // ═════════════════════════════════════════════════════════════════════════
+    const rawPhone = isMockupShop ? ADMIN_WHATSAPP : (vendorData?.phone || "");
+    const cleanPhone = rawPhone.replace(/[\s\-\+\(\)]/g, "");
+    window.open(`https://wa.me/${cleanPhone}?text=${msg}`, "_blank");
+
+    // Background writes — wrap in try/finally so the button always re-enables.
+    try {
+      // Analytics & credits - Skip for mock-up shops
+      if (!isMockupShop) {
       // Visitor fingerprint for repeat lead detection
       let visitorId = localStorage.getItem("pk_visitor_id");
       if (!visitorId) {
@@ -1092,11 +1105,6 @@ function ShopPageContent({
         });
       }
     }
-    
-    // Sanitize phone number for wa.me
-    const rawPhone = isMockupShop ? ADMIN_WHATSAPP : (vendorData?.phone || "");
-    const cleanPhone = rawPhone.replace(/[\s\-\+\(\)]/g, "");
-    window.open(`https://wa.me/${cleanPhone}?text=${msg}`, "_blank");
     } finally {
       setIsSending(false);
     }
