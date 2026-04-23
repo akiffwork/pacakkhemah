@@ -17,6 +17,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://pacakkhemah.com"),
   title: {
     default: "Pacak Khemah — Sewa Gear Camping Malaysia",
     template: "%s | Pacak Khemah",
