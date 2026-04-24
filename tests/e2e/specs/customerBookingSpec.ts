@@ -338,14 +338,53 @@ test.describe('Error Handling', () => {
   test('should handle offline gracefully', async ({ page, context }) => {
     await page.goto('/directory');
     await waitForPageLoad(page);
-    
+
     // Go offline
     await context.setOffline(true);
-    
+
     // Try to navigate
     await page.reload().catch(() => {});
-    
+
     // Should show some offline indication
     // (This depends on implementation - service worker, etc.)
+  });
+});
+
+// ═══ PROMO CODE ERROR SCENARIOS ═══
+test.describe('Promo Code Validation', () => {
+  test('should show error for an invalid promo code', async ({ page }) => {
+    await page.goto(`/shop/${TEST_VENDOR_SLUG}`);
+    await waitForPageLoad(page);
+
+    const firstItem = page.locator('[data-testid="gear-item"]').first();
+    await firstItem.click();
+    await page.click('[data-testid="add-to-cart-btn"]');
+    await page.click('[data-testid="cart-button"]');
+
+    await page.fill('[data-testid="promo-input"]', 'INVALID_CODE_XYZ');
+    await page.click('[data-testid="apply-promo"]');
+
+    await expect(page.locator('text=Invalid')).toBeVisible({ timeout: 5000 });
+  });
+
+  test('should not submit the form when terms are not agreed', async ({ page }) => {
+    await page.goto(`/shop/${TEST_VENDOR_SLUG}`);
+    await waitForPageLoad(page);
+
+    const firstItem = page.locator('[data-testid="gear-item"]').first();
+    await firstItem.click();
+    await page.click('[data-testid="add-to-cart-btn"]');
+    await page.click('[data-testid="cart-button"]');
+
+    // Ensure terms checkbox is unchecked
+    const termsCheckbox = page.locator('[data-testid="terms-checkbox"]');
+    if (await termsCheckbox.isChecked()) {
+      await termsCheckbox.uncheck();
+    }
+
+    const submitBtn = page.locator('[data-testid="submit-order"]');
+    // Submit button should be disabled or absent when terms not agreed
+    const isDisabled = await submitBtn.isDisabled().catch(() => true);
+    expect(isDisabled).toBe(true);
   });
 });

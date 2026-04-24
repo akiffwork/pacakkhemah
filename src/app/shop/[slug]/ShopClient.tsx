@@ -18,6 +18,7 @@ import Section from "@/components/shop/Section";
 import ImageCarousel from "@/components/shop/ImageCarousel";
 import MockupBanner from "@/components/shop/MockupBanner";
 import { Badge, BadgeIcon, BadgePill } from "@/components/shop/Badges";
+import { getCartKey, countInCart as countInCartUtil } from "@/lib/cartUtils";
 
 // Item detail modal — dynamically imported so its ~330 lines of JSX + logic
 // only load in the browser when a user actually taps a gear card.
@@ -590,21 +591,8 @@ function ShopPageContent({
     });
   }, [selectedDates, availRules]);
 
-  // Helper: count how many of an item/variant are consumed in a given cart array
   function countInCart(cartArr: CartItem[], itemId: string, variantId?: string): number {
-    let count = 0;
-    for (const ci of cartArr) {
-      if (ci.id === itemId && (!variantId || ci.selectedVariant?.id === variantId)) count += ci.qty;
-      if (ci.linkedItems) {
-        for (const li of ci.linkedItems) {
-          if (li.itemId === itemId) {
-            const rv = li.variantId || ci.linkedVariants?.find(lv => lv.itemId === itemId)?.variantId;
-            if (!variantId || rv === variantId) count += (li.qty || 1) * ci.qty;
-          }
-        }
-      }
-    }
-    return count;
+    return countInCartUtil(cartArr, itemId, variantId);
   }
 
   // After any cart change, clamp packages whose shared children are over-consumed
@@ -654,12 +642,6 @@ function ShopPageContent({
     }
     setAddToast(variant ? `${item.name} (${[variant.color?.label, variant.size].filter(Boolean).join(", ")})` : item.name);
     setTimeout(() => setAddToast(null), 2000);
-  }
-
-  function getCartKey(item: CartItem): string {
-    if (item.selectedVariant) return `${item.id}__${item.selectedVariant.id}`;
-    if (item.linkedVariants?.length) return `${item.id}__pkg_${item.linkedVariants.map(v => v.variantId).sort().join("_")}`;
-    return item.id;
   }
 
   function removeFromCart(key: string) { setCart(prev => prev.filter(i => getCartKey(i) !== key)); }
