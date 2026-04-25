@@ -414,7 +414,10 @@ export default function CampsitesPage() {
     let result = allCampsites;
     if (showSavedOnly) result = result.filter(c => savedIds.includes(c.id));
     if (activeCategory !== "all") result = result.filter(c => c.category === activeCategory);
-    if (activeState !== "All States") result = result.filter(c => c.state === activeState);
+    if (activeState !== "All States") result = result.filter(c =>
+      c.state === activeState ||
+      c.location?.toLowerCase().includes(activeState.toLowerCase())
+    );
     if (search.trim()) result = result.filter(c =>
       c.name?.toLowerCase().includes(search.toLowerCase()) ||
       c.location?.toLowerCase().includes(search.toLowerCase()) ||
@@ -429,11 +432,18 @@ export default function CampsitesPage() {
     if (c.category) counts[c.category] = (counts[c.category] || 0) + 1;
   });
 
-  // State counts
-  const stateCounts: Record<string, number> = {};
+  // Derive available states from actual campsite data (state field OR location address)
+  const availableStates: string[] = ["All States"];
+  const stateCountMap: Record<string, number> = {};
   allCampsites.forEach(c => {
-    if (c.state) stateCounts[c.state] = (stateCounts[c.state] || 0) + 1;
+    // Prefer explicit state field; fall back to matching state name in location address
+    const matched = c.state || STATES.slice(1).find(s =>
+      c.location?.toLowerCase().includes(s.toLowerCase())
+    );
+    if (matched) stateCountMap[matched] = (stateCountMap[matched] || 0) + 1;
   });
+  // Keep original STATES order, only include states with at least 1 campsite
+  STATES.slice(1).forEach(s => { if (stateCountMap[s]) availableStates.push(s); });
 
   return (
     <div className="pb-28 min-h-screen" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f8fafc" }}>
@@ -504,8 +514,8 @@ export default function CampsitesPage() {
         <div className="flex gap-2 items-center justify-center">
           <select value={activeState} onChange={e => setActiveState(e.target.value)}
             className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold text-slate-600 outline-none focus:border-emerald-400 appearance-none">
-            {STATES.map(s => (
-              <option key={s} value={s}>{s}{stateCounts[s] ? ` (${stateCounts[s]})` : ""}</option>
+            {availableStates.map(s => (
+              <option key={s} value={s}>{s}{stateCountMap[s] ? ` (${stateCountMap[s]})` : ""}</option>
             ))}
           </select>
           {savedIds.length > 0 && (
