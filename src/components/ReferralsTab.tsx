@@ -8,6 +8,28 @@ import {
 } from "firebase/firestore";
 
 // ============ TYPES ============
+type DiscountDoc = {
+  id: string;
+  type: "nightly_discount" | "promo_code";
+  code?: string;
+  trigger_nights?: number;
+  discount_percent: number;
+  maxUses: number | null;
+  usedCount: number;
+  usedBy: { phone: string; name?: string; date: string; orderId?: string }[];
+  validFrom: string | null;
+  validUntil: string | null;
+  deleted?: boolean;
+};
+
+function discountStatus(d: DiscountDoc): "active" | "expired" | "not_started" | "maxed" {
+  const now = new Date();
+  if (d.maxUses != null && d.usedCount >= d.maxUses) return "maxed";
+  if (d.validUntil && now > new Date(d.validUntil)) return "expired";
+  if (d.validFrom && now < new Date(d.validFrom)) return "not_started";
+  return "active";
+}
+
 type CustomerReferral = {
   id: string;
   code: string;
@@ -29,7 +51,7 @@ type ReferralsTabProps = {
 
 // ============ MAIN COMPONENT ============
 export default function ReferralsTab({ vendorId, vendorName }: ReferralsTabProps) {
-  const [activeSection, setActiveSection] = useState<"customer" | "vendor">("customer");
+  const [activeSection, setActiveSection] = useState<"customer" | "promos" | "vendor">("customer");
   
   // Customer referrals state
   const [referrals, setReferrals] = useState<CustomerReferral[]>([]);
@@ -50,6 +72,11 @@ export default function ReferralsTab({ vendorId, vendorName }: ReferralsTabProps
   const [myReferralCode, setMyReferralCode] = useState<string | null>(null);
   const [referralStats, setReferralStats] = useState({ referred: 0, creditsEarned: 0 });
   const [copiedCode, setCopiedCode] = useState(false);
+
+  // Discount docs state (for Promo Codes tab)
+  const [discountDocs, setDiscountDocs] = useState<DiscountDoc[]>([]);
+  const [discountsLoading, setDiscountsLoading] = useState(true);
+  const [expandedDiscId, setExpandedDiscId] = useState<string | null>(null);
 
   // Load customer referrals
   useEffect(() => {
@@ -87,6 +114,23 @@ export default function ReferralsTab({ vendorId, vendorName }: ReferralsTabProps
       }
     }
     loadVendorReferral();
+  }, [vendorId]);
+
+  // Load vendor discounts for Promo Codes tab
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, "vendors", vendorId, "discounts"),
+      snap => {
+        setDiscountDocs(
+          snap.docs
+            .map(d => ({ id: d.id, ...d.data() } as DiscountDoc))
+            .filter(d => !d.deleted)
+            .sort((a, b) => (a.type === "promo_code" ? -1 : 1) - (b.type === "promo_code" ? -1 : 1))
+        );
+        setDiscountsLoading(false);
+      }
+    );
+    return () => unsub();
   }, [vendorId]);
 
   function resetForm() {
@@ -215,19 +259,27 @@ export default function ReferralsTab({ vendorId, vendorName }: ReferralsTabProps
       <div className="flex bg-white rounded-xl p-1 border border-slate-100">
         <button
           onClick={() => setActiveSection("customer")}
-          className={`flex-1 py-3 rounded-lg text-xs font-black uppercase transition-all ${
+          className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase transition-all ${
             activeSection === "customer" ? "bg-[#062c24] text-white" : "text-slate-400 hover:text-slate-600"
           }`}
         >
-          <i className="fas fa-users mr-2"></i>Customer Referrals
+          <i className="fas fa-users mr-1.5"></i>Referrals
+        </button>
+        <button
+          onClick={() => setActiveSection("promos")}
+          className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase transition-all ${
+            activeSection === "promos" ? "bg-[#062c24] text-white" : "text-slate-400 hover:text-slate-600"
+          }`}
+        >
+          <i className="fas fa-tags mr-1.5"></i>Promo Codes
         </button>
         <button
           onClick={() => setActiveSection("vendor")}
-          className={`flex-1 py-3 rounded-lg text-xs font-black uppercase transition-all ${
+          className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase transition-all ${
             activeSection === "vendor" ? "bg-[#062c24] text-white" : "text-slate-400 hover:text-slate-600"
           }`}
         >
-          <i className="fas fa-store mr-2"></i>Vendor Referral
+          <i className="fas fa-store mr-1.5"></i>Vendor
         </button>
       </div>
 
@@ -352,6 +404,125 @@ export default function ReferralsTab({ vendorId, vendorName }: ReferralsTabProps
           </div>
         </>
       )}
+
+      {/* PROMO CODES MONITORING SECTION */}
+      {activeSection === "promos" && (() => {
+        const promoCodes = discountDocs.filter(d => d.type === "promo_code");
+        const nightlyRules = discountDocs.filter(d => d.type === "nightly_discount");
+        const totalUses = discountDocs.reduce((s, d) => s + (d.usedCount || 0), 0);
+        const activeCount = discountDocs.filter(d => discountStatus(d) === "active").length;
+        const statusColors = { active: "bg-emerald-100 text-emerald-600", expired: "bg-red-100 text-red-500", not_started: "bg-amber-100 text-amber-600", maxed: "bg-slate-100 text-slate-500" };
+        const statusLabels = { active: "Active", expired: "Expired", not_started: "Upcoming", maxed: "Maxed" };
+
+        function DiscountCard({ d }: { d: DiscountDoc }) {
+          const st = discountStatus(d);
+          const expanded = expandedDiscId === d.id;
+          return (
+            <div className={`rounded-xl border p-4 transition-all ${st === "active" ? "bg-white border-slate-200" : "bg-slate-50 border-slate-100 opacity-70"}`}>
+              <button className="w-full text-left" onClick={() => setExpandedDiscId(expanded ? null : d.id)}>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {d.type === "promo_code"
+                        ? <span className="text-base font-black text-[#062c24] tracking-widest font-mono">{d.code}</span>
+                        : <span className="text-sm font-black text-[#062c24]">{d.trigger_nights}+ nights</span>
+                      }
+                      <span className={`text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase ${statusColors[st]}`}>{statusLabels[st]}</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      {d.discount_percent}% off
+                      {d.type === "nightly_discount" ? " (auto-applied)" : ""}
+                    </p>
+                  </div>
+                  <div className="text-right ml-3 shrink-0">
+                    <p className="text-sm font-black text-slate-600">{d.usedCount || 0}{d.maxUses != null ? `/${d.maxUses}` : ""}</p>
+                    <p className="text-[8px] text-slate-400">uses</p>
+                  </div>
+                </div>
+                {(d.validFrom || d.validUntil) && (
+                  <p className="text-[9px] text-slate-400 mt-1.5">
+                    <i className="fas fa-calendar-alt mr-1"></i>
+                    {d.validFrom ? new Date(d.validFrom).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" }) : "Any start"}
+                    {" → "}
+                    {d.validUntil ? new Date(d.validUntil).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" }) : "No expiry"}
+                  </p>
+                )}
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-[9px] text-slate-300">{(d.usedBy || []).length} customer{(d.usedBy || []).length !== 1 ? "s" : ""} used this</p>
+                  <i className={`fas fa-chevron-${expanded ? "up" : "down"} text-slate-300 text-[10px]`}></i>
+                </div>
+              </button>
+
+              {expanded && (d.usedBy || []).length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                  {(d.usedBy || []).map((u, i) => (
+                    <div key={i} className="flex items-center justify-between text-[10px] bg-slate-50 rounded-lg px-3 py-2">
+                      <div>
+                        <p className="font-bold text-slate-700">{u.name || u.phone}</p>
+                        {u.name && <p className="text-slate-400">{u.phone}</p>}
+                        {u.orderId && <p className="text-[8px] text-slate-300 font-mono">Order: {u.orderId.slice(-8)}</p>}
+                      </div>
+                      <p className="text-slate-400">{u.date ? new Date(u.date).toLocaleDateString("en-MY", { day: "numeric", month: "short" }) : ""}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {expanded && (d.usedBy || []).length === 0 && (
+                <p className="mt-3 pt-3 border-t border-slate-100 text-[10px] text-slate-300 text-center">No usage yet</p>
+              )}
+            </div>
+          );
+        }
+
+        return (
+          <>
+            {/* Stats */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-white rounded-xl p-4 border border-slate-100 text-center">
+                <p className="text-2xl font-black text-[#062c24]">{discountDocs.length}</p>
+                <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Total Rules</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 border border-slate-100 text-center">
+                <p className="text-2xl font-black text-emerald-600">{totalUses}</p>
+                <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Total Uses</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 border border-slate-100 text-center">
+                <p className="text-2xl font-black text-blue-600">{activeCount}</p>
+                <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">Active</p>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-100 p-6 space-y-4">
+              {discountsLoading ? (
+                <div className="space-y-3">{[1, 2].map(i => <div key={i} className="bg-slate-50 rounded-xl p-4 animate-pulse h-16"></div>)}</div>
+              ) : discountDocs.length === 0 ? (
+                <div className="text-center py-12 bg-slate-50 rounded-xl">
+                  <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i className="fas fa-tags text-slate-300 text-2xl"></i>
+                  </div>
+                  <p className="text-sm font-bold text-slate-400">No discount rules yet</p>
+                  <p className="text-xs text-slate-300 mt-1">Create discount rules in your Inventory tab</p>
+                </div>
+              ) : (
+                <>
+                  {promoCodes.length > 0 && (
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Promo Codes</p>
+                      <div className="space-y-3">{promoCodes.map(d => <DiscountCard key={d.id} d={d} />)}</div>
+                    </div>
+                  )}
+                  {nightlyRules.length > 0 && (
+                    <div className={promoCodes.length > 0 ? "pt-4 border-t border-slate-100" : ""}>
+                      <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Nightly Bulk Discounts</p>
+                      <div className="space-y-3">{nightlyRules.map(d => <DiscountCard key={d.id} d={d} />)}</div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </>
+        );
+      })()}
 
       {/* VENDOR REFERRAL SECTION */}
       {activeSection === "vendor" && (

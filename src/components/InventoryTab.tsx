@@ -52,15 +52,28 @@ type GearItem = {
 };
 
 type Discount = {
-  id: string; 
-  type: string; 
+  id: string;
+  type: string;
   discount_percent: number;
-  trigger_nights?: number; 
-  code?: string; 
-  appliesTo?: { type: "all" | "specific"; itemIds?: string[] }; // Discount targeting
-  is_public?: boolean; 
+  trigger_nights?: number;
+  code?: string;
+  appliesTo?: { type: "all" | "specific"; itemIds?: string[] };
+  is_public?: boolean;
   deleted?: boolean;
+  maxUses?: number | null;
+  usedCount?: number;
+  usedBy?: { phone: string; name?: string; date: string; orderId?: string }[];
+  validFrom?: string | null;
+  validUntil?: string | null;
 };
+
+function discountStatus(d: Discount): "active" | "expired" | "not_started" | "maxed" {
+  const now = new Date();
+  if (d.maxUses != null && (d.usedCount ?? 0) >= d.maxUses) return "maxed";
+  if (d.validUntil && now > new Date(d.validUntil)) return "expired";
+  if (d.validFrom && now < new Date(d.validFrom)) return "not_started";
+  return "active";
+}
 
 const inputCls = "w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 focus:bg-white transition-all";
 const labelCls = "text-[9px] font-black text-slate-400 uppercase mb-1.5 block";
@@ -116,6 +129,9 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
   const [discPublic, setDiscPublic] = useState(true);
   const [discAppliesTo, setDiscAppliesTo] = useState<"all" | "specific">("all");
   const [discSelectedItems, setDiscSelectedItems] = useState<string[]>([]);
+  const [discMaxUses, setDiscMaxUses] = useState("");
+  const [discValidFrom, setDiscValidFrom] = useState("");
+  const [discValidUntil, setDiscValidUntil] = useState("");
 
   // Real-time listeners
   useEffect(() => {
@@ -361,6 +377,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     setDiscType("nightly_discount"); setDiscPercent("");
     setDiscTrigger(""); setDiscCode(""); setDiscPublic(true);
     setDiscAppliesTo("all"); setDiscSelectedItems([]);
+    setDiscMaxUses(""); setDiscValidFrom(""); setDiscValidUntil("");
     setShowDiscModal(true);
   }
 
@@ -371,22 +388,32 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     setDiscCode(d.code || ""); setDiscPublic(d.is_public !== false);
     setDiscAppliesTo(d.appliesTo?.type || "all");
     setDiscSelectedItems(d.appliesTo?.itemIds || []);
+    setDiscMaxUses(d.maxUses != null ? String(d.maxUses) : "");
+    setDiscValidFrom(d.validFrom || "");
+    setDiscValidUntil(d.validUntil || "");
     setShowDiscModal(true);
   }
 
   async function saveDisc() {
     const data: any = {
-      type: discType, 
+      type: discType,
       discount_percent: Number(discPercent),
       trigger_nights: discType === "nightly_discount" ? Number(discTrigger) : null,
-      code: discType === "promo_code" ? discCode.toUpperCase() : null, 
-      is_public: discPublic, 
+      code: discType === "promo_code" ? discCode.toUpperCase() : null,
+      is_public: discPublic,
       deleted: false,
       appliesTo: {
         type: discAppliesTo,
         itemIds: discAppliesTo === "specific" ? discSelectedItems : [],
       },
+      maxUses: discMaxUses ? Number(discMaxUses) : null,
+      validFrom: discValidFrom || null,
+      validUntil: discValidUntil || null,
     };
+    if (!editingDisc) {
+      data.usedCount = 0;
+      data.usedBy = [];
+    }
     try {
       if (editingDisc) {
         await updateDoc(doc(db, "vendors", vendorId, "discounts", editingDisc.id), data);
@@ -449,20 +476,30 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
       {/* Active Discounts */}
       {allDiscounts.length > 0 && (
         <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
-          {allDiscounts.map(d => (
-            <div key={d.id} onClick={() => openEditDisc(d)}
-              className="flex-shrink-0 bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 px-4 py-3 rounded-xl cursor-pointer min-w-[120px] hover:border-indigo-300 transition-all">
-              <p className="text-sm font-black text-indigo-600">{d.discount_percent}% OFF</p>
-              <p className="text-[9px] text-indigo-400 font-medium mt-0.5">
-                {d.type === "promo_code" ? `Code: ${d.code}` : `${d.trigger_nights}+ nights`}
-              </p>
-              {d.appliesTo?.type === "specific" && (
-                <p className="text-[8px] text-purple-400 mt-1">
-                  {d.appliesTo.itemIds?.length || 0} items
+          {allDiscounts.map(d => {
+            const status = discountStatus(d);
+            const statusColors = { active: "bg-emerald-100 text-emerald-600", expired: "bg-red-100 text-red-500", not_started: "bg-amber-100 text-amber-600", maxed: "bg-slate-100 text-slate-500" };
+            const statusLabels = { active: "Active", expired: "Expired", not_started: "Upcoming", maxed: "Maxed" };
+            return (
+              <div key={d.id} onClick={() => openEditDisc(d)}
+                className={`flex-shrink-0 bg-gradient-to-br from-indigo-50 to-purple-50 border px-4 py-3 rounded-xl cursor-pointer min-w-[130px] hover:border-indigo-300 transition-all ${status === "active" ? "border-indigo-100" : "border-slate-200 opacity-70"}`}>
+                <div className="flex items-center justify-between gap-2 mb-0.5">
+                  <p className="text-sm font-black text-indigo-600">{d.discount_percent}% OFF</p>
+                  <span className={`text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase ${statusColors[status]}`}>{statusLabels[status]}</span>
+                </div>
+                <p className="text-[9px] text-indigo-400 font-medium">
+                  {d.type === "promo_code" ? `Code: ${d.code}` : `${d.trigger_nights}+ nights`}
                 </p>
-              )}
-            </div>
-          ))}
+                {(d.maxUses != null || d.validUntil) && (
+                  <p className="text-[8px] text-purple-400 mt-1">
+                    {d.maxUses != null ? `${d.usedCount ?? 0}/${d.maxUses} uses` : ""}
+                    {d.maxUses != null && d.validUntil ? " · " : ""}
+                    {d.validUntil ? `Until ${new Date(d.validUntil).toLocaleDateString("en-MY", { day: "numeric", month: "short" })}` : ""}
+                  </p>
+                )}
+              </div>
+            );
+          })}
           <button onClick={openAddDisc}
             className="flex-shrink-0 bg-white border-2 border-dashed border-slate-200 px-4 py-3 rounded-xl text-[10px] font-black text-slate-400 hover:border-indigo-300 hover:text-indigo-500 transition-all flex items-center gap-2">
             <i className="fas fa-plus"></i> Add Discount
@@ -1081,6 +1118,27 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
               <div>
                 <label className={labelCls}>Discount Percentage (%)</label>
                 <input type="number" value={discPercent} onChange={e => setDiscPercent(e.target.value)} placeholder="e.g. 10" className={inputCls} />
+              </div>
+
+              {/* Validity Period */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Valid From (optional)</label>
+                  <input type="date" value={discValidFrom} onChange={e => setDiscValidFrom(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Valid Until (optional)</label>
+                  <input type="date" value={discValidUntil} onChange={e => setDiscValidUntil(e.target.value)} className={inputCls} />
+                </div>
+              </div>
+
+              {/* Max Uses */}
+              <div>
+                <label className={labelCls}>Max Uses (optional)</label>
+                <input type="number" min="1" value={discMaxUses} onChange={e => setDiscMaxUses(e.target.value)} placeholder="Unlimited if blank" className={inputCls} />
+                {editingDisc && editingDisc.usedCount != null && (
+                  <p className={helperCls}>{editingDisc.usedCount} use{editingDisc.usedCount !== 1 ? "s" : ""} so far</p>
+                )}
               </div>
 
               {/* Applies To - NEW */}
