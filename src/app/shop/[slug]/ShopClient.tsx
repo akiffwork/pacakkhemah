@@ -89,6 +89,8 @@ type VendorData = {
   is_mockup?: boolean;
   avg_response_time?: number; // in minutes
   total_orders?: number;
+  nearbyCampsiteIds?: string[];
+  nearbyCampsites?: { id: string; km: number }[];
 };
 
 type GearVariant = {
@@ -215,6 +217,7 @@ function ShopPageContent({
   const [addToast, setAddToast] = useState<string | null>(null);
   const [itemShareToast, setItemShareToast] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [nearbyCampsites, setNearbyCampsites] = useState<{ id: string; name: string; location?: string; state?: string; direction?: string; carousel?: string[]; km?: number }[]>([]);
   const [mainTab, setMainTab] = useState<"gear" | "updates" | "reviews">("gear");
   
   // ═══ NEW: Fulfillment state ═══
@@ -321,7 +324,19 @@ function ShopPageContent({
       }
 
       setSelectedHub((vData.pickup?.[0] || vData.city) ?? "");
-      
+
+      // Load nearby campsites — prefer {id, km} list, fallback to ids-only list
+      const campsiteRefs = vData.nearbyCampsites ?? vData.nearbyCampsiteIds?.map(id => ({ id, km: undefined }));
+      if (campsiteRefs?.length) {
+        const csSnaps = await Promise.all(campsiteRefs.map(c => getDoc(doc(db, "campsites", c.id))));
+        setNearbyCampsites(
+          csSnaps.filter(s => s.exists()).map((s, i) => ({
+            id: s.id, ...s.data(),
+            km: campsiteRefs[i]?.km,
+          } as { id: string; name: string; location?: string; state?: string; direction?: string; carousel?: string[]; km?: number }))
+        );
+      }
+
       // Set default zone if zones exist
       if (vData.services?.delivery?.zones?.length) {
         setSelectedZone(vData.services.delivery.zones[0]);
@@ -1064,6 +1079,27 @@ function ShopPageContent({
               variantColor: i.selectedVariant.color?.hex || null,
             } : {}),
             ...(i.linkedVariants?.length ? { linkedVariants: i.linkedVariants } : {}),
+            ...(i.linkedItems?.length ? {
+              linkedItems: i.linkedItems.map(li => {
+                const linkedGear = allGear.find(g => g.id === li.itemId);
+                const customerVariant = i.linkedVariants?.find(lv => lv.itemId === li.itemId);
+                const resolvedVariantId = li.variantId || customerVariant?.variantId;
+                const resolvedVariant = linkedGear?.variants?.find(v => v.id === resolvedVariantId);
+                const resolvedLabel = resolvedVariant
+                  ? [resolvedVariant.color?.label, resolvedVariant.size].filter(Boolean).join(", ")
+                  : li.variantLabel || customerVariant?.variantLabel;
+                return {
+                  itemId: li.itemId,
+                  name: linkedGear?.name || li.itemId,
+                  qty: li.qty,
+                  ...(resolvedVariantId ? {
+                    variantId: resolvedVariantId,
+                    variantLabel: resolvedLabel,
+                    variantColor: resolvedVariant?.color?.hex || li.variantColor || null,
+                  } : {}),
+                };
+              }),
+            } : {}),
           })),
           totalAmount: total,
           depositAmount: Math.round(dep),
@@ -2007,6 +2043,41 @@ function ShopPageContent({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Nearby Campsites */}
+      {nearbyCampsites.length > 0 && (
+        <section className="max-w-4xl mx-auto px-5 pb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-5 h-5 bg-emerald-100 rounded-md flex items-center justify-center">
+              <i className="fas fa-campground text-emerald-600 text-[9px]"></i>
+            </div>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Nearby Campsites</p>
+          </div>
+          <div className="space-y-2">
+            {nearbyCampsites.map(cs => (
+              <a key={cs.id} href={cs.direction || "#"} target="_blank" rel="noreferrer"
+                className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md hover:border-emerald-200 transition-all group">
+                {cs.carousel?.[0]
+                  ? <img src={cs.carousel[0]} alt={cs.name} className="w-14 h-14 rounded-xl object-cover flex-shrink-0 bg-slate-100" />
+                  : <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center flex-shrink-0 text-xl">🏕️</div>
+                }
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] font-black text-[#062c24] truncate uppercase leading-tight">{cs.name}</p>
+                  <p className="text-[10px] text-slate-400 truncate mt-0.5">{cs.location || cs.state}</p>
+                  {cs.km != null && (
+                    <span className="inline-flex items-center gap-1 mt-1 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full text-[8px] font-black uppercase border border-emerald-100">
+                      <i className="fas fa-location-dot text-[7px]"></i>~{cs.km} km away
+                    </span>
+                  )}
+                </div>
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center group-hover:bg-emerald-50 group-hover:border-emerald-200 transition-colors">
+                  <i className="fas fa-location-arrow text-[10px] text-slate-400 group-hover:text-emerald-600 transition-colors"></i>
+                </div>
+              </a>
+            ))}
+          </div>
+        </section>
       )}
 
       <footer className="max-w-4xl mx-auto px-5 pt-8 pb-6">

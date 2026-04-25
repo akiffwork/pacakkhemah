@@ -181,17 +181,17 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
       if (coords) {
         payload.locationLat = coords.lat;
         payload.locationLng = coords.lng;
-        // Compute nearby campsite IDs
+        // Compute nearby campsite IDs with distances
         const csSnap = await getDocs(collection(db, "campsites"));
         const nearby = csSnap.docs
           .map(d => ({ id: d.id, lat: d.data().lat as number | undefined, lng: d.data().lng as number | undefined }))
           .filter(c => c.lat != null && c.lng != null)
-          .map(c => ({ id: c.id, km: haversineKm(coords.lat, coords.lng, c.lat!, c.lng!) }))
+          .map(c => ({ id: c.id, km: Math.round(haversineKm(coords.lat, coords.lng, c.lat!, c.lng!) * 10) / 10 }))
           .filter(c => c.km <= 50)
           .sort((a, b) => a.km - b.km)
-          .slice(0, 5)
-          .map(c => c.id);
-        payload.nearbyCampsiteIds = nearby;
+          .slice(0, 5);
+        payload.nearbyCampsiteIds = nearby.map(c => c.id);
+        payload.nearbyCampsites = nearby; // {id, km}[] — used by ShopClient to show distance
       }
       await updateDoc(doc(db, "vendors", vendorId), payload);
       setSavedLogistics(true);
