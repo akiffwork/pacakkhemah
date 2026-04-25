@@ -24,6 +24,7 @@ type Order = {
   agreementSignedAt?: any;
   agreementId?: string;
   calendarLinked?: boolean;
+  parentOrderId?: string;
   stockConflict?: boolean;
   stockConflictDetails?: string[];
   reviewToken?: string;
@@ -89,6 +90,8 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [unlinkedAgreements, setUnlinkedAgreements] = useState<UnlinkedAgreement[]>([]);
   const [showLinkPicker, setShowLinkPicker] = useState(false);
+  const [showParentPicker, setShowParentPicker] = useState(false);
+  const [parentSearch, setParentSearch] = useState("");
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
 
@@ -269,6 +272,35 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
       setSelectedOrder(null);
       showToast("Order deleted!");
     } catch (e) { console.error("Delete order error:", e); }
+  }
+
+  async function linkToParentOrder(parentOrder: Order) {
+    if (!selectedOrder) return;
+    try {
+      await updateDoc(doc(db, "orders", selectedOrder.id), {
+        parentOrderId: parentOrder.id,
+        agreementSigned: true,
+        agreementId: parentOrder.agreementId || null,
+        depositAmount: 0,
+        rentalAmount: selectedOrder.totalAmount,
+      });
+      setShowParentPicker(false);
+      setParentSearch("");
+      showToast("Linked as additional order!");
+    } catch (e) { console.error(e); showToast("Failed to link order", "error"); }
+  }
+
+  async function unlinkParentOrder() {
+    if (!selectedOrder || !confirm("Remove link to parent order?")) return;
+    try {
+      await updateDoc(doc(db, "orders", selectedOrder.id), {
+        parentOrderId: null,
+        agreementSigned: false,
+        agreementId: null,
+        depositAmount: selectedOrder.depositAmount,
+      });
+      showToast("Link removed");
+    } catch (e) { showToast("Failed to remove link", "error"); }
   }
 
   // Generate review link
@@ -494,6 +526,16 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                         <i className="fas fa-calendar-check mr-1"></i> Booked
                       </span>
                     )}
+                    {order.parentOrderId && (
+                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-violet-50 text-violet-600">
+                        <i className="fas fa-link mr-1"></i> Add-on
+                      </span>
+                    )}
+                    {!order.parentOrderId && orders.some(o => o.parentOrderId === order.id) && (
+                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-violet-50 text-violet-500">
+                        <i className="fas fa-sitemap mr-1"></i> Has Add-ons
+                      </span>
+                    )}
                     {order.paymentStatus && order.paymentStatus !== "unpaid" && (
                       <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase border ${paymentColors[order.paymentStatus]}`}>
                         <i className="fas fa-money-bill-wave mr-1"></i>{paymentLabels[order.paymentStatus]}
@@ -634,6 +676,11 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
               {selectedOrder.calendarLinked && (
                 <span className="px-3 py-1.5 rounded-lg text-xs font-black uppercase bg-blue-50 text-blue-600">
                   <i className="fas fa-calendar-check mr-1"></i> Calendar Booked
+                </span>
+              )}
+              {selectedOrder.parentOrderId && (
+                <span className="px-3 py-1.5 rounded-lg text-xs font-black uppercase bg-violet-50 text-violet-600">
+                  <i className="fas fa-link mr-1"></i> Add-on Order
                 </span>
               )}
             </div>
@@ -969,8 +1016,18 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
             {/* Agreement Section */}
             <div className="mt-4 pt-4 border-t border-slate-100">
               <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Agreement</p>
-              
-              {selectedOrder.agreementSigned ? (
+
+              {selectedOrder.parentOrderId ? (
+                <div className="bg-violet-50 rounded-xl p-4 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-violet-100 rounded-full flex items-center justify-center text-violet-600">
+                    <i className="fas fa-link"></i>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-black text-violet-700">Covered by Parent Order</p>
+                    <p className="text-[10px] text-violet-500 break-all">#{selectedOrder.parentOrderId.slice(-8)}</p>
+                  </div>
+                </div>
+              ) : selectedOrder.agreementSigned ? (
                 <div className="bg-emerald-50 rounded-xl p-4 flex items-center gap-3">
                   <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600">
                     <i className="fas fa-file-signature"></i>
@@ -1025,6 +1082,125 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                   )}
                 </div>
               )}
+            </div>
+
+            {/* Additional Order / Parent Linking Section */}
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <p className="text-[9px] font-black text-slate-400 uppercase mb-3">
+                <i className="fas fa-link mr-1"></i>Additional Order
+              </p>
+
+              {selectedOrder.parentOrderId ? (
+                <div className="space-y-2">
+                  <div className="bg-violet-50 border border-violet-100 rounded-xl p-4">
+                    <p className="text-[10px] font-black text-violet-700 mb-1">This is an add-on order</p>
+                    <p className="text-[9px] text-violet-500">No separate deposit or agreement needed — covered by the parent booking.</p>
+                    {(() => {
+                      const parent = orders.find(o => o.id === selectedOrder.parentOrderId);
+                      return parent ? (
+                        <button
+                          onClick={() => { setSelectedOrder(parent); setShowParentPicker(false); }}
+                          className="mt-2 text-[9px] font-black text-violet-600 hover:text-violet-800"
+                        >
+                          <i className="fas fa-arrow-left mr-1"></i>View Parent Order ({parent.customerName || parent.customerPhone})
+                        </button>
+                      ) : null;
+                    })()}
+                  </div>
+                  <button
+                    onClick={unlinkParentOrder}
+                    className="w-full py-2.5 rounded-xl font-black uppercase text-[9px] bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-400 transition-all"
+                  >
+                    <i className="fas fa-unlink mr-1"></i>Remove Link
+                  </button>
+                </div>
+              ) : (() => {
+                // Candidate parent orders: same dates, not cancelled, not itself, not already a child
+                const candidates = orders.filter(o =>
+                  o.id !== selectedOrder.id &&
+                  !o.parentOrderId &&
+                  o.status !== "cancelled" &&
+                  !o.deleted &&
+                  o.bookingDates.start === selectedOrder.bookingDates.start &&
+                  o.bookingDates.end === selectedOrder.bookingDates.end
+                );
+                const filtered = parentSearch.trim()
+                  ? candidates.filter(o =>
+                      (o.customerName || "").toLowerCase().includes(parentSearch.toLowerCase()) ||
+                      (o.customerPhone || "").includes(parentSearch) ||
+                      o.id.includes(parentSearch)
+                    )
+                  : candidates;
+
+                // Check if any child orders link to this one
+                const childOrders = orders.filter(o => o.parentOrderId === selectedOrder.id);
+
+                return (
+                  <div className="space-y-3">
+                    {childOrders.length > 0 && (
+                      <div className="bg-violet-50 border border-violet-100 rounded-xl p-3">
+                        <p className="text-[9px] font-black text-violet-700 mb-2">Add-on Orders ({childOrders.length})</p>
+                        <div className="space-y-1.5">
+                          {childOrders.map(child => (
+                            <button
+                              key={child.id}
+                              onClick={() => setSelectedOrder(child)}
+                              className="w-full flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-violet-100 hover:border-violet-300 transition-all text-left"
+                            >
+                              <div>
+                                <p className="text-[10px] font-bold text-[#062c24]">{child.items.map(i => i.name).join(", ")}</p>
+                                <p className="text-[9px] text-slate-400">RM {child.totalAmount} • {child.status}</p>
+                              </div>
+                              <i className="fas fa-arrow-right text-violet-300 text-xs"></i>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {candidates.length > 0 && (
+                      <>
+                        <button
+                          onClick={() => { setShowParentPicker(p => !p); setParentSearch(""); }}
+                          className="w-full py-3 rounded-xl font-black uppercase text-[10px] bg-violet-50 text-violet-600 hover:bg-violet-100 border border-violet-100 flex items-center justify-center gap-2 transition-all"
+                        >
+                          <i className="fas fa-link"></i>Link as Add-on to Existing Order
+                        </button>
+
+                        {showParentPicker && (
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              value={parentSearch}
+                              onChange={e => setParentSearch(e.target.value)}
+                              placeholder="Search by name or phone…"
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs outline-none focus:border-violet-400"
+                            />
+                            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                              {filtered.length === 0 ? (
+                                <p className="text-center text-[10px] text-slate-300 py-3">No matching orders found</p>
+                              ) : filtered.map(o => (
+                                <button
+                                  key={o.id}
+                                  onClick={() => linkToParentOrder(o)}
+                                  className="w-full flex items-center justify-between bg-white rounded-xl px-3 py-2.5 border border-slate-100 hover:border-violet-300 transition-all text-left"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-bold text-[#062c24] truncate">{o.customerName || o.customerPhone || "Unknown"}</p>
+                                    <p className="text-[9px] text-slate-400">{o.items.map(i => i.name).join(", ")} • RM {o.totalAmount}</p>
+                                    <p className="text-[8px] text-slate-300">{o.bookingDates.start} → {o.bookingDates.end}</p>
+                                  </div>
+                                  <i className="fas fa-link text-violet-300 text-xs ml-2 shrink-0"></i>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* WhatsApp Quick Messages */}
