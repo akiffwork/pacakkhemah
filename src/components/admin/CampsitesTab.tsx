@@ -155,6 +155,25 @@ export default function CampsitesTab() {
     }));
   }
 
+  function extractCoords(url: string): { lat: number; lng: number } | null {
+    const q = url.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (q) return { lat: +q[1], lng: +q[2] };
+    const at = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (at) return { lat: +at[1], lng: +at[2] };
+    const ll = url.match(/ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (ll) return { lat: +ll[1], lng: +ll[2] };
+    return null;
+  }
+
+  function handleDirectionChange(url: string) {
+    const coords = extractCoords(url);
+    setForm(prev => ({
+      ...prev,
+      direction: url,
+      ...(coords ? { lat: String(coords.lat), lng: String(coords.lng) } : {}),
+    }));
+  }
+
   // Filter campsites
   const filtered = campsites.filter(c => {
     const matchSearch = !search ||
@@ -404,17 +423,25 @@ export default function CampsitesTab() {
                 <input
                   type="url"
                   value={form.direction}
-                  onChange={e => setForm(prev => ({ ...prev, direction: e.target.value }))}
-                  placeholder="https://maps.app.goo.gl/..."
+                  onChange={e => handleDirectionChange(e.target.value)}
+                  placeholder="https://maps.google.com/maps?q=3.1234,101.5678"
                   className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 transition-all"
                 />
+                <p className="text-[9px] text-slate-400 mt-1">Coordinates will auto-fill if the URL contains them. For short links (goo.gl), open in browser first → copy the full URL from the address bar.</p>
               </div>
 
-              {/* Coordinates */}
+              {/* Coordinates — auto-filled from Maps link */}
               <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">
-                  Coordinates (for distance matching)
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                    Coordinates (for distance matching)
+                  </label>
+                  {form.lat && form.lng && (
+                    <span className="text-[8px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                      <i className="fas fa-check-circle mr-0.5"></i>Auto-filled
+                    </span>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <input
                     type="number"
@@ -422,7 +449,7 @@ export default function CampsitesTab() {
                     value={form.lat}
                     onChange={e => setForm(prev => ({ ...prev, lat: e.target.value }))}
                     placeholder="Latitude e.g. 3.1234"
-                    className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 transition-all"
+                    className={`w-full border p-3.5 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 transition-all ${form.lat ? "bg-emerald-50 border-emerald-200" : "bg-slate-50 border-slate-200"}`}
                   />
                   <input
                     type="number"
@@ -430,10 +457,9 @@ export default function CampsitesTab() {
                     value={form.lng}
                     onChange={e => setForm(prev => ({ ...prev, lng: e.target.value }))}
                     placeholder="Longitude e.g. 101.5678"
-                    className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 transition-all"
+                    className={`w-full border p-3.5 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 transition-all ${form.lng ? "bg-emerald-50 border-emerald-200" : "bg-slate-50 border-slate-200"}`}
                   />
                 </div>
-                <p className="text-[9px] text-slate-400 mt-1">Open Google Maps → long-press location → copy the coordinates shown</p>
               </div>
 
               {/* WhatsApp Link */}
