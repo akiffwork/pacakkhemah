@@ -12,7 +12,7 @@ type Order = {
   id: string;
   customerPhone: string;
   customerName?: string;
-  items: { name: string; qty: number; price: number; variantId?: string; variantLabel?: string; variantColor?: string }[];
+  items: { name: string; qty: number; price: number; variantId?: string; variantLabel?: string; variantColor?: string; linkedItems?: { itemId: string; name: string; qty: number; variantLabel?: string; variantColor?: string }[] }[];
   totalAmount: number;
   rentalAmount?: number;
   depositAmount?: number;
@@ -725,15 +725,28 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
               <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Items</p>
               <div className="space-y-2">
                 {selectedOrder.items.map((item, i) => (
-                  <div key={i} className="flex justify-between items-center text-sm">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      {item.variantColor && <span className="w-3 h-3 rounded-full border border-slate-200 shrink-0" style={{ backgroundColor: item.variantColor }}></span>}
-                      <span className="text-slate-600 truncate">
-                        {item.name} x{item.qty}
-                        {item.variantLabel && <span className="text-[9px] text-teal-600 ml-1">({item.variantLabel})</span>}
-                      </span>
+                  <div key={i}>
+                    <div className="flex justify-between items-center text-sm">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {item.variantColor && <span className="w-3 h-3 rounded-full border border-slate-200 shrink-0" style={{ backgroundColor: item.variantColor }}></span>}
+                        <span className="text-slate-600 truncate">
+                          {item.name} x{item.qty}
+                          {item.variantLabel && <span className="text-[9px] text-teal-600 ml-1">({item.variantLabel})</span>}
+                        </span>
+                        {item.linkedItems?.length ? <span className="text-[8px] font-black bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded shrink-0">PKG</span> : null}
+                      </div>
+                      <span className="font-bold shrink-0 ml-2">RM {item.price * item.qty}</span>
                     </div>
-                    <span className="font-bold shrink-0 ml-2">RM {item.price * item.qty}</span>
+                    {item.linkedItems?.map((li, j) => (
+                      <div key={j} className="flex items-center gap-1.5 ml-3 mt-1">
+                        <div className="w-px h-3 bg-slate-200 shrink-0" />
+                        {li.variantColor && <span className="w-2.5 h-2.5 rounded-full border border-slate-200 shrink-0" style={{ backgroundColor: li.variantColor }}></span>}
+                        <span className="text-[11px] text-slate-400 truncate">
+                          {li.name} x{li.qty * item.qty}
+                          {li.variantLabel && <span className="text-teal-500 ml-1">({li.variantLabel})</span>}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 ))}
                 <div className="border-t border-slate-200 pt-2 space-y-1">

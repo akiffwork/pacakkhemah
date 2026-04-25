@@ -1064,6 +1064,27 @@ function ShopPageContent({
               variantColor: i.selectedVariant.color?.hex || null,
             } : {}),
             ...(i.linkedVariants?.length ? { linkedVariants: i.linkedVariants } : {}),
+            ...(i.linkedItems?.length ? {
+              linkedItems: i.linkedItems.map(li => {
+                const linkedGear = allGear.find(g => g.id === li.itemId);
+                const customerVariant = i.linkedVariants?.find(lv => lv.itemId === li.itemId);
+                const resolvedVariantId = li.variantId || customerVariant?.variantId;
+                const resolvedVariant = linkedGear?.variants?.find(v => v.id === resolvedVariantId);
+                const resolvedLabel = resolvedVariant
+                  ? [resolvedVariant.color?.label, resolvedVariant.size].filter(Boolean).join(", ")
+                  : li.variantLabel || customerVariant?.variantLabel;
+                return {
+                  itemId: li.itemId,
+                  name: linkedGear?.name || li.itemId,
+                  qty: li.qty,
+                  ...(resolvedVariantId ? {
+                    variantId: resolvedVariantId,
+                    variantLabel: resolvedLabel,
+                    variantColor: resolvedVariant?.color?.hex || li.variantColor || null,
+                  } : {}),
+                };
+              }),
+            } : {}),
           })),
           totalAmount: total,
           depositAmount: Math.round(dep),

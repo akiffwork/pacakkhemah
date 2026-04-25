@@ -45,7 +45,7 @@ type GroupedEntry = {
   reason?: string;
   start: string;
   end: string;
-  items: { bookingId: string; name: string; qty: number; category: string; variantId?: string; variantLabel?: string; variantColor?: string }[];
+  items: { bookingId: string; itemId: string; name: string; qty: number; category: string; variantId?: string; variantLabel?: string; variantColor?: string }[];
   nights: number;
   blockId?: string;
   orderStatus?: string;
@@ -352,6 +352,7 @@ export default function CalendarPage() {
         const variant = b.variantId ? item.variants?.find(v => v.id === b.variantId) : undefined;
         groups[key].items.push({
           bookingId: b.id,
+          itemId: item.id,
           name: item.name,
           qty: b.qty || 1,
           category: item.category || (item.type === "package" ? "Packages" : "Add-ons"),
@@ -1512,22 +1513,57 @@ export default function CalendarPage() {
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {selectedEntry.items.map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl gap-2 min-w-0">
-                          <div className="min-w-0 flex-1 overflow-hidden">
-                            <div className="flex items-center gap-1.5">
-                              {item.variantColor && <span className="w-3.5 h-3.5 rounded-full border border-slate-200 flex-shrink-0" style={{ backgroundColor: item.variantColor }}></span>}
-                              <p className="text-[12px] font-bold text-[#062c24] truncate">{item.name}</p>
-                            </div>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-wide">
-                              {item.variantLabel ? `${item.variantLabel} · ` : ""}{item.category}
-                            </p>
-                          </div>
-                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded-lg flex-shrink-0">
-                            ×{item.qty}
-                          </span>
-                        </div>
-                      ))}
+                      {(() => {
+                        // Collect itemIds that are linked children of packages in this entry
+                        const linkedChildIds = new Set<string>();
+                        selectedEntry.items.forEach(it => {
+                          const gear = allGear.find(g => g.id === it.itemId);
+                          if (gear?.type === "package") {
+                            gear.linkedItems?.forEach(li => linkedChildIds.add(li.itemId));
+                          }
+                        });
+                        return selectedEntry.items
+                          .filter(it => !linkedChildIds.has(it.itemId))
+                          .map((item, idx) => {
+                            const gear = allGear.find(g => g.id === item.itemId);
+                            const isPackage = gear?.type === "package";
+                            return (
+                              <div key={idx}>
+                                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl gap-2 min-w-0">
+                                  <div className="min-w-0 flex-1 overflow-hidden">
+                                    <div className="flex items-center gap-1.5">
+                                      {item.variantColor && <span className="w-3.5 h-3.5 rounded-full border border-slate-200 flex-shrink-0" style={{ backgroundColor: item.variantColor }}></span>}
+                                      <p className="text-[12px] font-bold text-[#062c24] truncate">{item.name}</p>
+                                      {isPackage && <span className="text-[8px] font-black bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded flex-shrink-0">PKG</span>}
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 uppercase tracking-wide">
+                                      {item.variantLabel ? `${item.variantLabel} · ` : ""}{item.category}
+                                    </p>
+                                  </div>
+                                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded-lg flex-shrink-0">
+                                    ×{item.qty}
+                                  </span>
+                                </div>
+                                {isPackage && gear?.linkedItems?.map((li, j) => {
+                                  const child = selectedEntry.items.find(it => it.itemId === li.itemId);
+                                  const childGear = allGear.find(g => g.id === li.itemId);
+                                  return (
+                                    <div key={j} className="flex items-center gap-1.5 ml-3 mt-1 px-1">
+                                      <div className="w-px h-3 bg-slate-200 flex-shrink-0" />
+                                      {(child?.variantColor || li.variantColor) && (
+                                        <span className="w-2.5 h-2.5 rounded-full border border-slate-200 flex-shrink-0" style={{ backgroundColor: child?.variantColor || li.variantColor }}></span>
+                                      )}
+                                      <span className="text-[11px] text-slate-400 truncate">
+                                        {childGear?.name || li.itemId} ×{child ? child.qty : li.qty * item.qty}
+                                        {child?.variantLabel && <span className="text-teal-500 ml-1">({child.variantLabel})</span>}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          });
+                      })()}
                     </div>
                   )}
                 </>
