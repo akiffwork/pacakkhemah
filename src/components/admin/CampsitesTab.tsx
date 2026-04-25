@@ -14,6 +14,8 @@ type Campsite = {
   direction?: string;
   whatsapp?: string;
   carousel?: string[];
+  lat?: number;
+  lng?: number;
   createdAt?: any;
 };
 
@@ -45,6 +47,8 @@ export default function CampsitesTab() {
     direction: "",
     whatsapp: "",
     carousel: [""],
+    lat: "",
+    lng: "",
   });
 
   // Load campsites
@@ -66,14 +70,7 @@ export default function CampsitesTab() {
 
   function openAddModal() {
     setEditingCampsite(null);
-    setForm({
-      name: "",
-      location: "",
-      category: "seaside",
-      direction: "",
-      whatsapp: "",
-      carousel: [""],
-    });
+    setForm({ name: "", location: "", category: "seaside", direction: "", whatsapp: "", carousel: [""], lat: "", lng: "" });
     setShowModal(true);
   }
 
@@ -86,6 +83,8 @@ export default function CampsitesTab() {
       direction: campsite.direction || "",
       whatsapp: campsite.whatsapp || "",
       carousel: campsite.carousel?.length ? campsite.carousel : [""],
+      lat: campsite.lat != null ? String(campsite.lat) : "",
+      lng: campsite.lng != null ? String(campsite.lng) : "",
     });
     setShowModal(true);
   }
@@ -98,13 +97,14 @@ export default function CampsitesTab() {
 
     setSaving(true);
     try {
-      const data = {
+      const data: Record<string, unknown> = {
         name: form.name.trim(),
         location: form.location.trim(),
         category: form.category,
         direction: form.direction.trim(),
         whatsapp: form.whatsapp.trim(),
         carousel: form.carousel.filter(url => url.trim() !== ""),
+        ...(form.lat && form.lng ? { lat: parseFloat(form.lat), lng: parseFloat(form.lng) } : {}),
       };
 
       if (editingCampsite) {
@@ -408,6 +408,32 @@ export default function CampsitesTab() {
                   placeholder="https://maps.app.goo.gl/..."
                   className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 transition-all"
                 />
+              </div>
+
+              {/* Coordinates */}
+              <div>
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">
+                  Coordinates (for distance matching)
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    step="any"
+                    value={form.lat}
+                    onChange={e => setForm(prev => ({ ...prev, lat: e.target.value }))}
+                    placeholder="Latitude e.g. 3.1234"
+                    className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 transition-all"
+                  />
+                  <input
+                    type="number"
+                    step="any"
+                    value={form.lng}
+                    onChange={e => setForm(prev => ({ ...prev, lng: e.target.value }))}
+                    placeholder="Longitude e.g. 101.5678"
+                    className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 transition-all"
+                  />
+                </div>
+                <p className="text-[9px] text-slate-400 mt-1">Open Google Maps → long-press location → copy the coordinates shown</p>
               </div>
 
               {/* WhatsApp Link */}

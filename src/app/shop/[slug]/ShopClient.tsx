@@ -89,6 +89,7 @@ type VendorData = {
   is_mockup?: boolean;
   avg_response_time?: number; // in minutes
   total_orders?: number;
+  nearbyCampsiteIds?: string[];
 };
 
 type GearVariant = {
@@ -215,6 +216,7 @@ function ShopPageContent({
   const [addToast, setAddToast] = useState<string | null>(null);
   const [itemShareToast, setItemShareToast] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [nearbyCampsites, setNearbyCampsites] = useState<{ id: string; name: string; location?: string; state?: string; direction?: string; carousel?: string[] }[]>([]);
   const [mainTab, setMainTab] = useState<"gear" | "updates" | "reviews">("gear");
   
   // ═══ NEW: Fulfillment state ═══
@@ -321,7 +323,17 @@ function ShopPageContent({
       }
 
       setSelectedHub((vData.pickup?.[0] || vData.city) ?? "");
-      
+
+      // Load nearby campsites if vendor has pre-computed IDs
+      if (vData.nearbyCampsiteIds?.length) {
+        const csSnaps = await Promise.all(
+          vData.nearbyCampsiteIds.map(id => getDoc(doc(db, "campsites", id)))
+        );
+        setNearbyCampsites(
+          csSnaps.filter(s => s.exists()).map(s => ({ id: s.id, ...s.data() } as { id: string; name: string; location?: string; state?: string; direction?: string; carousel?: string[] }))
+        );
+      }
+
       // Set default zone if zones exist
       if (vData.services?.delivery?.zones?.length) {
         setSelectedZone(vData.services.delivery.zones[0]);
@@ -2028,6 +2040,31 @@ function ShopPageContent({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Nearby Campsites */}
+      {nearbyCampsites.length > 0 && (
+        <section className="max-w-4xl mx-auto px-5 pb-6">
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">
+            <i className="fas fa-campground text-emerald-500 mr-1.5"></i>Nearby Campsites
+          </p>
+          <div className="space-y-2">
+            {nearbyCampsites.map(cs => (
+              <a key={cs.id} href={cs.direction || "#"} target="_blank" rel="noreferrer"
+                className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl hover:border-emerald-300 transition-colors">
+                {cs.carousel?.[0]
+                  ? <img src={cs.carousel[0]} alt={cs.name} className="w-12 h-12 rounded-xl object-cover flex-shrink-0 bg-slate-100" />
+                  : <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0 text-lg">🏕️</div>
+                }
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-bold text-[#062c24] truncate">{cs.name}</p>
+                  <p className="text-[10px] text-slate-400 truncate">{cs.location || cs.state}</p>
+                </div>
+                <span className="text-[10px] font-bold text-emerald-600 flex-shrink-0">Directions →</span>
+              </a>
+            ))}
+          </div>
+        </section>
       )}
 
       <footer className="max-w-4xl mx-auto px-5 pt-8 pb-6">

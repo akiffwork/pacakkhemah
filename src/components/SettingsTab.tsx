@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { db, auth } from "@/lib/firebase";
-import { doc, updateDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, updateDoc, collection, query, where, getDocs, getDoc } from "firebase/firestore";
 import { sendPasswordResetEmail } from "firebase/auth";
 
 type DeliveryZone = { name: string; fee: number };
@@ -41,6 +41,7 @@ type SettingsTabProps = {
     areas?: string[]; pickup?: string[];
     security_deposit?: number; security_deposit_type?: string;
     is_vacation?: boolean; allow_stacking?: boolean; rules?: string[];
+    locationUrl?: string;
     services?: ServicesConfig;
     loyalty?: {
       enabled: boolean;
@@ -98,6 +99,7 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
   const [isVacation, setIsVacation] = useState(vendorData.is_vacation || false);
   const [allowStacking, setAllowStacking] = useState(vendorData.allow_stacking || false);
   const [rules, setRules] = useState<string[]>(vendorData.rules || []);
+  const [locationUrl, setLocationUrl] = useState(vendorData.locationUrl || "");
 
   // Services fields
   const [services, setServices] = useState<ServicesConfig>(vendorData.services || DEFAULT_SERVICES);
@@ -146,9 +148,25 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
     } catch { showToast("Failed to save account", "error"); }
   }
 
+  function extractCoords(url: string): { lat: number; lng: number } | null {
+    const q = url.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (q) return { lat: +q[1], lng: +q[2] };
+    const at = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (at) return { lat: +at[1], lng: +at[2] };
+    const ll = url.match(/ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (ll) return { lat: +ll[1], lng: +ll[2] };
+    return null;
+  }
+
+  function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
   async function saveLogistics() {
     try {
-      await updateDoc(doc(db, "vendors", vendorId), {
+      const payload: Record<string, unknown> = {
         city,
         areas: areas.split(",").map(s => s.trim()).filter(Boolean),
         pickup: hubs.split(",").map(s => s.trim()).filter(Boolean),
@@ -157,7 +175,25 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
         rules: rules.filter(Boolean),
         is_vacation: isVacation,
         allow_stacking: allowStacking,
-      });
+        locationUrl: locationUrl.trim() || null,
+      };
+      const coords = locationUrl.trim() ? extractCoords(locationUrl.trim()) : null;
+      if (coords) {
+        payload.locationLat = coords.lat;
+        payload.locationLng = coords.lng;
+        // Compute nearby campsite IDs
+        const csSnap = await getDocs(collection(db, "campsites"));
+        const nearby = csSnap.docs
+          .map(d => ({ id: d.id, lat: d.data().lat as number | undefined, lng: d.data().lng as number | undefined }))
+          .filter(c => c.lat != null && c.lng != null)
+          .map(c => ({ id: c.id, km: haversineKm(coords.lat, coords.lng, c.lat!, c.lng!) }))
+          .filter(c => c.km <= 100)
+          .sort((a, b) => a.km - b.km)
+          .slice(0, 5)
+          .map(c => c.id);
+        payload.nearbyCampsiteIds = nearby;
+      }
+      await updateDoc(doc(db, "vendors", vendorId), payload);
       setSavedLogistics(true);
       showToast("Logistics saved!");
       setTimeout(() => setSavedLogistics(false), 2000);
@@ -373,6 +409,11 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
             <div>
               <label className="text-[9px] font-bold text-slate-400 uppercase">Pickup Points (comma separated)</label>
               <input value={hubs} onChange={e => setHubs(e.target.value)} placeholder="Hub A, Hub B" className={inputCls} />
+            </div>
+            <div>
+              <label className="text-[9px] font-bold text-slate-400 uppercase">Exact Pickup Location (Google Maps link)</label>
+              <input value={locationUrl} onChange={e => setLocationUrl(e.target.value)} placeholder="https://maps.google.com/?q=3.1234,101.5678" className={inputCls} />
+              <p className="text-[9px] text-slate-400 mt-1.5">Used to suggest your shop to nearby campers. Not shown publicly. Open Google Maps → long-press your location → Share → copy link.</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
