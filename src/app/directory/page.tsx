@@ -30,6 +30,11 @@ type GearItem = {
 type Event = { id: string; name: string; poster: string; link: string; organizer?: string };
 type Announcement = { isActive: boolean; message: string; type: "info" | "warning" | "promo" };
 type Testimonial = { id: string; name: string; location: string; text: string; rating: number };
+type Review = {
+  id: string; vendorId: string; customerName: string; comment: string | null;
+  rating: number; isVerified?: boolean;
+  vendorName?: string; vendorSlug?: string;
+};
 
 const LOAD_STEP = 12;
 const announcementThemes = {
@@ -204,6 +209,7 @@ export default function DirectoryPage() {
   const [customLocation, setCustomLocation] = useState("");
   const [socialLinks, setSocialLinks] = useState<{ instagram?: string; threads?: string; whatsapp?: string }>({});
   const [testimonials, setTestimonials] = useState<Testimonial[]>(DEFAULT_TESTIMONIALS);
+  const [reviews, setReviews] = useState<Review[]>([]);
 
   const [logoTaps, setLogoTaps] = useState(0);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -229,6 +235,15 @@ export default function DirectoryPage() {
   }
 
   useEffect(() => { loadVendors(); loadEvents(); loadAnnouncement(); loadSocialLinks(); loadTestimonials(); }, []);
+
+  useEffect(() => {
+    if (!reviews.length || !allVendors.length) return;
+    setReviews(prev => prev.map(r => {
+      const v = allVendors.find(v => v.id === r.vendorId);
+      if (!v) return r;
+      return { ...r, vendorName: v.name, vendorSlug: v.slug };
+    }));
+  }, [allVendors, reviews.length]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -289,10 +304,17 @@ export default function DirectoryPage() {
 
   async function loadTestimonials() {
     try {
-      const snap = await getDocs(query(collection(db, "testimonials"), limit(3)));
-      if (!snap.empty) {
-        setTestimonials(snap.docs.map(d => ({ id: d.id, ...d.data() } as Testimonial)));
-      }
+      const snap = await getDocs(query(
+        collection(db, "reviews"),
+        where("status", "==", "published"),
+        limit(30),
+      ));
+      const good = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as Review))
+        .filter(r => (r.rating ?? 0) >= 4 && r.comment && r.comment.trim().length > 10);
+      // Shuffle then cap at 5
+      const shuffled = good.sort(() => Math.random() - 0.5).slice(0, 5);
+      if (shuffled.length > 0) setReviews(shuffled);
     } catch { }
   }
 
@@ -706,27 +728,71 @@ export default function DirectoryPage() {
       <section className="bg-white border-y border-slate-100 py-8">
         <div className="max-w-4xl mx-auto px-4">
           <h3 className="text-center text-xs font-black text-slate-400 uppercase tracking-widest mb-6">What Campers Say</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {testimonials.map((t) => (
-              <div key={t.id} className="bg-slate-50 rounded-2xl p-5">
-                <div className="flex gap-0.5 mb-3">
-                  {[...Array(5)].map((_, j) => (
-                    <i key={j} className={`fas fa-star text-xs ${j < t.rating ? "text-amber-400" : "text-slate-200"}`}></i>
-                  ))}
-                </div>
-                <p className="text-sm text-slate-600 leading-relaxed mb-4">&ldquo;{t.text}&rdquo;</p>
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-xs font-black">
-                    {t.name.charAt(0)}
+          {reviews.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {reviews.map((r) => {
+                const shopPath = r.vendorSlug ? `/shop/${r.vendorSlug}` : r.vendorId ? `/shop?v=${r.vendorId}` : null;
+                const card = (
+                  <div className={`bg-slate-50 rounded-2xl p-5 flex flex-col h-full ${shopPath ? "cursor-pointer hover:bg-emerald-50 transition-colors" : ""}`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex gap-0.5">
+                        {[...Array(5)].map((_, j) => (
+                          <i key={j} className={`fas fa-star text-xs ${j < Math.round(r.rating) ? "text-amber-400" : "text-slate-200"}`}></i>
+                        ))}
+                      </div>
+                      {r.isVerified && (
+                        <span className="text-[8px] font-black text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <i className="fas fa-check-circle text-[7px]"></i> Verified
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-600 leading-relaxed mb-4 flex-1">&ldquo;{r.comment}&rdquo;</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0">
+                          {(r.customerName || "C").charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black text-[#062c24] truncate">{r.customerName || "Camper"}</p>
+                          {r.vendorName && <p className="text-[9px] text-slate-400 truncate">via {r.vendorName}</p>}
+                        </div>
+                      </div>
+                      {shopPath && (
+                        <span className="text-[9px] font-bold text-emerald-600 flex-shrink-0">View →</span>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-[10px] font-black text-[#062c24]">{t.name}</p>
-                    <p className="text-[9px] text-slate-400">{t.location}</p>
+                );
+                return shopPath ? (
+                  <Link key={r.id} href={shopPath}>{card}</Link>
+                ) : (
+                  <div key={r.id}>{card}</div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {testimonials.map((t) => (
+                <div key={t.id} className="bg-slate-50 rounded-2xl p-5">
+                  <div className="flex gap-0.5 mb-3">
+                    {[...Array(5)].map((_, j) => (
+                      <i key={j} className={`fas fa-star text-xs ${j < t.rating ? "text-amber-400" : "text-slate-200"}`}></i>
+                    ))}
+                  </div>
+                  <p className="text-sm text-slate-600 leading-relaxed mb-4">&ldquo;{t.text}&rdquo;</p>
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-xs font-black">
+                      {t.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-[#062c24]">{t.name}</p>
+                      <p className="text-[9px] text-slate-400">{t.location}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
