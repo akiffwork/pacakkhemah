@@ -19,7 +19,7 @@ type Order = {
   pickupLocation: string;
   bookingDates: { start: string; end: string };
   status: "pending" | "confirmed" | "completed" | "cancelled" | "conflict";
-  paymentStatus?: "unpaid" | "deposit_paid" | "full_paid" | "refunded";
+  paymentStatus?: "unpaid" | "deposit_paid" | "full_paid" | "refunded" | "deposit_burnt";
   agreementSigned?: boolean;
   agreementSignedAt?: any;
   agreementId?: string;
@@ -68,6 +68,7 @@ const paymentColors: Record<string, string> = {
   deposit_paid: "bg-amber-50 text-amber-600 border-amber-100",
   full_paid: "bg-emerald-50 text-emerald-600 border-emerald-100",
   refunded: "bg-slate-100 text-slate-500 border-slate-200",
+  deposit_burnt: "bg-orange-50 text-orange-700 border-orange-200",
 };
 
 const paymentLabels: Record<string, string> = {
@@ -75,6 +76,7 @@ const paymentLabels: Record<string, string> = {
   deposit_paid: "Deposit Paid",
   full_paid: "Full Paid",
   refunded: "Refunded",
+  deposit_burnt: "Deposit Burnt",
 };
 
 export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
@@ -530,14 +532,25 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                 {/* Right: Amount & Actions */}
                 <div className="flex items-center gap-3">
                   <div className="text-right">
-                    <p className="text-lg font-black text-emerald-600">RM {order.totalAmount}</p>
+                    {order.depositAmount ? (
+                      <>
+                        <p className="text-lg font-black text-emerald-600">
+                          RM {order.rentalAmount ?? (order.totalAmount - order.depositAmount)}
+                        </p>
+                        <p className="text-[8px] text-slate-400 font-bold">+RM {order.depositAmount} deposit</p>
+                      </>
+                    ) : (
+                      <p className="text-lg font-black text-emerald-600">RM {order.totalAmount}</p>
+                    )}
                     {order.depositAmount && order.paymentStatus === "deposit_paid" ? (
-                      <p className="text-[8px] text-amber-600 font-bold">Baki: RM{(order.rentalAmount ?? order.totalAmount - order.depositAmount)}</p>
+                      <p className="text-[8px] text-amber-600 font-bold">Baki: RM{order.rentalAmount ?? (order.totalAmount - order.depositAmount)}</p>
                     ) : order.paymentStatus === "refunded" ? (
                       <p className="text-[8px] text-blue-600 font-bold">Deposit refunded</p>
-                    ) : (
+                    ) : order.paymentStatus === "deposit_burnt" ? (
+                      <p className="text-[8px] text-orange-600 font-bold">Deposit burnt</p>
+                    ) : !order.depositAmount ? (
                       <p className="text-[9px] text-slate-400">{formatDate(order.createdAt)}</p>
-                    )}
+                    ) : null}
                   </div>
 
                   <button
@@ -719,7 +732,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
             <div className="mb-4">
               <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Payment Status</p>
               <div className="grid grid-cols-4 gap-1.5">
-                {(["unpaid", "deposit_paid", "full_paid", "refunded"] as const).map(ps => (
+                {(["unpaid", "deposit_paid", "full_paid", "refunded", "deposit_burnt"] as const).map(ps => (
                   <button
                     key={ps}
                     onClick={async () => {
@@ -807,6 +820,23 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                           <span className="font-black text-[#062c24]">RM {rental}</span>
                         </div>
                         <p className="text-[9px] text-slate-400">Deposit RM{deposit} telah dipulangkan kepada pelanggan</p>
+                      </div>
+                    )}
+                    {ps === "deposit_burnt" && (
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between">
+                          <span className="text-slate-600 font-bold"><i className="fas fa-check-circle mr-1"></i>Rental Collected</span>
+                          <span className="font-black text-slate-600">RM {rental}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-orange-600 font-bold"><i className="fas fa-fire mr-1"></i>Deposit Kept (Dispute)</span>
+                          <span className="font-black text-orange-600">RM {deposit}</span>
+                        </div>
+                        <div className="flex justify-between pt-1.5 border-t border-orange-200">
+                          <span className="text-[#062c24] font-black">Net Revenue</span>
+                          <span className="font-black text-emerald-700">RM {total}</span>
+                        </div>
+                        <p className="text-[9px] text-orange-500">Deposit tidak dipulangkan — dikira sebagai hasil.</p>
                       </div>
                     )}
                   </div>
