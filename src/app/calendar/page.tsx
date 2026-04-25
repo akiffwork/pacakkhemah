@@ -434,6 +434,25 @@ export default function CalendarPage() {
             ...(linkedOrderId ? { orderId: linkedOrderId } : {}),
             createdAt: new Date().toISOString(),
           });
+
+          // For packages: also block each constituent child item so the shop's
+          // stock availability reflects items consumed inside the package.
+          if (item?.linkedItems?.length) {
+            for (const li of item.linkedItems) {
+              if ((li.qty || 0) <= 0) continue;
+              const childRef = doc(collection(db, "vendors", vendorId, "availability"));
+              batch.set(childRef, {
+                itemId: li.itemId,
+                qty: (li.qty || 1) * qty,
+                start, end, type: "booking",
+                customer: custName.trim(), phone: custPhone.trim(),
+                ...(li.variantId ? { variantId: li.variantId } : {}),
+                ...(li.variantLabel ? { variantLabel: li.variantLabel } : {}),
+                ...(linkedOrderId ? { orderId: linkedOrderId } : {}),
+                createdAt: new Date().toISOString(),
+              });
+            }
+          }
         }
       });
     }
@@ -515,6 +534,24 @@ export default function CalendarPage() {
             ...(variantLabel ? { variantLabel } : {}),
             createdAt: new Date().toISOString(),
           });
+
+          // For packages: also block each constituent child item.
+          if (item?.linkedItems?.length) {
+            for (const li of item.linkedItems) {
+              if ((li.qty || 0) <= 0) continue;
+              const childRef = doc(collection(db, "vendors", vendorId, "availability"));
+              batch.set(childRef, {
+                itemId: li.itemId,
+                qty: (li.qty || 1) * qty,
+                start: selectedEntry.start, end: selectedEntry.end,
+                type: "booking",
+                customer: custName.trim(), phone: custPhone.trim(),
+                ...(li.variantId ? { variantId: li.variantId } : {}),
+                ...(li.variantLabel ? { variantLabel: li.variantLabel } : {}),
+                createdAt: new Date().toISOString(),
+              });
+            }
+          }
         });
       }
 
