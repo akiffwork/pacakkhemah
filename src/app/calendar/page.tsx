@@ -33,7 +33,7 @@ type Booking = {
   id: string; itemId?: string; qty?: number;
   start: string; end: string; type?: string;
   customer?: string; phone?: string; reason?: string;
-  blockId?: string; orderId?: string;
+  blockId?: string; orderId?: string; orderStatus?: string;
   variantId?: string; variantLabel?: string;
 };
 
@@ -48,6 +48,7 @@ type GroupedEntry = {
   items: { bookingId: string; name: string; qty: number; category: string; variantId?: string; variantLabel?: string; variantColor?: string }[];
   nights: number;
   blockId?: string;
+  orderStatus?: string;
 };
 
 type WeeklyOff = { [key: number]: boolean };
@@ -233,7 +234,18 @@ export default function CalendarPage() {
       setAllGear(gear);
 
       const aSnap = await getDocs(collection(db, "vendors", vid, "availability"));
-      setBookings(aSnap.docs.map(d => ({ id: d.id, ...d.data() } as Booking)).filter(b => b.start && b.end));
+      const ordersSnap = await getDocs(query(collection(db, "orders"), where("vendorId", "==", vid)));
+      const orderStatusMap: Record<string, string> = {};
+      ordersSnap.docs.forEach(d => { orderStatusMap[d.id] = (d.data() as any).status; });
+      setBookings(
+        aSnap.docs
+          .map(d => {
+            const b = { id: d.id, ...d.data() } as Booking;
+            if (b.orderId && orderStatusMap[b.orderId]) b.orderStatus = orderStatusMap[b.orderId];
+            return b;
+          })
+          .filter(b => b.start && b.end)
+      );
 
       try {
         const wSnap = await getDoc(doc(db, "vendors", vid, "settings", "weeklyOff"));
@@ -332,6 +344,7 @@ export default function CalendarPage() {
           items: [],
           nights: calculateNights(b.start, b.end),
           blockId: b.blockId,
+          orderStatus: b.orderStatus,
         };
       }
       const item = allGear.find(g => g.id === b.itemId);
@@ -352,11 +365,12 @@ export default function CalendarPage() {
     return Object.values(groups);
   }
 
-  function hasMarksOnDate(dateStr: string): { hasBooking: boolean; hasBlock: boolean } {
+  function hasMarksOnDate(dateStr: string): { hasBooking: boolean; hasBlock: boolean; hasCompleted: boolean } {
     const entries = bookings.filter(b => dateStr >= b.start && dateStr <= b.end);
     return {
-      hasBooking: entries.some(b => b.type !== "block"),
+      hasBooking: entries.some(b => b.type !== "block" && b.orderStatus !== "completed"),
       hasBlock: entries.some(b => b.type === "block") || isWeeklyOffDay(dateStr),
+      hasCompleted: entries.some(b => b.type !== "block" && b.orderStatus === "completed"),
     };
   }
 
@@ -752,7 +766,7 @@ export default function CalendarPage() {
                 const isToday = dateStr === today;
                 const isSel = dateStr === selectedDate;
                 const isOff = isWeeklyOffDay(dateStr);
-                const { hasBooking, hasBlock } = hasMarksOnDate(dateStr);
+                const { hasBooking, hasBlock, hasCompleted } = hasMarksOnDate(dateStr);
 
                 return (
                   <button
@@ -779,8 +793,9 @@ export default function CalendarPage() {
                     </span>
 
                     {/* Bar indicators */}
-                    {(hasBooking || hasBlock) && !isSel && (
+                    {(hasBooking || hasBlock || hasCompleted) && !isSel && (
                       <div className="flex gap-[2px] mt-[3px]">
+                        {hasCompleted && <div className="w-[10px] sm:w-[12px] h-[3px] rounded-full bg-emerald-500" />}
                         {hasBooking && <div className="w-[10px] sm:w-[12px] h-[3px] rounded-full bg-blue-500" />}
                         {hasBlock && <div className="w-[10px] sm:w-[12px] h-[3px] rounded-full bg-red-500" />}
                       </div>
@@ -800,6 +815,10 @@ export default function CalendarPage() {
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-[3px] rounded-full bg-blue-500" />
                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Booking</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-[3px] rounded-full bg-emerald-500" />
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Completed</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-[3px] rounded-full bg-red-500" />
@@ -865,18 +884,30 @@ export default function CalendarPage() {
                         onDelete={() => deleteEntry(entry)}
                         onClick={() => { setSelectedEntry(entry); setIsEditing(false); setShowDetailModal(true); }}
                       >
-                        <div className={`flex overflow-hidden ${entry.type === "block" ? "bg-red-50/60" : "bg-white"}`}>
+                        <div className={`flex overflow-hidden ${
+                          entry.type === "block" ? "bg-red-50/60" :
+                          entry.orderStatus === "completed" ? "bg-emerald-50/60" :
+                          "bg-white"
+                        }`}>
                           {/* Left accent bar */}
-                          <div className={`w-1 flex-shrink-0 ${entry.type === "block" ? "bg-red-500" : "bg-blue-500"}`} />
+                          <div className={`w-1 flex-shrink-0 ${
+                            entry.type === "block" ? "bg-red-500" :
+                            entry.orderStatus === "completed" ? "bg-emerald-500" :
+                            "bg-blue-500"
+                          }`} />
                           <div className="flex items-center gap-3 p-3 flex-1 min-w-0 overflow-hidden">
                             <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm flex-shrink-0 ${
-                              entry.type === "block" ? "bg-red-100" : "bg-blue-100"
+                              entry.type === "block" ? "bg-red-100" :
+                              entry.orderStatus === "completed" ? "bg-emerald-100" :
+                              "bg-blue-100"
                             }`}>
-                              {entry.type === "block" ? "🚫" : "👤"}
+                              {entry.type === "block" ? "🚫" : entry.orderStatus === "completed" ? "✅" : "👤"}
                             </div>
                             <div className="flex-1 min-w-0 overflow-hidden">
                               <p className={`text-[13px] font-bold truncate ${
-                                entry.type === "block" ? "text-red-800" : "text-[#062c24]"
+                                entry.type === "block" ? "text-red-800" :
+                                entry.orderStatus === "completed" ? "text-emerald-800" :
+                                "text-[#062c24]"
                               }`}>
                                 {entry.type === "block" ? (entry.reason || "Time Off") : entry.customer}
                               </p>
@@ -1319,15 +1350,21 @@ export default function CalendarPage() {
             <div className="w-8 h-1 bg-black/10 rounded-full mx-auto mt-3 flex-shrink-0" />
 
             {/* Accent bar */}
-            <div className={`h-1 mx-4 mt-3 rounded-full flex-shrink-0 ${selectedEntry.type === "block" ? "bg-red-500" : "bg-blue-500"}`} />
+            <div className={`h-1 mx-4 mt-3 rounded-full flex-shrink-0 ${
+              selectedEntry.type === "block" ? "bg-red-500" :
+              selectedEntry.orderStatus === "completed" ? "bg-emerald-500" :
+              "bg-blue-500"
+            }`} />
 
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 flex-shrink-0 gap-2 min-w-0">
               <div className="flex items-center gap-3 min-w-0 overflow-hidden flex-1">
                 <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm flex-shrink-0 ${
-                  selectedEntry.type === "block" ? "bg-red-100" : "bg-blue-100"
+                  selectedEntry.type === "block" ? "bg-red-100" :
+                  selectedEntry.orderStatus === "completed" ? "bg-emerald-100" :
+                  "bg-blue-100"
                 }`}>
-                  {selectedEntry.type === "block" ? "🚫" : "👤"}
+                  {selectedEntry.type === "block" ? "🚫" : selectedEntry.orderStatus === "completed" ? "✅" : "👤"}
                 </div>
                 <div className="min-w-0 overflow-hidden">
                   <p className="text-[14px] font-bold text-[#062c24] truncate">
