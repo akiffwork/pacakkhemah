@@ -25,12 +25,22 @@ type Lead = {
 type OrderData = {
   id: string;
   totalAmount: number;
+  rentalAmount?: number;
+  depositAmount?: number;
   status: string;
   paymentStatus?: string;
   items: { name: string; qty: number; price: number }[];
   createdAt: any;
   completedAt?: any;
 };
+
+function getOrderRevenue(o: OrderData): number {
+  const rental = o.rentalAmount ?? o.totalAmount;
+  if (o.paymentStatus === "deposit_burnt" && o.depositAmount) {
+    return rental + o.depositAmount;
+  }
+  return rental;
+}
 
 type PaymentPackage = { credits: number; price: number };
 type PaymentConfig = {
@@ -225,9 +235,9 @@ export default function AnalyticsTab({ vendorId, vendorData }: AnalyticsTabProps
       {(() => {
         const completed = orders.filter(o => o.status === "completed");
         const confirmed = orders.filter(o => o.status === "confirmed" || o.status === "completed");
-        const totalRevenue = completed.reduce((s, o) => s + (o.totalAmount || 0), 0);
+        const totalRevenue = completed.reduce((s, o) => s + getOrderRevenue(o), 0);
         const avgOrderValue = completed.length > 0 ? Math.round(totalRevenue / completed.length) : 0;
-        const pendingRevenue = orders.filter(o => o.status === "confirmed").reduce((s, o) => s + (o.totalAmount || 0), 0);
+        const pendingRevenue = orders.filter(o => o.status === "confirmed").reduce((s, o) => s + getOrderRevenue(o), 0);
         const conversionRate = leads.length > 0 ? Math.round((confirmed.length / leads.length) * 100) : 0;
 
         // Monthly revenue (last 6 months)
@@ -242,7 +252,7 @@ export default function AnalyticsTab({ vendorId, vendorData }: AnalyticsTabProps
             const ts = o.completedAt?.toDate?.() || o.createdAt?.toDate?.();
             return ts && ts.getMonth() === m && ts.getFullYear() === y;
           });
-          months.push({ label, revenue: monthOrders.reduce((s, o) => s + (o.totalAmount || 0), 0), orders: monthOrders.length });
+          months.push({ label, revenue: monthOrders.reduce((s, o) => s + getOrderRevenue(o), 0), orders: monthOrders.length });
         }
         const maxRevenue = Math.max(...months.map(m => m.revenue), 1);
 

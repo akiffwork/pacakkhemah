@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
 import {
   doc, getDoc, collection, query, where, getDocs, getDocsFromServer,
-  runTransaction, serverTimestamp, addDoc, orderBy,
+  runTransaction, serverTimestamp, addDoc, orderBy, updateDoc, arrayUnion, increment,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import "flatpickr/dist/flatpickr.min.css";
@@ -18,6 +18,7 @@ import Section from "@/components/shop/Section";
 import ImageCarousel from "@/components/shop/ImageCarousel";
 import MockupBanner from "@/components/shop/MockupBanner";
 import { Badge, BadgeIcon, BadgePill } from "@/components/shop/Badges";
+import { getCartKey, countInCart as countInCartUtil } from "@/lib/cartUtils";
 
 // Item detail modal — dynamically imported so its ~330 lines of JSX + logic
 // only load in the browser when a user actually taps a gear card.
@@ -126,7 +127,7 @@ type GearItem = {
 type LinkedVariantSelection = { itemId: string; variantId: string; variantLabel: string; variantColor?: string };
 type CartItem = GearItem & { qty: number; addSetup?: boolean; selectedVariant?: GearVariant; linkedVariants?: LinkedVariantSelection[] };
 type AvailRule = { itemId?: string; variantId?: string; type?: string; start: string; end?: string; qty?: number };
-type Discount = { type: string; trigger_nights?: number; discount_percent: number; discount_fixed?: number; code?: string; deleted?: boolean; is_public?: boolean; appliesTo?: { type: "all" | "specific"; itemIds?: string[] } };
+type Discount = { id?: string; type: string; trigger_nights?: number; discount_percent: number; discount_fixed?: number; code?: string; deleted?: boolean; is_public?: boolean; appliesTo?: { type: "all" | "specific"; itemIds?: string[] }; maxUses?: number | null; usedCount?: number; validFrom?: string | null; validUntil?: string | null; };
 type VendorPost = { id: string; content: string; image?: string; pinned?: boolean; createdAt: any };
 type Review = { id: string; customerName: string; rating: number; comment?: string | null; createdAt: any; isVerified?: boolean };
 
@@ -359,7 +360,7 @@ function ShopPageContent({
       setAllGear(gearSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted));
       setAvailRules(availSnap.docs.map(d => d.data() as AvailRule));
       setWeeklyOff(weeklyOffSnap?.exists() ? weeklyOffSnap.data() as Record<number, boolean> : {});
-      setDiscounts(discSnap.docs.map(d => d.data() as Discount).filter(d => !d.deleted));
+      setDiscounts(discSnap.docs.map(d => ({ id: d.id, ...d.data() } as Discount)).filter(d => !d.deleted));
       setPosts(postsSnap.docs.map(d => ({ id: d.id, ...d.data() } as VendorPost)).sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
         if (!a.pinned && b.pinned) return 1;
@@ -590,21 +591,8 @@ function ShopPageContent({
     });
   }, [selectedDates, availRules]);
 
-  // Helper: count how many of an item/variant are consumed in a given cart array
   function countInCart(cartArr: CartItem[], itemId: string, variantId?: string): number {
-    let count = 0;
-    for (const ci of cartArr) {
-      if (ci.id === itemId && (!variantId || ci.selectedVariant?.id === variantId)) count += ci.qty;
-      if (ci.linkedItems) {
-        for (const li of ci.linkedItems) {
-          if (li.itemId === itemId) {
-            const rv = li.variantId || ci.linkedVariants?.find(lv => lv.itemId === itemId)?.variantId;
-            if (!variantId || rv === variantId) count += (li.qty || 1) * ci.qty;
-          }
-        }
-      }
-    }
-    return count;
+    return countInCartUtil(cartArr, itemId, variantId);
   }
 
   // After any cart change, clamp packages whose shared children are over-consumed
@@ -654,12 +642,6 @@ function ShopPageContent({
     }
     setAddToast(variant ? `${item.name} (${[variant.color?.label, variant.size].filter(Boolean).join(", ")})` : item.name);
     setTimeout(() => setAddToast(null), 2000);
-  }
-
-  function getCartKey(item: CartItem): string {
-    if (item.selectedVariant) return `${item.id}__${item.selectedVariant.id}`;
-    if (item.linkedVariants?.length) return `${item.id}__pkg_${item.linkedVariants.map(v => v.variantId).sort().join("_")}`;
-    return item.id;
   }
 
   function removeFromCart(key: string) { setCart(prev => prev.filter(i => getCartKey(i) !== key)); }
@@ -735,7 +717,14 @@ function ShopPageContent({
 
   // Auto discount calculation
   let autoDisc = 0;
-  const rule = discounts.filter(d => d.type === "nightly_discount" && (d.trigger_nights ?? 0) <= nights).sort((a, b) => b.discount_percent - a.discount_percent)[0];
+  const rule = discounts.filter(d => {
+    if (d.type !== "nightly_discount" || (d.trigger_nights ?? 0) > nights) return false;
+    if (d.maxUses != null && (d.usedCount ?? 0) >= d.maxUses) return false;
+    const now = new Date();
+    if (d.validFrom && now < new Date(d.validFrom)) return false;
+    if (d.validUntil && now > new Date(d.validUntil)) return false;
+    return true;
+  }).sort((a, b) => b.discount_percent - a.discount_percent)[0];
   if (rule) { const fn = (rule.trigger_nights ?? 0) - 1; const dn = nights - fn; if (dn > 0) autoDisc = dailyTotal * dn * (rule.discount_percent / 100); }
   
   // Promo discount
@@ -830,6 +819,16 @@ function ShopPageContent({
     // 1. Check vendor discounts first
     const found = discounts.find(d => d.type === "promo_code" && d.code === code);
     if (found) {
+      if (found.maxUses != null && (found.usedCount ?? 0) >= found.maxUses) {
+        setAppliedPromo(null); setPromoMsg({ text: "This code has reached its usage limit", success: false }); return;
+      }
+      const now = new Date();
+      if (found.validFrom && now < new Date(found.validFrom)) {
+        setAppliedPromo(null); setPromoMsg({ text: "This code is not yet active", success: false }); return;
+      }
+      if (found.validUntil && now > new Date(found.validUntil)) {
+        setAppliedPromo(null); setPromoMsg({ text: "This code has expired", success: false }); return;
+      }
       setAppliedPromo(found);
       setPromoMsg({ text: `Success! ${found.discount_percent}% Off Applied`, success: true });
       return;
@@ -1084,6 +1083,21 @@ function ShopPageContent({
           ...(showAuto ? { autoDiscount: Math.round(autoDisc) } : {}),
         };
         const orderRef = await addDoc(collection(db, "orders"), orderData);
+
+        // Track usage on vendor discount / nightly discount rules
+        const usageEntry = { phone: savedPhone, name: savedName, orderId: orderRef.id, date: new Date().toISOString() };
+        if (appliedPromo?.id && vendorId) {
+          await updateDoc(doc(db, "vendors", vendorId, "discounts", appliedPromo.id), {
+            usedCount: increment(1),
+            usedBy: arrayUnion(usageEntry),
+          }).catch(() => {});
+        }
+        if (showAuto && rule?.id && vendorId) {
+          await updateDoc(doc(db, "vendors", vendorId, "discounts", rule.id), {
+            usedCount: increment(1),
+            usedBy: arrayUnion(usageEntry),
+          }).catch(() => {});
+        }
 
         // Note: Calendar blocking handled by vendor via OrdersTab "Create Booking"
         // or automatically by Cloud Function when agreement is signed

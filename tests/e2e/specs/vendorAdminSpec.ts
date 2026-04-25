@@ -454,8 +454,30 @@ test.describe('Vendor to Shop Integration', () => {
     
     // 4. Open cart and verify setup option
     await page.click('[data-testid="cart-button"]');
-    
+
     await expect(page.locator('text=Add Setup')).toBeVisible();
     await expect(page.locator('text=+RM 75')).toBeVisible();
+  });
+});
+
+// ═══ AUTH GUARD TESTS ═══
+test.describe('Auth Guards', () => {
+  test('unauthenticated user accessing /store is redirected to login', async ({ page }) => {
+    // Navigate directly without logging in
+    await page.goto('/store');
+    await page.waitForLoadState('networkidle');
+
+    // Should show login form rather than the vendor dashboard
+    const loginForm = page.locator('[data-testid="login-button"], [data-testid="email-input"]');
+    await expect(loginForm.first()).toBeVisible({ timeout: 10000 });
+  });
+
+  test('vendor tab content is not accessible without auth', async ({ page }) => {
+    await page.goto('/store');
+    await page.waitForLoadState('networkidle');
+
+    // Vendor-specific tabs should not be visible without authentication
+    await expect(page.locator('[data-testid="inventory-tab"]')).not.toBeVisible();
+    await expect(page.locator('[data-testid="orders-tab"]')).not.toBeVisible();
   });
 });
