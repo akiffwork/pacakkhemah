@@ -19,6 +19,16 @@ type Campsite = {
   description?: string;
   facilities?: string[];
   fee?: string | number;
+  lat?: number;
+  lng?: number;
+};
+
+type Vendor = {
+  id: string; name: string; logo?: string; image?: string;
+  city?: string; areas?: string[]; slug?: string;
+  rating?: number; reviewCount?: number;
+  locationLat?: number; locationLng?: number;
+  is_vacation?: boolean;
 };
 
 const CATEGORIES = [
@@ -165,7 +175,7 @@ function CampsiteCard({ site, onClick, vendorCount, isSaved, onToggleSave }: {
   );
 }
 
-function DetailSheet({ site, onClose }: { site: Campsite; onClose: () => void }) {
+function DetailSheet({ site, onClose, vendors }: { site: Campsite; onClose: () => void; vendors: (Vendor & { km?: number })[] }) {
   const [imgIdx, setImgIdx] = useState(0);
   const imgs = site.carousel?.length ? site.carousel : ["/pacak-khemah.png"];
 
@@ -261,11 +271,47 @@ function DetailSheet({ site, onClose }: { site: Campsite; onClose: () => void })
             </a>
           </div>
 
-          {/* Rent Gear CTA */}
-          <Link href={`/directory?search=${encodeURIComponent(site.state || site.location || site.name)}`}
-            className="block w-full bg-emerald-600 text-white py-4 rounded-2xl text-[10px] font-black uppercase text-center hover:bg-emerald-700 transition-colors shadow-lg">
-            <i className="fas fa-campground mr-2"></i>Rent Camping Gear Nearby
-          </Link>
+          {/* Nearby Gear Rental */}
+          {vendors.length > 0 ? (
+            <div>
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Nearby Gear Rental</p>
+              <div className="space-y-2">
+                {vendors.slice(0, 3).map(v => (
+                  <Link key={v.id} href={v.slug ? `/shop/${v.slug}` : `/shop?v=${v.id}`}
+                    className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl hover:bg-emerald-50 transition-colors">
+                    <img src={v.logo || v.image || "/pacak-khemah.png"} alt={v.name}
+                      className="w-10 h-10 rounded-xl object-cover flex-shrink-0 bg-slate-200" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-bold text-[#062c24] truncate">{v.name}</p>
+                      <div className="flex items-center gap-2">
+                        {(v.rating ?? 0) > 0 && (
+                          <span className="flex items-center gap-0.5 text-[10px] font-bold text-slate-500">
+                            <i className="fas fa-star text-amber-400 text-[9px]"></i>
+                            {v.rating!.toFixed(1)}{v.reviewCount ? ` (${v.reviewCount})` : ""}
+                          </span>
+                        )}
+                        {v.km != null && (
+                          <span className="text-[9px] text-slate-400">~{Math.round(v.km)} km</span>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-600 flex-shrink-0">View →</span>
+                  </Link>
+                ))}
+                {vendors.length > 3 && (
+                  <Link href={`/directory?search=${encodeURIComponent(site.location || site.state || "")}`}
+                    className="block text-center text-[10px] font-bold text-emerald-600 py-1">
+                    +{vendors.length - 3} more vendors →
+                  </Link>
+                )}
+              </div>
+            </div>
+          ) : (
+            <Link href={`/directory?search=${encodeURIComponent(site.state || site.location || site.name)}`}
+              className="block w-full bg-emerald-600 text-white py-4 rounded-2xl text-[10px] font-black uppercase text-center hover:bg-emerald-700 transition-colors shadow-lg">
+              <i className="fas fa-campground mr-2"></i>Rent Camping Gear Nearby
+            </Link>
+          )}
 
           {/* Share */}
           <button onClick={() => {
@@ -293,7 +339,7 @@ export default function CampsitesPage() {
   const [selected, setSelected] = useState<Campsite | null>(null);
   const [error, setError] = useState(false);
   const [savedIds, setSavedIds] = useState<string[]>([]);
-  const [vendorCounts, setVendorCounts] = useState<Record<string, number>>({});
+  const [allVendors, setAllVendors] = useState<Vendor[]>([]);
   const [showSavedOnly, setShowSavedOnly] = useState(false);
 
   // Load saved spots from localStorage
@@ -332,39 +378,72 @@ export default function CampsitesPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Fetch vendor counts per state/location
+  // Fetch full vendor docs for matching
   useEffect(() => {
-    async function fetchVendorCounts() {
-      try {
-        const snap = await getDocs(query(collection(db, "vendors"), where("status", "==", "approved")));
-        const counts: Record<string, number> = {};
-        snap.docs.forEach(d => {
-          const city = (d.data().city || "").toLowerCase();
-          const areas = (d.data().areas || []) as string[];
-          // Count by city and areas
-          if (city) counts[city] = (counts[city] || 0) + 1;
-          areas.forEach(a => {
-            const key = a.toLowerCase().trim();
-            if (key) counts[key] = (counts[key] || 0) + 1;
-          });
-        });
-        setVendorCounts(counts);
-      } catch { /* ignore */ }
-    }
-    fetchVendorCounts();
+    getDocs(query(collection(db, "vendors"), where("status", "==", "approved")))
+      .then(snap => setAllVendors(snap.docs.map(d => ({ id: d.id, ...d.data() } as Vendor))))
+      .catch(() => {});
   }, []);
 
-  function getVendorCount(site: Campsite): number {
+  function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function extractCoords(url: string): { lat: number; lng: number } | null {
+    if (!url) return null;
+    const q = url.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (q) return { lat: +q[1], lng: +q[2] };
+    const at = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (at) return { lat: +at[1], lng: +at[2] };
+    const ll = url.match(/ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (ll) return { lat: +ll[1], lng: +ll[2] };
+    return null;
+  }
+
+  function getMatchingVendors(site: Campsite): (Vendor & { km?: number })[] {
+    // Exclude vendors in vacation mode
+    const activeVendors = allVendors.filter(v => !v.is_vacation);
+
+    // Resolve campsite coordinates: stored fields first, then parse from direction URL
+    const siteCoords = (site.lat != null && site.lng != null)
+      ? { lat: site.lat, lng: site.lng }
+      : extractCoords(site.direction || "");
+
+    if (siteCoords) {
+      // Primary: vendors with pinned location within 50 km
+      const coordMatches = activeVendors
+        .filter(v => v.locationLat != null && v.locationLng != null)
+        .map(v => ({ ...v, km: haversineKm(siteCoords.lat, siteCoords.lng, v.locationLat!, v.locationLng!) }))
+        .filter(v => v.km <= 50)
+        .sort((a, b) => a.km - b.km);
+
+      // Fallback: vendors without a pinned location but with text-matching city/area
+      const coordMatchIds = new Set(coordMatches.map(v => v.id));
+      const loc = (site.location || "").toLowerCase();
+      const state = (site.state || "").toLowerCase();
+      const textMatches = activeVendors
+        .filter(v => !coordMatchIds.has(v.id) && v.locationLat == null)
+        .filter(v => {
+          const keys = [(v.city || "").toLowerCase(), ...(v.areas || []).map(a => a.toLowerCase().trim())].filter(Boolean);
+          return keys.some(k => loc.includes(k) || k.includes(loc) || state.includes(k) || k.includes(state));
+        });
+
+      return [...coordMatches, ...textMatches];
+    }
+
+    // No campsite coordinates at all — text match only
     const loc = (site.location || "").toLowerCase();
     const state = (site.state || "").toLowerCase();
-    const name = (site.name || "").toLowerCase();
-    let count = 0;
-    for (const [key, val] of Object.entries(vendorCounts)) {
-      if (loc.includes(key) || key.includes(loc) || state.includes(key) || key.includes(state) || name.includes(key)) {
-        count += val;
-      }
-    }
-    return count;
+    return activeVendors.filter(v => {
+      const keys = [(v.city || "").toLowerCase(), ...(v.areas || []).map(a => a.toLowerCase().trim())].filter(Boolean);
+      return keys.some(k => loc.includes(k) || k.includes(loc) || state.includes(k) || k.includes(state));
+    });
+  }
+
+  function getVendorCount(site: Campsite): number {
+    return getMatchingVendors(site).length;
   }
 
   // Filter logic
@@ -372,7 +451,10 @@ export default function CampsitesPage() {
     let result = allCampsites;
     if (showSavedOnly) result = result.filter(c => savedIds.includes(c.id));
     if (activeCategory !== "all") result = result.filter(c => c.category === activeCategory);
-    if (activeState !== "All States") result = result.filter(c => c.state === activeState);
+    if (activeState !== "All States") result = result.filter(c =>
+      c.state === activeState ||
+      c.location?.toLowerCase().includes(activeState.toLowerCase())
+    );
     if (search.trim()) result = result.filter(c =>
       c.name?.toLowerCase().includes(search.toLowerCase()) ||
       c.location?.toLowerCase().includes(search.toLowerCase()) ||
@@ -387,11 +469,18 @@ export default function CampsitesPage() {
     if (c.category) counts[c.category] = (counts[c.category] || 0) + 1;
   });
 
-  // State counts
-  const stateCounts: Record<string, number> = {};
+  // Derive available states from actual campsite data (state field OR location address)
+  const availableStates: string[] = ["All States"];
+  const stateCountMap: Record<string, number> = {};
   allCampsites.forEach(c => {
-    if (c.state) stateCounts[c.state] = (stateCounts[c.state] || 0) + 1;
+    // Prefer explicit state field; fall back to matching state name in location address
+    const matched = c.state || STATES.slice(1).find(s =>
+      c.location?.toLowerCase().includes(s.toLowerCase())
+    );
+    if (matched) stateCountMap[matched] = (stateCountMap[matched] || 0) + 1;
   });
+  // Keep original STATES order, only include states with at least 1 campsite
+  STATES.slice(1).forEach(s => { if (stateCountMap[s]) availableStates.push(s); });
 
   return (
     <div className="pb-28 min-h-screen" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f8fafc" }}>
@@ -462,8 +551,8 @@ export default function CampsitesPage() {
         <div className="flex gap-2 items-center justify-center">
           <select value={activeState} onChange={e => setActiveState(e.target.value)}
             className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold text-slate-600 outline-none focus:border-emerald-400 appearance-none">
-            {STATES.map(s => (
-              <option key={s} value={s}>{s}{stateCounts[s] ? ` (${stateCounts[s]})` : ""}</option>
+            {availableStates.map(s => (
+              <option key={s} value={s}>{s}{stateCountMap[s] ? ` (${stateCountMap[s]})` : ""}</option>
             ))}
           </select>
           {savedIds.length > 0 && (
@@ -524,7 +613,7 @@ export default function CampsitesPage() {
       
 
       {/* Detail Sheet */}
-      {selected && <DetailSheet site={selected} onClose={() => setSelected(null)} />}
+      {selected && <DetailSheet site={selected} onClose={() => setSelected(null)} vendors={getMatchingVendors(selected)} />}
 
       {/* Suggest a Campsite */}
       {!loading && !error && (
