@@ -93,7 +93,8 @@ type VendorData = {
   nearbyCampsites?: { id: string; km: number }[];
 };
 
-type FoodPartner = { id: string; name: string; description?: string; images: string[]; whatsapp: string };
+type FoodItem = { image: string; menuName: string };
+type FoodPartner = { id: string; name: string; description?: string; items: FoodItem[]; whatsapp: string };
 
 type GearVariant = {
   id: string;
@@ -2112,29 +2113,44 @@ function ShopPageContent({
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 mt-4">
-            {foodPartners.slice(0, 4).map(fp => (
-              <div key={fp.id} className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
-                <div className="relative h-28">
-                  {fp.images?.[0]
-                    ? <img src={fp.images[0]} alt={fp.name} className="w-full h-full object-cover" />
-                    : <div className="w-full h-full bg-gradient-to-br from-orange-50 to-amber-100 flex items-center justify-center text-3xl">🍱</div>
-                  }
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+            {foodPartners.slice(0, 4).map(fp => {
+              const firstItem = fp.items?.[0];
+              return (
+                <div key={fp.id} className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+                  {/* Image with menu name overlay */}
+                  <div className="relative h-28">
+                    {firstItem?.image
+                      ? <img src={firstItem.image} alt={firstItem.menuName || fp.name} className="w-full h-full object-cover" />
+                      : <div className="w-full h-full bg-gradient-to-br from-orange-50 to-amber-100 flex items-center justify-center text-3xl">🍱</div>
+                    }
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+                    {firstItem?.menuName && (
+                      <p className="absolute bottom-2 left-2 right-2 text-[9px] font-black text-white uppercase leading-tight truncate drop-shadow">
+                        {firstItem.menuName}
+                      </p>
+                    )}
+                    {(fp.items?.length ?? 0) > 1 && (
+                      <span className="absolute top-2 right-2 bg-black/50 backdrop-blur-sm text-white text-[8px] font-black px-1.5 py-0.5 rounded-full">
+                        +{fp.items.length - 1} more
+                      </span>
+                    )}
+                  </div>
+                  {/* Info + pre-order */}
+                  <div className="p-2.5">
+                    <p className="text-[10px] font-black text-[#062c24] truncate uppercase leading-tight">{fp.name}</p>
+                    {fp.description && (
+                      <p className="text-[9px] text-slate-400 truncate mt-0.5">{fp.description}</p>
+                    )}
+                    <a href={`https://wa.me/${fp.whatsapp}?text=${encodeURIComponent(`Hi! I'm a customer from ${vendorData?.name || "a camping gear shop"} on Pacak Khemah. I'd like to pre-order food delivery to my campsite. Can you assist?`)}`}
+                      target="_blank" rel="noreferrer"
+                      onClick={e => e.stopPropagation()}
+                      className="mt-2 w-full flex items-center justify-center gap-1.5 bg-orange-500 text-white py-1.5 rounded-lg text-[9px] font-black uppercase hover:bg-orange-600 transition-colors shadow-sm">
+                      <i className="fab fa-whatsapp text-[11px]"></i> Pre-order
+                    </a>
+                  </div>
                 </div>
-                <div className="p-2.5">
-                  <p className="text-[10px] font-black text-[#062c24] truncate uppercase leading-tight">{fp.name}</p>
-                  {fp.description && (
-                    <p className="text-[9px] text-slate-400 truncate mt-0.5">{fp.description}</p>
-                  )}
-                  <a href={`https://wa.me/${fp.whatsapp}?text=${encodeURIComponent(`Hi! I'm a customer from ${vendorData?.name || "a camping gear shop"} on Pacak Khemah. I'd like to pre-order food delivery to my campsite. Can you assist?`)}`}
-                    target="_blank" rel="noreferrer"
-                    onClick={e => e.stopPropagation()}
-                    className="mt-2 w-full flex items-center justify-center gap-1.5 bg-orange-500 text-white py-1.5 rounded-lg text-[9px] font-black uppercase hover:bg-orange-600 transition-colors shadow-sm">
-                    <i className="fab fa-whatsapp text-[11px]"></i> Pre-order
-                  </a>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
