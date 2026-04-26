@@ -2047,14 +2047,18 @@ function ShopPageContent({
 
       {/* Nearby Campsites */}
       {nearbyCampsites.length > 0 && (
-        <section className="max-w-4xl mx-auto px-5 pb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-5 h-5 bg-emerald-100 rounded-md flex items-center justify-center">
-              <i className="fas fa-campground text-emerald-600 text-[9px]"></i>
+        <section className="max-w-4xl mx-auto px-5 pt-8 pb-6">
+          {/* Section divider header */}
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-8 h-8 bg-emerald-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <i className="fas fa-campground text-emerald-600 text-sm"></i>
             </div>
-            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Nearby Campsites</p>
+            <div>
+              <p className="text-sm font-black text-[#062c24] uppercase tracking-tight leading-tight">Nearby Campsites</p>
+              <p className="text-[9px] text-slate-400 font-medium">Community suggestions · not bookable through this vendor</p>
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 mt-4">
             {nearbyCampsites.slice(0, 4).map(cs => (
               <div key={cs.id} className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
                 {/* Image */}
