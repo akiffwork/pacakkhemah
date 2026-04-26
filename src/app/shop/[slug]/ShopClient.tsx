@@ -93,6 +93,8 @@ type VendorData = {
   nearbyCampsites?: { id: string; km: number }[];
 };
 
+type FoodPartner = { id: string; name: string; description?: string; images: string[]; whatsapp: string };
+
 type GearVariant = {
   id: string;
   color?: { label: string; hex: string };
@@ -218,6 +220,7 @@ function ShopPageContent({
   const [itemShareToast, setItemShareToast] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [nearbyCampsites, setNearbyCampsites] = useState<{ id: string; name: string; location?: string; state?: string; direction?: string; carousel?: string[]; km?: number }[]>([]);
+  const [foodPartners, setFoodPartners] = useState<FoodPartner[]>([]);
   const [mainTab, setMainTab] = useState<"gear" | "updates" | "reviews">("gear");
   
   // ═══ NEW: Fulfillment state ═══
@@ -336,6 +339,10 @@ function ShopPageContent({
           } as { id: string; name: string; location?: string; state?: string; direction?: string; carousel?: string[]; km?: number }))
         );
       }
+
+      // Load food partners
+      const fpSnap = await getDocs(collection(db, "vendors", vendorId, "foodPartners"));
+      setFoodPartners(fpSnap.docs.filter(s => !s.data().deleted).map(s => ({ id: s.id, ...s.data() } as FoodPartner)));
 
       // Set default zone if zones exist
       if (vData.services?.delivery?.zones?.length) {
@@ -2084,6 +2091,46 @@ function ShopPageContent({
                     onClick={e => e.stopPropagation()}
                     className="flex-shrink-0 w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center hover:bg-emerald-600 transition-colors shadow-sm">
                     <i className="fas fa-location-arrow text-white text-[9px]"></i>
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Food Delivery */}
+      {foodPartners.length > 0 && (
+        <section className="max-w-4xl mx-auto px-5 pt-8 pb-6">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-8 h-8 bg-orange-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <i className="fas fa-utensils text-orange-500 text-sm"></i>
+            </div>
+            <div>
+              <p className="text-sm font-black text-[#062c24] uppercase tracking-tight leading-tight">Food Delivery</p>
+              <p className="text-[9px] text-slate-400 font-medium">Independent vendors · orders placed directly, not involving this shop</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 mt-4">
+            {foodPartners.slice(0, 4).map(fp => (
+              <div key={fp.id} className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+                <div className="relative h-28">
+                  {fp.images?.[0]
+                    ? <img src={fp.images[0]} alt={fp.name} className="w-full h-full object-cover" />
+                    : <div className="w-full h-full bg-gradient-to-br from-orange-50 to-amber-100 flex items-center justify-center text-3xl">🍱</div>
+                  }
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                </div>
+                <div className="p-2.5">
+                  <p className="text-[10px] font-black text-[#062c24] truncate uppercase leading-tight">{fp.name}</p>
+                  {fp.description && (
+                    <p className="text-[9px] text-slate-400 truncate mt-0.5">{fp.description}</p>
+                  )}
+                  <a href={`https://wa.me/${fp.whatsapp}?text=${encodeURIComponent(`Hi! I'm a customer from ${vendorData?.name || "a camping gear shop"} on Pacak Khemah. I'd like to pre-order food delivery to my campsite. Can you assist?`)}`}
+                    target="_blank" rel="noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="mt-2 w-full flex items-center justify-center gap-1.5 bg-orange-500 text-white py-1.5 rounded-lg text-[9px] font-black uppercase hover:bg-orange-600 transition-colors shadow-sm">
+                    <i className="fab fa-whatsapp text-[11px]"></i> Pre-order
                   </a>
                 </div>
               </div>
