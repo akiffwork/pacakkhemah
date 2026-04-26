@@ -28,6 +28,7 @@ type Vendor = {
   city?: string; areas?: string[]; slug?: string;
   rating?: number; reviewCount?: number;
   locationLat?: number; locationLng?: number;
+  is_vacation?: boolean;
 };
 
 const CATEGORIES = [
@@ -390,19 +391,55 @@ export default function CampsitesPage() {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
+  function extractCoords(url: string): { lat: number; lng: number } | null {
+    if (!url) return null;
+    const q = url.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (q) return { lat: +q[1], lng: +q[2] };
+    const at = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (at) return { lat: +at[1], lng: +at[2] };
+    const ll = url.match(/ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (ll) return { lat: +ll[1], lng: +ll[2] };
+    return null;
+  }
+
   function getMatchingVendors(site: Campsite): (Vendor & { km?: number })[] {
+    // Exclude vendors in vacation mode
+    const activeVendors = allVendors.filter(v => !v.is_vacation);
+
+    // Resolve campsite coordinates: stored fields first, then parse from direction URL
+    const siteCoords = (site.lat != null && site.lng != null)
+      ? { lat: site.lat, lng: site.lng }
+      : extractCoords(site.direction || "");
+
+    if (siteCoords) {
+      // Primary: vendors with pinned location within 50 km
+      const coordMatches = activeVendors
+        .filter(v => v.locationLat != null && v.locationLng != null)
+        .map(v => ({ ...v, km: haversineKm(siteCoords.lat, siteCoords.lng, v.locationLat!, v.locationLng!) }))
+        .filter(v => v.km <= 50)
+        .sort((a, b) => a.km - b.km);
+
+      // Fallback: vendors without a pinned location but with text-matching city/area
+      const coordMatchIds = new Set(coordMatches.map(v => v.id));
+      const loc = (site.location || "").toLowerCase();
+      const state = (site.state || "").toLowerCase();
+      const textMatches = activeVendors
+        .filter(v => !coordMatchIds.has(v.id) && v.locationLat == null)
+        .filter(v => {
+          const keys = [(v.city || "").toLowerCase(), ...(v.areas || []).map(a => a.toLowerCase().trim())].filter(Boolean);
+          return keys.some(k => loc.includes(k) || k.includes(loc) || state.includes(k) || k.includes(state));
+        });
+
+      return [...coordMatches, ...textMatches];
+    }
+
+    // No campsite coordinates at all — text match only
     const loc = (site.location || "").toLowerCase();
     const state = (site.state || "").toLowerCase();
-    const candidates = allVendors.filter(v => {
+    return activeVendors.filter(v => {
       const keys = [(v.city || "").toLowerCase(), ...(v.areas || []).map(a => a.toLowerCase().trim())].filter(Boolean);
       return keys.some(k => loc.includes(k) || k.includes(loc) || state.includes(k) || k.includes(state));
     });
-    if (site.lat != null && site.lng != null) {
-      return candidates
-        .map(v => ({ ...v, km: v.locationLat != null ? haversineKm(site.lat!, site.lng!, v.locationLat, v.locationLng!) : undefined }))
-        .sort((a, b) => (a.km ?? 999) - (b.km ?? 999));
-    }
-    return candidates;
   }
 
   function getVendorCount(site: Campsite): number {

@@ -90,6 +90,7 @@ type VendorData = {
   avg_response_time?: number; // in minutes
   total_orders?: number;
   nearbyCampsiteIds?: string[];
+  nearbyCampsites?: { id: string; km: number }[];
 };
 
 type GearVariant = {
@@ -216,7 +217,7 @@ function ShopPageContent({
   const [addToast, setAddToast] = useState<string | null>(null);
   const [itemShareToast, setItemShareToast] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
-  const [nearbyCampsites, setNearbyCampsites] = useState<{ id: string; name: string; location?: string; state?: string; direction?: string; carousel?: string[] }[]>([]);
+  const [nearbyCampsites, setNearbyCampsites] = useState<{ id: string; name: string; location?: string; state?: string; direction?: string; carousel?: string[]; km?: number }[]>([]);
   const [mainTab, setMainTab] = useState<"gear" | "updates" | "reviews">("gear");
   
   // ═══ NEW: Fulfillment state ═══
@@ -324,13 +325,15 @@ function ShopPageContent({
 
       setSelectedHub((vData.pickup?.[0] || vData.city) ?? "");
 
-      // Load nearby campsites if vendor has pre-computed IDs
-      if (vData.nearbyCampsiteIds?.length) {
-        const csSnaps = await Promise.all(
-          vData.nearbyCampsiteIds.map(id => getDoc(doc(db, "campsites", id)))
-        );
+      // Load nearby campsites — prefer {id, km} list, fallback to ids-only list
+      const campsiteRefs = vData.nearbyCampsites ?? vData.nearbyCampsiteIds?.map(id => ({ id, km: undefined }));
+      if (campsiteRefs?.length) {
+        const csSnaps = await Promise.all(campsiteRefs.map(c => getDoc(doc(db, "campsites", c.id))));
         setNearbyCampsites(
-          csSnaps.filter(s => s.exists()).map(s => ({ id: s.id, ...s.data() } as { id: string; name: string; location?: string; state?: string; direction?: string; carousel?: string[] }))
+          csSnaps.filter(s => s.exists()).map((s, i) => ({
+            id: s.id, ...s.data(),
+            km: campsiteRefs[i]?.km,
+          } as { id: string; name: string; location?: string; state?: string; direction?: string; carousel?: string[]; km?: number }))
         );
       }
 
@@ -2045,23 +2048,41 @@ function ShopPageContent({
       {/* Nearby Campsites */}
       {nearbyCampsites.length > 0 && (
         <section className="max-w-4xl mx-auto px-5 pb-6">
-          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">
-            <i className="fas fa-campground text-emerald-500 mr-1.5"></i>Nearby Campsites
-          </p>
-          <div className="space-y-2">
-            {nearbyCampsites.map(cs => (
-              <a key={cs.id} href={cs.direction || "#"} target="_blank" rel="noreferrer"
-                className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl hover:border-emerald-300 transition-colors">
-                {cs.carousel?.[0]
-                  ? <img src={cs.carousel[0]} alt={cs.name} className="w-12 h-12 rounded-xl object-cover flex-shrink-0 bg-slate-100" />
-                  : <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0 text-lg">🏕️</div>
-                }
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-bold text-[#062c24] truncate">{cs.name}</p>
-                  <p className="text-[10px] text-slate-400 truncate">{cs.location || cs.state}</p>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-5 h-5 bg-emerald-100 rounded-md flex items-center justify-center">
+              <i className="fas fa-campground text-emerald-600 text-[9px]"></i>
+            </div>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Nearby Campsites</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {nearbyCampsites.slice(0, 4).map(cs => (
+              <div key={cs.id} className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+                {/* Image */}
+                <div className="relative h-28">
+                  {cs.carousel?.[0]
+                    ? <img src={cs.carousel[0]} alt={cs.name} className="w-full h-full object-cover" />
+                    : <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center text-3xl">🏕️</div>
+                  }
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                  {cs.km != null && (
+                    <span className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm text-white px-1.5 py-0.5 rounded-full text-[8px] font-black">
+                      ~{cs.km} km
+                    </span>
+                  )}
                 </div>
-                <span className="text-[10px] font-bold text-emerald-600 flex-shrink-0">Directions →</span>
-              </a>
+                {/* Info + action */}
+                <div className="p-2.5 flex items-center justify-between gap-1.5">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black text-[#062c24] truncate uppercase leading-tight">{cs.name}</p>
+                    <p className="text-[9px] text-slate-400 truncate">{cs.location || cs.state}</p>
+                  </div>
+                  <a href={cs.direction || "#"} target="_blank" rel="noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="flex-shrink-0 w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center hover:bg-emerald-600 transition-colors shadow-sm">
+                    <i className="fas fa-location-arrow text-white text-[9px]"></i>
+                  </a>
+                </div>
+              </div>
             ))}
           </div>
         </section>
