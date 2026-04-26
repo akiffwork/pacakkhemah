@@ -2054,27 +2054,35 @@ function ShopPageContent({
             </div>
             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Nearby Campsites</p>
           </div>
-          <div className="space-y-2">
-            {nearbyCampsites.map(cs => (
-              <a key={cs.id} href={cs.direction || "#"} target="_blank" rel="noreferrer"
-                className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md hover:border-emerald-200 transition-all group">
-                {cs.carousel?.[0]
-                  ? <img src={cs.carousel[0]} alt={cs.name} className="w-14 h-14 rounded-xl object-cover flex-shrink-0 bg-slate-100" />
-                  : <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center flex-shrink-0 text-xl">🏕️</div>
-                }
-                <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-black text-[#062c24] truncate uppercase leading-tight">{cs.name}</p>
-                  <p className="text-[10px] text-slate-400 truncate mt-0.5">{cs.location || cs.state}</p>
+          <div className="grid grid-cols-2 gap-2">
+            {nearbyCampsites.slice(0, 4).map(cs => (
+              <div key={cs.id} className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+                {/* Image */}
+                <div className="relative h-28">
+                  {cs.carousel?.[0]
+                    ? <img src={cs.carousel[0]} alt={cs.name} className="w-full h-full object-cover" />
+                    : <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center text-3xl">🏕️</div>
+                  }
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
                   {cs.km != null && (
-                    <span className="inline-flex items-center gap-1 mt-1 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full text-[8px] font-black uppercase border border-emerald-100">
-                      <i className="fas fa-location-dot text-[7px]"></i>~{cs.km} km away
+                    <span className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm text-white px-1.5 py-0.5 rounded-full text-[8px] font-black">
+                      ~{cs.km} km
                     </span>
                   )}
                 </div>
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center group-hover:bg-emerald-50 group-hover:border-emerald-200 transition-colors">
-                  <i className="fas fa-location-arrow text-[10px] text-slate-400 group-hover:text-emerald-600 transition-colors"></i>
+                {/* Info + action */}
+                <div className="p-2.5 flex items-center justify-between gap-1.5">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black text-[#062c24] truncate uppercase leading-tight">{cs.name}</p>
+                    <p className="text-[9px] text-slate-400 truncate">{cs.location || cs.state}</p>
+                  </div>
+                  <a href={cs.direction || "#"} target="_blank" rel="noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="flex-shrink-0 w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center hover:bg-emerald-600 transition-colors shadow-sm">
+                    <i className="fas fa-location-arrow text-white text-[9px]"></i>
+                  </a>
                 </div>
-              </a>
+              </div>
             ))}
           </div>
         </section>
