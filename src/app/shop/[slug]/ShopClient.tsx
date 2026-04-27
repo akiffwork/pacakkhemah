@@ -93,7 +93,7 @@ type VendorData = {
   nearbyCampsites?: { id: string; km: number }[];
 };
 
-type FoodItem = { image: string; menuName: string };
+type FoodItem = { image: string; menuName: string; price?: number };
 type FoodPartner = { id: string; name: string; description?: string; items: FoodItem[]; whatsapp: string };
 
 type GearVariant = {
@@ -2259,8 +2259,11 @@ function ShopPageContent({
                           ? <img src={item.image} alt={item.menuName} className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
                           : <div className="w-9 h-9 rounded-lg bg-orange-50 flex items-center justify-center text-lg flex-shrink-0">🍱</div>
                         }
-                        <p className="text-[11px] font-bold text-[#062c24] truncate">{item.menuName || `Item ${i + 1}`}</p>
-                        {i === fpCarouselIdx && <i className="fas fa-eye text-[9px] text-orange-400 ml-auto flex-shrink-0"></i>}
+                        <p className="text-[11px] font-bold text-[#062c24] truncate flex-1">{item.menuName || `Item ${i + 1}`}</p>
+                        {item.price != null && (
+                          <p className="text-[11px] font-black text-orange-500 flex-shrink-0">RM {item.price % 1 === 0 ? item.price.toFixed(0) : item.price.toFixed(2)}</p>
+                        )}
+                        {i === fpCarouselIdx && <i className="fas fa-eye text-[9px] text-orange-400 flex-shrink-0"></i>}
                       </div>
                     ))}
                   </div>

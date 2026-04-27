@@ -9,7 +9,7 @@ const MAX_ITEMS = 5;
 const MAX_FILE_MB = 5;
 const MAX_FILE_SIZE = MAX_FILE_MB * 1024 * 1024;
 
-type FoodItem = { image: string; menuName: string };
+type FoodItem = { image: string; menuName: string; price?: number };
 
 type FoodPartner = {
   id: string;
@@ -20,7 +20,7 @@ type FoodPartner = {
   deleted?: boolean;
 };
 
-type PendingItem = { file: File; preview: string; menuName: string };
+type PendingItem = { file: File; preview: string; menuName: string; price?: number };
 
 const inputCls = "w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 focus:bg-white transition-all";
 
@@ -103,8 +103,18 @@ export default function FoodPartnersTab({ vendorId }: { vendorId: string }) {
     setPendingItems(prev => prev.map((p, i) => i === idx ? { ...p, menuName: name } : p));
   }
 
+  function updatePendingPrice(idx: number, val: string) {
+    const n = val === "" ? undefined : parseFloat(val);
+    setPendingItems(prev => prev.map((p, i) => i === idx ? { ...p, price: n } : p));
+  }
+
   function updateExistingName(idx: number, name: string) {
     setExistingItems(prev => prev.map((p, i) => i === idx ? { ...p, menuName: name } : p));
+  }
+
+  function updateExistingPrice(idx: number, val: string) {
+    const n = val === "" ? undefined : parseFloat(val);
+    setExistingItems(prev => prev.map((p, i) => i === idx ? { ...p, price: n } : p));
   }
 
   async function save() {
@@ -121,7 +131,7 @@ export default function FoodPartnersTab({ vendorId }: { vendorId: string }) {
           p.file
         );
         const url = await getDownloadURL(snap.ref);
-        uploadedItems.push({ image: url, menuName: p.menuName.trim() });
+        uploadedItems.push({ image: url, menuName: p.menuName.trim(), ...(p.price != null ? { price: p.price } : {}) });
       }
       const allItems = [...existingItems, ...uploadedItems];
       const payload = {
@@ -260,8 +270,16 @@ export default function FoodPartnersTab({ vendorId }: { vendorId: string }) {
                   {existingItems.map((item, i) => (
                     <div key={i} className="flex gap-2 items-center bg-slate-50 rounded-xl p-2">
                       <img src={item.image} alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
-                      <input value={item.menuName} onChange={e => updateExistingName(i, e.target.value)}
-                        placeholder="Menu name (e.g. Nasi Lemak)" className="flex-1 bg-white border border-slate-200 px-2.5 py-2 rounded-lg text-[11px] font-semibold outline-none focus:border-emerald-400" />
+                      <div className="flex-1 flex flex-col gap-1 min-w-0">
+                        <input value={item.menuName} onChange={e => updateExistingName(i, e.target.value)}
+                          placeholder="Menu name (e.g. Nasi Lemak)" className="w-full bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold outline-none focus:border-emerald-400" />
+                        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">
+                          <span className="text-[10px] font-bold text-slate-400">RM</span>
+                          <input type="number" min="0" step="0.50"
+                            value={item.price ?? ""} onChange={e => updateExistingPrice(i, e.target.value)}
+                            placeholder="Price (optional)" className="flex-1 text-[11px] font-semibold outline-none w-full" />
+                        </div>
+                      </div>
                       <button onClick={() => removeExisting(i)}
                         className="w-7 h-7 bg-white border border-slate-200 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-200 transition-colors flex-shrink-0">
                         <i className="fas fa-times text-[9px]"></i>
@@ -271,8 +289,16 @@ export default function FoodPartnersTab({ vendorId }: { vendorId: string }) {
                   {pendingItems.map((item, i) => (
                     <div key={i} className="flex gap-2 items-center bg-emerald-50 rounded-xl p-2 border border-emerald-100">
                       <img src={item.preview} alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
-                      <input value={item.menuName} onChange={e => updatePendingName(i, e.target.value)}
-                        placeholder="Menu name (e.g. Mee Goreng)" className="flex-1 bg-white border border-slate-200 px-2.5 py-2 rounded-lg text-[11px] font-semibold outline-none focus:border-emerald-400" />
+                      <div className="flex-1 flex flex-col gap-1 min-w-0">
+                        <input value={item.menuName} onChange={e => updatePendingName(i, e.target.value)}
+                          placeholder="Menu name (e.g. Mee Goreng)" className="w-full bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold outline-none focus:border-emerald-400" />
+                        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">
+                          <span className="text-[10px] font-bold text-slate-400">RM</span>
+                          <input type="number" min="0" step="0.50"
+                            value={item.price ?? ""} onChange={e => updatePendingPrice(i, e.target.value)}
+                            placeholder="Price (optional)" className="flex-1 text-[11px] font-semibold outline-none w-full" />
+                        </div>
+                      </div>
                       <button onClick={() => removePending(i)}
                         className="w-7 h-7 bg-white border border-slate-200 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-200 transition-colors flex-shrink-0">
                         <i className="fas fa-times text-[9px]"></i>
