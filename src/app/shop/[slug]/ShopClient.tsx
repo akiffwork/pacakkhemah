@@ -2102,7 +2102,7 @@ function ShopPageContent({
         </section>
       )}
 
-      {/* Food Delivery */}
+      {/* Food Partner */}
       {foodPartners.length > 0 && (
         <section className="max-w-4xl mx-auto px-5 pt-8 pb-6">
           <div className="flex items-center gap-3 mb-1">
@@ -2110,8 +2110,8 @@ function ShopPageContent({
               <i className="fas fa-utensils text-orange-500 text-sm"></i>
             </div>
             <div>
-              <p className="text-sm font-black text-[#062c24] uppercase tracking-tight leading-tight">Food Delivery</p>
-              <p className="text-[9px] text-slate-400 font-medium">Independent vendors · orders placed directly, not involving this shop</p>
+              <p className="text-sm font-black text-[#062c24] uppercase tracking-tight leading-tight">Food Partner</p>
+              <p className="text-[9px] text-slate-400 font-medium">All transactions, availability &amp; delivery charges are handled directly by each vendor — confirm via their WhatsApp</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 mt-4">
@@ -2269,7 +2269,7 @@ function ShopPageContent({
                   </div>
                 </div>
               )}
-              <p className="text-[9px] text-slate-400 mb-4">Independent food vendor · orders placed directly via WhatsApp, not involving this shop</p>
+              <p className="text-[9px] text-slate-400 mb-4">All transactions, availability &amp; delivery charges are handled directly by this vendor. Please confirm everything via their WhatsApp before ordering.</p>
             </div>
             {/* Pre-order CTA */}
             <div className="px-5 pb-6 pt-3 bg-white border-t border-slate-100 flex-shrink-0">
