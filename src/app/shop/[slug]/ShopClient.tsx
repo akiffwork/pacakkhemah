@@ -2111,7 +2111,7 @@ function ShopPageContent({
             </div>
             <div>
               <p className="text-sm font-black text-[#062c24] uppercase tracking-tight leading-tight">Food Partner</p>
-              <p className="text-[9px] text-slate-400 font-medium">All transactions, availability &amp; delivery charges are handled directly by each vendor — confirm via their WhatsApp</p>
+              <p className="text-[9px] text-slate-400 font-medium">All transactions, availability &amp; delivery charges are handled directly by each food partner — confirm via their WhatsApp</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 mt-4">
@@ -2269,7 +2269,7 @@ function ShopPageContent({
                   </div>
                 </div>
               )}
-              <p className="text-[9px] text-slate-400 mb-4">All transactions, availability &amp; delivery charges are handled directly by this vendor. Please confirm everything via their WhatsApp before ordering.</p>
+              <p className="text-[9px] text-slate-400 mb-4">All transactions, availability &amp; delivery charges are handled directly by this food partner. Please confirm everything via their WhatsApp before ordering.</p>
             </div>
             {/* Pre-order CTA */}
             <div className="px-5 pb-6 pt-3 bg-white border-t border-slate-100 flex-shrink-0">
