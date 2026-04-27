@@ -222,6 +222,8 @@ function ShopPageContent({
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [nearbyCampsites, setNearbyCampsites] = useState<{ id: string; name: string; location?: string; state?: string; direction?: string; carousel?: string[]; km?: number }[]>([]);
   const [foodPartners, setFoodPartners] = useState<FoodPartner[]>([]);
+  const [selectedFoodPartner, setSelectedFoodPartner] = useState<FoodPartner | null>(null);
+  const [fpCarouselIdx, setFpCarouselIdx] = useState(0);
   const [mainTab, setMainTab] = useState<"gear" | "updates" | "reviews">("gear");
   
   // ═══ NEW: Fulfillment state ═══
@@ -2116,7 +2118,8 @@ function ShopPageContent({
             {foodPartners.slice(0, 4).map(fp => {
               const firstItem = fp.items?.[0];
               return (
-                <div key={fp.id} className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+                <div key={fp.id} className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm cursor-pointer active:scale-95 transition-transform"
+                  onClick={() => { setSelectedFoodPartner(fp); setFpCarouselIdx(0); }}>
                   {/* Image with menu name overlay */}
                   <div className="relative h-28">
                     {firstItem?.image
@@ -2167,6 +2170,115 @@ function ShopPageContent({
         </div>
         <p className="text-[8px] font-bold text-slate-300 uppercase text-center">© 2026 Pacak Khemah. All Rights Reserved</p>
       </footer>
+
+      {/* Food Partner Detail Modal */}
+      {selectedFoodPartner && (
+        <div className="fixed inset-0 z-[600] flex items-end justify-center" onClick={() => setSelectedFoodPartner(null)}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="relative w-full max-w-lg bg-white rounded-t-3xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col"
+            onClick={e => e.stopPropagation()}>
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+              <div className="w-10 h-1 bg-slate-200 rounded-full" />
+            </div>
+            {/* Carousel */}
+            {(selectedFoodPartner.items?.length ?? 0) > 0 && (
+              <div className="relative flex-shrink-0">
+                <div className="relative h-56 bg-slate-100 overflow-hidden">
+                  {selectedFoodPartner.items[fpCarouselIdx]?.image
+                    ? <img src={selectedFoodPartner.items[fpCarouselIdx].image}
+                        alt={selectedFoodPartner.items[fpCarouselIdx].menuName || selectedFoodPartner.name}
+                        className="w-full h-full object-cover" />
+                    : <div className="w-full h-full bg-gradient-to-br from-orange-50 to-amber-100 flex items-center justify-center text-5xl">🍱</div>
+                  }
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                  {selectedFoodPartner.items[fpCarouselIdx]?.menuName && (
+                    <p className="absolute bottom-3 left-4 right-4 text-[11px] font-black text-white uppercase drop-shadow-lg">
+                      {selectedFoodPartner.items[fpCarouselIdx].menuName}
+                    </p>
+                  )}
+                  {selectedFoodPartner.items.length > 1 && (
+                    <>
+                      <button onClick={() => setFpCarouselIdx(i => (i - 1 + selectedFoodPartner.items.length) % selectedFoodPartner.items.length)}
+                        className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-black/40 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-black/60 transition-colors">
+                        <i className="fas fa-chevron-left text-[10px]"></i>
+                      </button>
+                      <button onClick={() => setFpCarouselIdx(i => (i + 1) % selectedFoodPartner.items.length)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-black/40 backdrop-blur-sm rounded-full flex items-center justify-center text-white hover:bg-black/60 transition-colors">
+                        <i className="fas fa-chevron-right text-[10px]"></i>
+                      </button>
+                      {/* Dot indicators */}
+                      <div className="absolute top-3 right-3 flex gap-1">
+                        {selectedFoodPartner.items.map((_, i) => (
+                          <button key={i} onClick={() => setFpCarouselIdx(i)}
+                            className={`w-1.5 h-1.5 rounded-full transition-all ${i === fpCarouselIdx ? "bg-white w-3" : "bg-white/50"}`} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                {/* Thumbnail strip */}
+                {selectedFoodPartner.items.length > 1 && (
+                  <div className="flex gap-1.5 px-4 py-2.5 overflow-x-auto bg-white border-b border-slate-100">
+                    {selectedFoodPartner.items.map((item, i) => (
+                      <button key={i} onClick={() => setFpCarouselIdx(i)}
+                        className={`flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden border-2 transition-all ${i === fpCarouselIdx ? "border-orange-500" : "border-transparent opacity-60"}`}>
+                        {item.image
+                          ? <img src={item.image} alt={item.menuName} className="w-full h-full object-cover" />
+                          : <div className="w-full h-full bg-orange-50 flex items-center justify-center text-lg">🍱</div>
+                        }
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* Info */}
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-base font-black text-[#062c24] uppercase tracking-tight">{selectedFoodPartner.name}</p>
+                  {selectedFoodPartner.description && (
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{selectedFoodPartner.description}</p>
+                  )}
+                </div>
+                <button onClick={() => setSelectedFoodPartner(null)}
+                  className="flex-shrink-0 w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-200 transition-colors">
+                  <i className="fas fa-times text-sm"></i>
+                </button>
+              </div>
+              {/* Menu list */}
+              {selectedFoodPartner.items.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Menu</p>
+                  <div className="flex flex-col gap-1.5">
+                    {selectedFoodPartner.items.map((item, i) => (
+                      <div key={i} className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border transition-colors cursor-pointer ${i === fpCarouselIdx ? "border-orange-200 bg-orange-50" : "border-slate-100 bg-white"}`}
+                        onClick={() => setFpCarouselIdx(i)}>
+                        {item.image
+                          ? <img src={item.image} alt={item.menuName} className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+                          : <div className="w-9 h-9 rounded-lg bg-orange-50 flex items-center justify-center text-lg flex-shrink-0">🍱</div>
+                        }
+                        <p className="text-[11px] font-bold text-[#062c24] truncate">{item.menuName || `Item ${i + 1}`}</p>
+                        {i === fpCarouselIdx && <i className="fas fa-eye text-[9px] text-orange-400 ml-auto flex-shrink-0"></i>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <p className="text-[9px] text-slate-400 mb-4">Independent food vendor · orders placed directly via WhatsApp, not involving this shop</p>
+            </div>
+            {/* Pre-order CTA */}
+            <div className="px-5 pb-6 pt-3 bg-white border-t border-slate-100 flex-shrink-0">
+              <a href={`https://wa.me/${selectedFoodPartner.whatsapp}?text=${encodeURIComponent(`Hi! I'm a customer from ${vendorData?.name || "a camping gear shop"} on Pacak Khemah. I'd like to pre-order food delivery to my campsite. Can you assist?`)}`}
+                target="_blank" rel="noreferrer"
+                className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-colors shadow-lg shadow-orange-500/30">
+                <i className="fab fa-whatsapp text-base"></i> Pre-order via WhatsApp
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showShareToast && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[500] bg-[#062c24] text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-toastIn">
