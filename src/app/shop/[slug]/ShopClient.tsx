@@ -750,7 +750,18 @@ function ShopPageContent({
     if (d.validUntil && now > new Date(d.validUntil)) return false;
     return true;
   }).sort((a, b) => b.discount_percent - a.discount_percent)[0];
-  if (rule) { const fn = (rule.trigger_nights ?? 0) - 1; const dn = nights - fn; if (dn > 0) autoDisc = dailyTotal * dn * (rule.discount_percent / 100); }
+  if (rule) {
+    const fn = (rule.trigger_nights ?? 0) - 1;
+    const dn = nights - fn;
+    if (dn > 0) {
+      let eligibleDaily = dailyTotal;
+      if (rule.appliesTo?.type === "specific" && rule.appliesTo.itemIds?.length) {
+        const eligibleIds = new Set(rule.appliesTo.itemIds);
+        eligibleDaily = cart.reduce((s, i) => eligibleIds.has(i.id) ? s + i.price * i.qty : s, 0);
+      }
+      autoDisc = eligibleDaily * dn * (rule.discount_percent / 100);
+    }
+  }
   
   // Promo discount
   // Promo discount — respects appliesTo for item-specific codes
