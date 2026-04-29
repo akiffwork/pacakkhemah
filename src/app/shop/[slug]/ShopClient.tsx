@@ -220,6 +220,7 @@ function ShopPageContent({
   const [addToast, setAddToast] = useState<string | null>(null);
   const [itemShareToast, setItemShareToast] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [showCatMenu, setShowCatMenu] = useState(false);
   const [nearbyCampsites, setNearbyCampsites] = useState<{ id: string; name: string; location?: string; state?: string; direction?: string; carousel?: string[]; km?: number }[]>([]);
   const [foodPartners, setFoodPartners] = useState<FoodPartner[]>([]);
   const [selectedFoodPartner, setSelectedFoodPartner] = useState<FoodPartner | null>(null);
@@ -1542,17 +1543,30 @@ function ShopPageContent({
                   className="w-full bg-slate-50 border border-slate-200 pl-9 pr-4 py-3 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500" />
               </div>
               
+              {/* Category dropdown */}
               <div className="relative mb-3">
-                <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none rounded-l-xl" />
-                <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none rounded-r-xl" />
-                <div className="flex gap-2 overflow-x-auto py-2 px-1 scrollbar-hide" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
-                  {categories.map(cat => (
-                    <button key={cat} onClick={() => setActiveCategory(cat)}
-                      className={`flex-shrink-0 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap transition-all ${activeCategory === cat ? "bg-[#062c24] text-white shadow-lg" : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-[#062c24]"}`}>
-                      {cat}
-                    </button>
-                  ))}
-                </div>
+                <button onClick={() => setShowCatMenu(v => !v)}
+                  className="w-full flex items-center justify-between gap-2 bg-[#062c24] text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm">
+                  <span className="flex items-center gap-2">
+                    <i className="fas fa-bars text-emerald-400"></i>
+                    {activeCategory || categories[0] || "Categories"}
+                  </span>
+                  <i className={`fas fa-chevron-down text-emerald-400 transition-transform duration-200 ${showCatMenu ? "rotate-180" : ""}`}></i>
+                </button>
+                {showCatMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowCatMenu(false)} />
+                    <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 overflow-hidden">
+                    {categories.map((cat, i) => (
+                      <button key={cat} onClick={() => { setActiveCategory(cat); setShowCatMenu(false); }}
+                        className={`w-full flex items-center justify-between px-4 py-3 text-[10px] font-black uppercase tracking-wide transition-colors ${i !== 0 ? "border-t border-slate-50" : ""} ${activeCategory === cat ? "bg-emerald-50 text-[#062c24]" : "text-slate-500 hover:bg-slate-50 hover:text-[#062c24]"}`}>
+                        <span>{cat}</span>
+                        <span className="text-[9px] font-bold text-slate-300">{filteredGear(cat).length} item{filteredGear(cat).length !== 1 ? "s" : ""}</span>
+                      </button>
+                    ))}
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Gear grid */}
