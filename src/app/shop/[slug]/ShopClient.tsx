@@ -1697,7 +1697,7 @@ function ShopPageContent({
               <div ref={gearBottomRef} />
               {gearHasMore && (
                 <div className="flex justify-center py-2 pointer-events-none">
-                  <i className="fas fa-chevron-down text-slate-300 text-[10px] animate-bounce"></i>
+                  <i className="fas fa-chevron-down text-emerald-500 text-xs animate-bounce drop-shadow-sm"></i>
                 </div>
               )}
             </Section>
@@ -2088,7 +2088,7 @@ function ShopPageContent({
             </div>
             {!cartAtBottom && (
               <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-white/80 to-transparent pointer-events-none flex items-end justify-center pb-1.5">
-                <i className="fas fa-chevron-down text-slate-300 text-[10px] animate-bounce"></i>
+                <i className="fas fa-chevron-down text-emerald-500 text-xs animate-bounce drop-shadow-sm"></i>
               </div>
             )}
             </div>
