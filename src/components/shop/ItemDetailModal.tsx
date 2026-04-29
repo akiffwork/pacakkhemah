@@ -397,7 +397,11 @@ export default function ItemDetailModal({
       </div>
       {!atBottom && (
         <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-white/80 to-transparent pointer-events-none flex items-end justify-center pb-1.5">
-          <i className="fas fa-chevron-down text-emerald-500 text-xs animate-bounce drop-shadow-sm"></i>
+          <div className="flex flex-col items-center animate-bounce">
+              <i className="fas fa-chevron-down text-emerald-500 text-[8px] drop-shadow-sm opacity-40"></i>
+              <i className="fas fa-chevron-down text-emerald-500 text-[8px] drop-shadow-sm opacity-70 -mt-0.5"></i>
+              <i className="fas fa-chevron-down text-emerald-500 text-[8px] drop-shadow-sm -mt-0.5"></i>
+            </div>
         </div>
       )}
       </div>
