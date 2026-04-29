@@ -235,6 +235,10 @@ function ShopPageContent({
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<TimeSlot | null>(null);
   const [useCombo, setUseCombo] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const cartBodyRef = useRef<HTMLDivElement>(null);
+  const [cartAtBottom, setCartAtBottom] = useState(false);
+  const gearBottomRef = useRef<HTMLDivElement>(null);
+  const [gearHasMore, setGearHasMore] = useState(false);
 
   // ── My Bookings (customer order history for this vendor) ──
   const [myBookings, setMyBookings] = useState<{ id: string; items: { name: string; qty: number; price: number; variantLabel?: string }[]; totalAmount: number; rentalAmount?: number; depositAmount?: number; bookingDates: { start: string; end: string }; status: string; createdAt: string }[]>([]);
@@ -1219,7 +1223,15 @@ function ShopPageContent({
   useEffect(() => {
     if (categories.length > 0 && !activeCategory) setActiveCategory(categories[0]);
   }, [categories.length]);
-  
+
+  useEffect(() => {
+    const sentinel = gearBottomRef.current;
+    if (!sentinel) return;
+    const obs = new IntersectionObserver(([e]) => setGearHasMore(!e.isIntersecting), { threshold: 0 });
+    obs.observe(sentinel);
+    return () => obs.disconnect();
+  }, [activeCategory]);
+
   const filteredGear = (cat: string) => allGear.filter(g => (g.category || (g.type === "package" ? "Packages" : "Add-ons")) === cat && g.name.toLowerCase().includes(searchTerm.toLowerCase()));
   const cartCount = cart.reduce((a, i) => a + i.qty, 0);
   
@@ -1682,6 +1694,12 @@ function ShopPageContent({
                   );
                 })}
               </div>
+              <div ref={gearBottomRef} />
+              {gearHasMore && (
+                <div className="flex justify-center py-2 pointer-events-none">
+                  <i className="fas fa-chevron-down text-slate-300 text-[10px] animate-bounce"></i>
+                </div>
+              )}
             </Section>
           </>
         )}
@@ -1786,7 +1804,7 @@ function ShopPageContent({
 
       {/* Floating Cart Button */}
       {cartCount > 0 && (
-        <button id="demo-cart-btn" onClick={() => setShowCart(true)}
+        <button id="demo-cart-btn" onClick={() => { setShowCart(true); setCartAtBottom(false); }}
           className="fixed bottom-6 right-6 bg-[#062c24] text-white w-16 h-16 rounded-2xl shadow-2xl flex items-center justify-center z-[100] hover:bg-emerald-800 active:scale-95 transition-all">
           <i className="fas fa-shopping-cart text-xl"></i>
           <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center">{cartCount}</span>
@@ -1824,7 +1842,13 @@ function ShopPageContent({
               <button onClick={() => setShowCart(false)} className="w-11 h-11 rounded-full bg-slate-50 text-slate-400 hover:text-red-500 flex items-center justify-center transition-colors"><i className="fas fa-times"></i></button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-5 space-y-5" style={{ scrollbarWidth: "none" }}>
+            <div className="relative flex-1 min-h-0">
+            <div ref={cartBodyRef}
+              onScroll={() => {
+                const el = cartBodyRef.current;
+                if (el) setCartAtBottom(el.scrollTop + el.clientHeight >= el.scrollHeight - 20);
+              }}
+              className="h-full overflow-y-auto p-5 space-y-5" style={{ scrollbarWidth: "none" }}>
               <div className="space-y-2">
                 {cart.map(item => {
                   const key = getCartKey(item);
@@ -2061,6 +2085,12 @@ function ShopPageContent({
                   <span className="text-[9px] font-bold text-slate-500 uppercase">I agree to the terms above</span>
                 </label>
               </div>
+            </div>
+            {!cartAtBottom && (
+              <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-white/80 to-transparent pointer-events-none flex items-end justify-center pb-1.5">
+                <i className="fas fa-chevron-down text-slate-300 text-[10px] animate-bounce"></i>
+              </div>
+            )}
             </div>
 
             <div className="p-5 bg-slate-50 border-t border-slate-100 space-y-4">
