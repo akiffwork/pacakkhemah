@@ -1842,13 +1842,13 @@ function ShopPageContent({
               <button onClick={() => setShowCart(false)} className="w-11 h-11 rounded-full bg-slate-50 text-slate-400 hover:text-red-500 flex items-center justify-center transition-colors"><i className="fas fa-times"></i></button>
             </div>
             
-            <div className="relative flex-1 min-h-0">
+            <div className="relative flex-1 min-h-0 flex flex-col">
             <div ref={cartBodyRef}
               onScroll={() => {
                 const el = cartBodyRef.current;
                 if (el) setCartAtBottom(el.scrollTop + el.clientHeight >= el.scrollHeight - 20);
               }}
-              className="h-full overflow-y-auto p-5 space-y-5" style={{ scrollbarWidth: "none" }}>
+              className="flex-1 overflow-y-auto p-5 space-y-5" style={{ scrollbarWidth: "none" }}>
               <div className="space-y-2">
                 {cart.map(item => {
                   const key = getCartKey(item);
