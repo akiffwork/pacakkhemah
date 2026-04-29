@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, setDoc, collection, getDocs, addDoc, deleteDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
 type FAQItem = { question: string; answer: string };
 type FAQSection = { title: string; icon: string; items: FAQItem[] };
 type Testimonial = { id?: string; name: string; location: string; text: string; rating: number };
-type Event = { id?: string; name: string; poster: string; link: string; organizer: string };
+type Event = { id?: string; name: string; poster: string; link: string; organizer: string; location?: string; startDate?: string; endDate?: string; allYearLong?: boolean };
 type Announcement = { isActive: boolean; message: string; type: "info" | "warning" | "promo" };
 
 type AboutContent = {
@@ -69,6 +70,10 @@ export default function ContentTab() {
   const [showEventModal, setShowEventModal] = useState(false);
   const [editingTestimonial, setEditingTestimonial] = useState<Testimonial | null>(null);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [evtPosterFile, setEvtPosterFile] = useState<File | null>(null);
+  const [evtPosterPreview, setEvtPosterPreview] = useState<string>("");
+  const [evtUploading, setEvtUploading] = useState(false);
+  const evtFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadContent();
@@ -97,7 +102,15 @@ export default function ContentTab() {
         setAnnouncement({ ...DEFAULT_ANNOUNCEMENT, ...announcementSnap.data() });
       }
       setTestimonials(testimonialsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Testimonial)));
-      setEvents(eventsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Event)));
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const expiredDocs = eventsSnap.docs.filter(d => {
+        const data = d.data();
+        if (data.allYearLong) return false;
+        const end = data.endDate || data.startDate;
+        return end && new Date(end) < today;
+      });
+      await Promise.all(expiredDocs.map(d => deleteDoc(doc(db, "events", d.id))));
+      setEvents(eventsSnap.docs.filter(d => !expiredDocs.find(e => e.id === d.id)).map(d => ({ id: d.id, ...d.data() } as Event)));
     } catch (e) {
       console.error(e);
     } finally {
@@ -153,17 +166,28 @@ export default function ContentTab() {
   // Event CRUD
   async function saveEvent(e: Event) {
     try {
-      if (e.id) {
-        await updateDoc(doc(db, "events", e.id), { name: e.name, poster: e.poster, link: e.link, organizer: e.organizer });
-      } else {
-        await addDoc(collection(db, "events"), { ...e, createdAt: serverTimestamp() });
+      setEvtUploading(true);
+      let posterUrl = e.poster;
+      if (evtPosterFile) {
+        const storage = getStorage();
+        const snap = await uploadBytes(storageRef(storage, `events/${Date.now()}_${evtPosterFile.name}`), evtPosterFile);
+        posterUrl = await getDownloadURL(snap.ref);
       }
+      const payload = { name: e.name, poster: posterUrl, link: e.link, organizer: e.organizer, location: e.location || "", startDate: e.startDate || "", endDate: e.endDate || "", allYearLong: e.allYearLong || false };
+      if (e.id) {
+        await updateDoc(doc(db, "events", e.id), payload);
+      } else {
+        await addDoc(collection(db, "events"), { ...payload, createdAt: serverTimestamp() });
+      }
+      setEvtPosterFile(null); setEvtPosterPreview("");
       loadContent();
       setShowEventModal(false);
       setEditingEvent(null);
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
       alert("Failed to save event");
+    } finally {
+      setEvtUploading(false);
     }
   }
 
@@ -504,7 +528,7 @@ export default function ContentTab() {
               <h3 className="text-sm font-black text-[#062c24] uppercase">Community Events</h3>
               <p className="text-[10px] text-slate-400 font-bold mt-1">{events.length} upcoming events</p>
             </div>
-            <button onClick={() => { setEditingEvent({ name: "", poster: "", link: "", organizer: "" }); setShowEventModal(true); }}
+            <button onClick={() => { setEditingEvent({ name: "", poster: "", link: "", organizer: "", location: "", startDate: "", endDate: "", allYearLong: false }); setEvtPosterFile(null); setEvtPosterPreview(""); setShowEventModal(true); }}
               className="w-full sm:w-auto bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-sm transition-all flex items-center justify-center gap-2">
               <i className="fas fa-plus"></i> Add Event
             </button>
@@ -522,9 +546,14 @@ export default function ContentTab() {
                 </div>
                 <div className="p-4 flex-1 flex flex-col">
                   <p className="text-xs font-black text-[#062c24] uppercase truncate mb-1">{e.name}</p>
-                  <p className="text-[10px] font-bold text-slate-400 mb-4 truncate">{e.organizer}</p>
+                  <p className="text-[10px] font-bold text-slate-400 truncate">{e.organizer}</p>
+                  {e.location && <p className="text-[9px] text-slate-400 truncate mt-0.5"><i className="fas fa-map-marker-alt mr-1 text-emerald-400"></i>{e.location}</p>}
+                  <p className="text-[9px] text-slate-400 mt-0.5 mb-3">
+                    {e.allYearLong ? <span className="text-emerald-500 font-bold"><i className="fas fa-infinity mr-1"></i>All Year</span>
+                      : e.startDate ? `${e.startDate}${e.endDate && e.endDate !== e.startDate ? ` → ${e.endDate}` : ""}` : "No date set"}
+                  </p>
                   <div className="flex gap-2 mt-auto">
-                    <button onClick={() => { setEditingEvent(e); setShowEventModal(true); }}
+                    <button onClick={() => { setEditingEvent(e); setEvtPosterFile(null); setEvtPosterPreview(""); setShowEventModal(true); }}
                       className="flex-1 bg-slate-50 text-slate-600 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-50 hover:text-blue-600 transition-all">
                       Edit
                     </button>
@@ -605,7 +634,7 @@ export default function ContentTab() {
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Event Name</label>
                 <input value={editingEvent.name} onChange={e => setEditingEvent({ ...editingEvent, name: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold outline-none focus:border-emerald-500" placeholder="e.g. Mega Campout 2024" />
+                  className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold outline-none focus:border-emerald-500" placeholder="e.g. Mega Campout 2025" />
               </div>
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Organizer</label>
@@ -613,9 +642,49 @@ export default function ContentTab() {
                   className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold outline-none focus:border-emerald-500" placeholder="e.g. Pacak Khemah HQ" />
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Poster Image URL</label>
-                <input value={editingEvent.poster} onChange={e => setEditingEvent({ ...editingEvent, poster: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm outline-none focus:border-emerald-500" placeholder="https://..." />
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Location</label>
+                <input value={editingEvent.location || ""} onChange={e => setEditingEvent({ ...editingEvent, location: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold outline-none focus:border-emerald-500" placeholder="e.g. Taman Negara, Pahang" />
+              </div>
+              {/* Poster upload */}
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Poster Image</label>
+                {(evtPosterPreview || editingEvent.poster) && (
+                  <img src={evtPosterPreview || editingEvent.poster} alt="" className="w-full h-36 object-cover rounded-xl mb-2 border border-slate-200" />
+                )}
+                <button onClick={() => evtFileRef.current?.click()}
+                  className="w-full h-12 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center gap-2 text-[10px] font-black text-slate-400 uppercase hover:border-emerald-400 hover:text-emerald-500 transition-colors">
+                  <i className="fas fa-camera"></i> {evtPosterPreview || editingEvent.poster ? "Change Photo" : "Upload Poster"}
+                </button>
+                <input ref={evtFileRef} type="file" accept="image/*" className="hidden" onChange={f => {
+                  const file = f.target.files?.[0]; if (!file) return;
+                  setEvtPosterFile(file); setEvtPosterPreview(URL.createObjectURL(file));
+                }} />
+              </div>
+              {/* Date */}
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Event Date</label>
+                <label className="flex items-center gap-2 mb-3 cursor-pointer">
+                  <input type="checkbox" checked={editingEvent.allYearLong || false}
+                    onChange={e => setEditingEvent({ ...editingEvent, allYearLong: e.target.checked, startDate: "", endDate: "" })}
+                    className="w-4 h-4 accent-emerald-500" />
+                  <span className="text-xs font-bold text-slate-600">All Year Long (no expiry)</span>
+                </label>
+                {!editingEvent.allYearLong && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Start Date</p>
+                      <input type="date" value={editingEvent.startDate || ""} onChange={e => setEditingEvent({ ...editingEvent, startDate: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none focus:border-emerald-500" />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase mb-1">End Date</p>
+                      <input type="date" value={editingEvent.endDate || ""} onChange={e => setEditingEvent({ ...editingEvent, endDate: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none focus:border-emerald-500" />
+                    </div>
+                  </div>
+                )}
+                {!editingEvent.allYearLong && <p className="text-[9px] text-slate-400 mt-1.5">Event is auto-removed the day after the end date</p>}
               </div>
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Link / URL</label>
@@ -624,10 +693,12 @@ export default function ContentTab() {
               </div>
             </div>
             <div className="flex gap-3 pt-4 border-t border-slate-100 shrink-0">
-              <button onClick={() => { setShowEventModal(false); setEditingEvent(null); }}
+              <button onClick={() => { setShowEventModal(false); setEditingEvent(null); setEvtPosterFile(null); setEvtPosterPreview(""); }}
                 className="flex-1 py-4 rounded-xl text-xs font-black uppercase tracking-widest text-slate-500 bg-slate-100 hover:bg-slate-200 transition-all">Cancel</button>
-              <button onClick={() => saveEvent(editingEvent)}
-                className="flex-1 py-4 rounded-xl text-xs font-black uppercase tracking-widest text-white bg-emerald-500 hover:bg-emerald-600 transition-all">Save</button>
+              <button onClick={() => saveEvent(editingEvent)} disabled={evtUploading}
+                className="flex-1 py-4 rounded-xl text-xs font-black uppercase tracking-widest text-white bg-emerald-500 hover:bg-emerald-600 transition-all disabled:opacity-50">
+                {evtUploading ? <><i className="fas fa-spinner fa-spin mr-2"></i>Uploading…</> : "Save"}
+              </button>
             </div>
           </div>
         </div>

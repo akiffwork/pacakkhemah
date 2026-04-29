@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { db } from "@/lib/firebase";
 import {
-  collection, getDocs, query, where, orderBy, limit, doc, getDoc,
+  collection, getDocs, query, where, orderBy, limit, doc, getDoc, deleteDoc,
 } from "firebase/firestore";
 import BottomNav from "@/components/BottomNav";
 import AdBanner from "@/components/AdBanner";
@@ -27,7 +27,7 @@ type GearItem = {
   id: string; name: string; price: number; img?: string;
   vendorId: string; category?: string; type?: string; deleted?: boolean;
 };
-type Event = { id: string; name: string; poster: string; link: string; organizer?: string };
+type Event = { id: string; name: string; poster: string; link: string; organizer?: string; location?: string; startDate?: string; endDate?: string; allYearLong?: boolean };
 type Announcement = { isActive: boolean; message: string; type: "info" | "warning" | "promo" };
 type Testimonial = { id: string; name: string; location: string; text: string; rating: number };
 type Review = {
@@ -279,9 +279,18 @@ export default function DirectoryPage() {
 
   async function loadEvents() {
     try {
-      const q = query(collection(db, "events"), orderBy("createdAt", "desc"), limit(4));
+      const q = query(collection(db, "events"), orderBy("createdAt", "desc"), limit(20));
       const snap = await getDocs(q);
-      setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() } as Event)));
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const expired = snap.docs.filter(d => {
+        const data = d.data();
+        if (data.allYearLong) return false;
+        const end = data.endDate || data.startDate;
+        return end && new Date(end) < today;
+      });
+      await Promise.all(expired.map(d => deleteDoc(doc(db, "events", d.id))));
+      const live = snap.docs.filter(d => !expired.find(e => e.id === d.id));
+      setEvents(live.slice(0, 4).map(d => ({ id: d.id, ...d.data() } as Event)));
     } catch { }
   }
 
@@ -715,7 +724,15 @@ export default function DirectoryPage() {
                   </div>
                   <div className="p-3">
                     <h4 className="text-[10px] font-black text-[#062c24] uppercase leading-tight line-clamp-2">{e.name}</h4>
-                    <p className="text-[8px] font-bold text-slate-400 mt-1">{e.organizer || "Event"}</p>
+                    <p className="text-[8px] font-bold text-slate-400 mt-1 truncate">{e.organizer || "Event"}</p>
+                    {e.location && (
+                      <p className="text-[8px] text-slate-400 mt-0.5 truncate"><i className="fas fa-map-marker-alt mr-0.5 text-emerald-400"></i>{e.location}</p>
+                    )}
+                    <p className="text-[8px] font-bold text-orange-500 mt-0.5">
+                      {e.allYearLong ? <><i className="fas fa-infinity mr-0.5"></i>All Year</>
+                        : e.startDate ? `${new Date(e.startDate + "T00:00").toLocaleDateString("en-MY", { day: "numeric", month: "short" })}${e.endDate && e.endDate !== e.startDate ? ` – ${new Date(e.endDate + "T00:00").toLocaleDateString("en-MY", { day: "numeric", month: "short" })}` : ""}`
+                        : ""}
+                    </p>
                   </div>
                 </a>
               ))}
