@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import ImageCarousel from "./ImageCarousel";
 import type {
   GearItem,
@@ -52,9 +53,24 @@ export default function ItemDetailModal({
   updateCartQty,
   addToCart,
 }: ItemDetailModalProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [atBottom, setAtBottom] = useState(false);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setAtBottom(el.scrollHeight <= el.clientHeight + 20);
+  }, [selectedItem]);
+
   return (
     <div className="fixed inset-0 bg-[#062c24]/95 backdrop-blur-md z-[300] flex items-center justify-center p-4">
-      <div className="bg-white rounded-[2rem] w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
+      <div className="relative bg-white rounded-[2rem] w-full max-w-md max-h-[90vh] shadow-2xl overflow-hidden flex flex-col">
+      <div ref={scrollRef}
+        onScroll={() => {
+          const el = scrollRef.current;
+          if (el) setAtBottom(el.scrollTop + el.clientHeight >= el.scrollHeight - 20);
+        }}
+        className="flex-1 overflow-y-auto">
         <div className="relative">
           {(selectedItem.images?.length || 0) > 1 ? (
             <ImageCarousel images={selectedItem.images!} />
@@ -378,6 +394,12 @@ export default function ItemDetailModal({
             );
           })()}
         </div>
+      </div>
+      {!atBottom && (
+        <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-white/80 to-transparent pointer-events-none flex items-end justify-center pb-1.5">
+          <i className="fas fa-chevron-down text-slate-300 text-[10px] animate-bounce"></i>
+        </div>
+      )}
       </div>
     </div>
   );
