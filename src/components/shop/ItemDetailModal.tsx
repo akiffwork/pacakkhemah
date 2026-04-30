@@ -183,45 +183,23 @@ export default function ItemDetailModal({
               </div>
             );
           })()}
-          {/* Specs Grid */}
+          {/* Specs */}
           {selectedItem.specs && (selectedItem.specs.maxPax || selectedItem.specs.size || selectedItem.specs.puRating || selectedItem.specs.layers || selectedItem.specs.weight || selectedItem.specs.tentType) && (
-            <div className="mb-4 grid grid-cols-2 gap-2">
-              {selectedItem.specs.tentType ? (
-                <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-2.5">
-                  <div className="w-7 h-7 bg-teal-100 text-teal-600 rounded-lg flex items-center justify-center shrink-0"><i className="fas fa-campground text-[9px]"></i></div>
-                  <div><p className="text-[8px] font-bold text-slate-400 uppercase">Tent Type</p><p className="text-xs font-black text-[#062c24]">{selectedItem.specs.tentType}</p></div>
+            <div className="mb-4 rounded-xl border border-slate-100 overflow-hidden divide-y divide-slate-50">
+              {(([
+                selectedItem.specs.tentType  && ["fa-campground",      "Type",   selectedItem.specs.tentType],
+                selectedItem.specs.maxPax    && ["fa-user-friends",    "Pax",    `${selectedItem.specs.maxPax} person`],
+                selectedItem.specs.size      && ["fa-ruler-combined",  "Size",   selectedItem.specs.size],
+                selectedItem.specs.puRating  && ["fa-tint",            "Water",  selectedItem.specs.puRating],
+                selectedItem.specs.layers    && ["fa-layer-group",     "Layer",  selectedItem.specs.layers],
+                selectedItem.specs.weight    && ["fa-weight-hanging",  "Weight", selectedItem.specs.weight],
+              ]) as ([string, string, string] | false)[]).filter((r): r is [string, string, string] => !!r).map(([icon, label, value]) => (
+                <div key={label} className="flex items-center gap-3 px-3.5 py-2.5 bg-white">
+                  <i className={`fas ${icon} text-slate-300 text-[10px] w-3 text-center`}></i>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide flex-1">{label}</span>
+                  <span className="text-[10px] font-black text-[#062c24]">{value}</span>
                 </div>
-              ) : null}
-              {selectedItem.specs.maxPax ? (
-                <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-2.5">
-                  <div className="w-7 h-7 bg-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center shrink-0"><i className="fas fa-users text-[9px]"></i></div>
-                  <div><p className="text-[8px] font-bold text-slate-400 uppercase">Max Pax</p><p className="text-xs font-black text-[#062c24]">{selectedItem.specs.maxPax} person</p></div>
-                </div>
-              ) : null}
-              {selectedItem.specs.size ? (
-                <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-2.5">
-                  <div className="w-7 h-7 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center shrink-0"><i className="fas fa-ruler-combined text-[9px]"></i></div>
-                  <div><p className="text-[8px] font-bold text-slate-400 uppercase">Size</p><p className="text-xs font-black text-[#062c24]">{selectedItem.specs.size}</p></div>
-                </div>
-              ) : null}
-              {selectedItem.specs.puRating ? (
-                <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-2.5">
-                  <div className="w-7 h-7 bg-amber-100 text-amber-600 rounded-lg flex items-center justify-center shrink-0"><i className="fas fa-tint text-[9px]"></i></div>
-                  <div><p className="text-[8px] font-bold text-slate-400 uppercase">PU Rating</p><p className="text-xs font-black text-[#062c24]">{selectedItem.specs.puRating}</p></div>
-                </div>
-              ) : null}
-              {selectedItem.specs.layers ? (
-                <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-2.5">
-                  <div className="w-7 h-7 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center shrink-0"><i className="fas fa-layer-group text-[9px]"></i></div>
-                  <div><p className="text-[8px] font-bold text-slate-400 uppercase">Layer</p><p className="text-xs font-black text-[#062c24]">{selectedItem.specs.layers}</p></div>
-                </div>
-              ) : null}
-              {selectedItem.specs.weight ? (
-                <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-2.5 col-span-2">
-                  <div className="w-7 h-7 bg-slate-200 text-slate-600 rounded-lg flex items-center justify-center shrink-0"><i className="fas fa-weight-hanging text-[9px]"></i></div>
-                  <div><p className="text-[8px] font-bold text-slate-400 uppercase">Weight</p><p className="text-xs font-black text-[#062c24]">{selectedItem.specs.weight}</p></div>
-                </div>
-              ) : null}
+              ))}
             </div>
           )}
           {selectedItem.setup?.available && (
