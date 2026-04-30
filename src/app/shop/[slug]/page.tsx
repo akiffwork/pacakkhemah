@@ -141,13 +141,16 @@ export async function generateMetadata({
       const itemName = str(gear, "name") || "Camping Gear";
       const itemPrice = gear?.fields?.price?.integerValue || gear?.fields?.price?.doubleValue || "";
       const itemDesc = str(gear, "desc") || str(gear, "description") || "";
-      const rawItemImg =
+
+      // Route image through our own domain so social crawlers get a clean,
+      // token-free pacakkhemah.com URL instead of a raw Firebase Storage URL.
+      const hasImg = !!(
         gear?.fields?.images?.arrayValue?.values?.[0]?.stringValue ||
-        str(gear, "img") ||
-        str(gear, "image") ||
-        "";
-      // Ensure absolute URL; Firebase Storage download URLs are absolute already
-      const itemImg = rawItemImg.startsWith("http") ? rawItemImg : vendorImage;
+        gear?.fields?.img?.stringValue
+      );
+      const itemImg = hasImg
+        ? `https://pacakkhemah.com/api/gear-og?id=${encodeURIComponent(itemId)}`
+        : vendorImage;
 
       const title = `${itemName} — RM${itemPrice}/night | ${vendorName}`;
       const description =
