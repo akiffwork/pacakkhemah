@@ -246,13 +246,12 @@ export default function ItemDetailModal({
             return (
               <div className="mb-4 p-3 bg-purple-50 rounded-xl border border-purple-100">
                 <p className="text-[9px] font-black text-purple-600 uppercase mb-2"><i className="fas fa-link mr-1"></i>Package Includes:</p>
-                <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
                   {linkedItems.map(({ item: linkedItem, qty, lockedVariantId, lockedVariantLabel, lockedVariantColor }) => {
                     const hasVars = linkedItem.hasVariants && linkedItem.variants && linkedItem.variants.length > 0;
                     const isLocked = !!lockedVariantId;
                     const lockedVariant = isLocked ? linkedItem.variants?.find(v => v.id === lockedVariantId) : null;
 
-                    // Customer picker state (only used when NOT locked)
                     const selected = !isLocked ? (linkedVarSelections[linkedItem.id] || null) : null;
                     const colors = hasVars && !isLocked ? [...new Map(linkedItem.variants!.filter(v => v.color?.label).map(v => [v.color!.label, v.color!])).values()] : [];
                     const sizes = hasVars && !isLocked ? [...new Set(linkedItem.variants!.filter(v => v.size).map(v => v.size!))] : [];
@@ -266,53 +265,52 @@ export default function ItemDetailModal({
                       onSelectLinkedVariant(linkedItem.id, match || null);
                     }
 
-                    const displayPrice = lockedVariant?.price || selected?.price || linkedItem.price;
+                    const activeColor = isLocked ? lockedVariantColor : selected?.color?.hex;
 
                     return (
-                      <div key={linkedItem.id} className="bg-white rounded-lg p-2.5 border border-purple-100">
-                        <div className="flex items-center gap-2 mb-1">
-                          <img src={linkedItem.images?.[0] || linkedItem.img || "/placeholder.jpg"} className="w-9 h-9 rounded-lg object-cover shrink-0" alt={linkedItem.name} loading="lazy" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[10px] font-black text-purple-700 truncate">{linkedItem.name}</p>
-                            <p className="text-[9px] text-purple-500">Qty: {qty} • RM {displayPrice}/night</p>
-                          </div>
-                          {/* Status badge */}
-                          {isLocked && (
-                            <span className="inline-flex items-center gap-0.5 text-[8px] font-bold text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded shrink-0">
-                              {lockedVariantColor && <span className="w-2.5 h-2.5 rounded-full border border-teal-200 shrink-0" style={{ backgroundColor: lockedVariantColor }}></span>}
-                              {lockedVariantLabel}
+                      <div key={linkedItem.id} className="flex flex-col gap-1.5">
+                        {/* Square thumbnail */}
+                        <div className="relative aspect-square rounded-2xl overflow-hidden bg-slate-100">
+                          <img src={linkedItem.images?.[0] || linkedItem.img || "/placeholder.jpg"} className="w-full h-full object-cover" alt="" loading="lazy" />
+                          {/* Qty badge — bottom left */}
+                          <span className="absolute bottom-1.5 left-1.5 bg-black/60 backdrop-blur-sm text-white text-[9px] font-black px-1.5 py-0.5 rounded-full leading-none">×{qty}</span>
+                          {/* Color dot — top right */}
+                          {activeColor && (
+                            <span className="absolute top-1.5 right-1.5 w-3.5 h-3.5 rounded-full border-2 border-white shadow" style={{ backgroundColor: activeColor }} />
+                          )}
+                          {/* Needs-pick indicator */}
+                          {hasVars && !isLocked && !selected && (
+                            <span className="absolute top-1.5 right-1.5 bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-full leading-none">Pick</span>
+                          )}
+                          {/* Confirmed check */}
+                          {hasVars && !isLocked && selected && !activeColor && (
+                            <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center">
+                              <i className="fas fa-check text-white text-[7px]"></i>
                             </span>
                           )}
-                          {hasVars && !isLocked && selected && (
-                            <span className="text-[8px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded shrink-0">✓</span>
-                          )}
-                          {hasVars && !isLocked && !selected && (
-                            <span className="text-[8px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded shrink-0">Pick</span>
-                          )}
                         </div>
-                        {/* Customer variant picker — only when NOT locked by vendor */}
+                        {/* Variant picker — only for customer-pick items */}
                         {hasVars && !isLocked && (
-                          <div className="mt-2 space-y-2 pl-11">
+                          <div className="space-y-1">
                             {colors.length > 0 && (
-                              <div className="flex gap-1.5 flex-wrap">
+                              <div className="flex gap-1 flex-wrap justify-center">
                                 {colors.map(c => {
                                   const isActive = selectedColor === c.label;
                                   return (
                                     <button key={c.label} onClick={() => pickLinkedVariant(c.label, selectedSize)}
-                                      className={`w-6 h-6 rounded-full border-2 transition-all ${isActive ? "border-purple-600 scale-110 shadow" : "border-slate-200"}`}
-                                      style={{ backgroundColor: c.hex }} title={c.label}
-                                    >
-                                      {isActive && <span className="flex items-center justify-center text-white text-[7px] drop-shadow"><i className="fas fa-check"></i></span>}
+                                      className={`w-5 h-5 rounded-full border-2 transition-all ${isActive ? "border-purple-600 scale-110 shadow" : "border-slate-200"}`}
+                                      style={{ backgroundColor: c.hex }} title={c.label}>
+                                      {isActive && <span className="flex items-center justify-center text-white text-[6px] drop-shadow"><i className="fas fa-check"></i></span>}
                                     </button>
                                   );
                                 })}
                               </div>
                             )}
                             {sizes.length > 0 && (
-                              <div className="flex gap-1 flex-wrap">
+                              <div className="flex gap-1 flex-wrap justify-center">
                                 {sizes.map(s => (
                                   <button key={s} onClick={() => pickLinkedVariant(selectedColor, s)}
-                                    className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase border transition-all ${
+                                    className={`px-1.5 py-0.5 rounded text-[7px] font-black uppercase border transition-all ${
                                       selectedSize === s ? "border-purple-600 bg-purple-600 text-white" : "border-slate-200 text-slate-500"
                                     }`}>
                                     {s}
