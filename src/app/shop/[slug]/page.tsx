@@ -2,6 +2,7 @@ import { Metadata } from "next";
 import ShopClient from "./ShopClient";
 
 const PROJECT_ID = "kuantan-unplugged";
+const FIREBASE_API_KEY = "AIzaSyAijpbwzFTDctk38Ktkcbt1Hd4y-1Cd1Xw";
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -51,7 +52,7 @@ function parseFirestoreValue(val: any): any {
 async function getVendorData(slugOrId: string) {
   try {
     // 1. Try slug query
-    const queryRes = await fetch(`${FIRESTORE_BASE}:runQuery`, {
+    const queryRes = await fetch(`${FIRESTORE_BASE}:runQuery?key=${FIREBASE_API_KEY}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -78,7 +79,7 @@ async function getVendorData(slugOrId: string) {
     }
 
     // 2. Fallback: try as direct vendor ID
-    const directRes = await fetch(`${FIRESTORE_BASE}/vendors/${slugOrId}`, {
+    const directRes = await fetch(`${FIRESTORE_BASE}/vendors/${slugOrId}?key=${FIREBASE_API_KEY}`, {
       next: { revalidate: 300 },
     });
     if (directRes.ok) {
@@ -93,12 +94,13 @@ async function getVendorData(slugOrId: string) {
 
 async function getGearItem(itemId: string) {
   try {
-    const res = await fetch(`${FIRESTORE_BASE}/gear/${itemId}`, {
-      next: { revalidate: 300 },
+    const res = await fetch(`${FIRESTORE_BASE}/gear/${itemId}?key=${FIREBASE_API_KEY}`, {
+      next: { revalidate: 60 },
     });
     if (res.ok) {
       return await res.json();
     }
+    console.error("Gear fetch status:", res.status, itemId);
   } catch (e) {
     console.error("Gear fetch error:", e);
   }
@@ -137,11 +139,14 @@ export async function generateMetadata({
     if (gear) {
       const itemName = str(gear, "name") || "Camping Gear";
       const itemPrice = gear?.fields?.price?.integerValue || gear?.fields?.price?.doubleValue || "";
-      const itemDesc = str(gear, "desc") || "";
-      const itemImg =
+      const itemDesc = str(gear, "desc") || str(gear, "description") || "";
+      const rawItemImg =
         gear?.fields?.images?.arrayValue?.values?.[0]?.stringValue ||
         str(gear, "img") ||
-        vendorImage;
+        str(gear, "image") ||
+        "";
+      // Ensure absolute URL; Firebase Storage download URLs are absolute already
+      const itemImg = rawItemImg.startsWith("http") ? rawItemImg : vendorImage;
 
       const title = `${itemName} — RM${itemPrice}/night | ${vendorName}`;
       const description =
