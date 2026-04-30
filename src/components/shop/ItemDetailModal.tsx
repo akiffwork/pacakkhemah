@@ -244,24 +244,34 @@ export default function ItemDetailModal({
                     }
 
                     const activeColor = isLocked ? lockedVariantColor : selected?.color?.hex;
+                    const linkedAvail = isLocked
+                      ? getAvailableStock(linkedItem.id, lockedVariantId)
+                      : getAvailableStock(linkedItem.id);
+                    const linkedSoldOut = linkedAvail <= 0;
 
                     return (
                       <div key={linkedItem.id} className="flex flex-col gap-1.5">
                         {/* Square thumbnail */}
-                        <div className="relative aspect-square rounded-2xl overflow-hidden bg-slate-100">
+                        <div className={`relative aspect-square rounded-2xl overflow-hidden bg-slate-100 ${linkedSoldOut ? "opacity-40" : ""}`}>
                           <img src={linkedItem.images?.[0] || linkedItem.img || "/placeholder.jpg"} className="w-full h-full object-cover" alt="" loading="lazy" />
                           {/* Qty badge — bottom left */}
                           <span className="absolute bottom-1.5 left-1.5 bg-black/60 backdrop-blur-sm text-white text-[9px] font-black px-1.5 py-0.5 rounded-full leading-none">×{qty}</span>
+                          {/* Sold out overlay */}
+                          {linkedSoldOut && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="bg-red-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-full leading-none">Sold Out</span>
+                            </div>
+                          )}
                           {/* Color dot — top right */}
-                          {activeColor && (
+                          {!linkedSoldOut && activeColor && (
                             <span className="absolute top-1.5 right-1.5 w-3.5 h-3.5 rounded-full border-2 border-white shadow" style={{ backgroundColor: activeColor }} />
                           )}
                           {/* Needs-pick indicator */}
-                          {hasVars && !isLocked && !selected && (
+                          {!linkedSoldOut && hasVars && !isLocked && !selected && (
                             <span className="absolute top-1.5 right-1.5 bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-full leading-none">Pick</span>
                           )}
                           {/* Confirmed check */}
-                          {hasVars && !isLocked && selected && !activeColor && (
+                          {!linkedSoldOut && hasVars && !isLocked && selected && !activeColor && (
                             <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center">
                               <i className="fas fa-check text-white text-[7px]"></i>
                             </span>
