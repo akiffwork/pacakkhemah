@@ -1161,8 +1161,37 @@ function ShopPageContent({
           }).catch(() => {});
         }
 
-        // Note: Calendar blocking handled by vendor via OrdersTab "Create Booking"
-        // or automatically by Cloud Function when agreement is signed
+        // Auto-create calendar availability entries for each cart item
+        if (vendorId && pickupDate && returnDate) {
+          const calBase = {
+            start: pickupDate, end: returnDate,
+            type: "booking" as const,
+            customer: savedName, phone: savedPhone,
+            orderId: orderRef.id,
+            createdAt: new Date().toISOString(),
+          };
+          const calDocs: Promise<unknown>[] = [];
+          for (const item of cart) {
+            calDocs.push(addDoc(collection(db, "vendors", vendorId, "availability"), {
+              ...calBase, itemId: item.id, qty: item.qty,
+              ...(item.selectedVariant ? {
+                variantId: item.selectedVariant.id,
+                variantLabel: [item.selectedVariant.color?.label, item.selectedVariant.size].filter(Boolean).join(", "),
+              } : {}),
+            }));
+            for (const li of (item.linkedItems || [])) {
+              calDocs.push(addDoc(collection(db, "vendors", vendorId, "availability"), {
+                ...calBase, itemId: li.itemId, qty: (li.qty || 1) * item.qty,
+                ...(li.variantId ? { variantId: li.variantId, variantLabel: li.variantLabel } : {}),
+              }));
+            }
+          }
+          calDocs.push(updateDoc(doc(db, "orders", orderRef.id), {
+            calendarLinked: true,
+            calendarDates: { start: pickupDate, end: returnDate },
+          }));
+          await Promise.all(calDocs).catch(() => {});
+        }
 
         // Save booking data to localStorage for agreement page
         localStorage.setItem("current_booking", JSON.stringify({
