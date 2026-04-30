@@ -79,7 +79,7 @@ async function getVendorData(slugOrId: string) {
     }
 
     // 2. Fallback: try as direct vendor ID
-    const directRes = await fetch(`${FIRESTORE_BASE}/vendors/${slugOrId}?key=${FIREBASE_API_KEY}`, {
+    const directRes = await fetch(`${FIRESTORE_BASE}/vendors/${encodeURIComponent(slugOrId)}?key=${FIREBASE_API_KEY}`, {
       next: { revalidate: 300 },
     });
     if (directRes.ok) {
@@ -94,7 +94,8 @@ async function getVendorData(slugOrId: string) {
 
 async function getGearItem(itemId: string) {
   try {
-    const res = await fetch(`${FIRESTORE_BASE}/gear/${itemId}?key=${FIREBASE_API_KEY}`, {
+    const encoded = encodeURIComponent(itemId);
+    const res = await fetch(`${FIRESTORE_BASE}/gear/${encoded}?key=${FIREBASE_API_KEY}`, {
       next: { revalidate: 60 },
     });
     if (res.ok) {
