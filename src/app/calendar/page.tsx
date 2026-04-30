@@ -176,6 +176,9 @@ export default function CalendarPage() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<GroupedEntry | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [itemEditMode, setItemEditMode] = useState(false);
+  const [showItemPicker, setShowItemPicker] = useState(false);
+  const [pickerCat, setPickerCat] = useState<string | null>(null);
 
   // ── Add Wizard ──
   const [addType, setAddType] = useState<"booking" | "block">("booking");
@@ -506,8 +509,7 @@ export default function CalendarPage() {
         for (const item of entry.items) await deleteDoc(doc(db, "vendors", vendorId, "availability", item.bookingId));
       }
       await loadData(vendorId);
-      setShowDetailModal(false);
-      setSelectedEntry(null);
+      setShowDetailModal(false); setSelectedEntry(null); setItemEditMode(false); setShowItemPicker(false); setQuantities({});
       showToast("Entry deleted");
     } catch (e) {
       console.error("Delete error:", e);
@@ -626,6 +628,26 @@ export default function CalendarPage() {
     setQuantities(qts);
     setIsEditing(true);
     setShowDetailModal(true);
+  }
+
+  function openItemEditMode(entry: GroupedEntry) {
+    setCustName(entry.customer || "");
+    setCustPhone(entry.phone || "");
+    // Build quantities from top-level items only (exclude package children)
+    const linkedChildIds = new Set<string>();
+    entry.items.forEach(it => {
+      const g = allGear.find(g => g.id === it.itemId);
+      if (g?.type === "package") g.linkedItems?.forEach(li => linkedChildIds.add(li.itemId));
+    });
+    const qts: Record<string, number> = {};
+    entry.items.filter(it => !linkedChildIds.has(it.itemId)).forEach(it => {
+      const key = it.variantId ? `${it.itemId}__${it.variantId}` : it.itemId;
+      qts[key] = (qts[key] || 0) + it.qty;
+    });
+    setQuantities(qts);
+    setItemEditMode(true);
+    setShowItemPicker(false);
+    setPickerCat(null);
   }
 
   function handleSelectDate(dateStr: string) {
@@ -1343,7 +1365,7 @@ export default function CalendarPage() {
       {showDetailModal && selectedEntry && (
         <div
           className="fixed inset-0 bg-[#062c24]/85 z-50 flex items-end justify-center"
-          onClick={e => { if (e.target === e.currentTarget) { setShowDetailModal(false); setSelectedEntry(null); setIsEditing(false); setQuantities({}); } }}
+          onClick={e => { if (e.target === e.currentTarget) { setShowDetailModal(false); setSelectedEntry(null); setIsEditing(false); setItemEditMode(false); setShowItemPicker(false); setQuantities({}); } }}
         >
           <div className="bg-white w-full max-w-lg rounded-t-3xl max-h-[90vh] flex flex-col">
 
@@ -1377,7 +1399,7 @@ export default function CalendarPage() {
                 </div>
               </div>
               <button
-                onClick={() => { setShowDetailModal(false); setSelectedEntry(null); setIsEditing(false); setQuantities({}); }}
+                onClick={() => { setShowDetailModal(false); setSelectedEntry(null); setIsEditing(false); setItemEditMode(false); setShowItemPicker(false); setQuantities({}); }}
                 className="w-8 h-8 rounded-lg bg-slate-100 text-slate-400 hover:text-red-500 flex items-center justify-center flex-shrink-0"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -1514,37 +1536,45 @@ export default function CalendarPage() {
                   ) : (
                     <div className="space-y-2">
                       {(() => {
-                        // Collect itemIds that are linked children of packages in this entry
                         const linkedChildIds = new Set<string>();
                         selectedEntry.items.forEach(it => {
                           const gear = allGear.find(g => g.id === it.itemId);
-                          if (gear?.type === "package") {
-                            gear.linkedItems?.forEach(li => linkedChildIds.add(li.itemId));
-                          }
+                          if (gear?.type === "package") gear.linkedItems?.forEach(li => linkedChildIds.add(li.itemId));
                         });
                         return selectedEntry.items
                           .filter(it => !linkedChildIds.has(it.itemId))
                           .map((item, idx) => {
                             const gear = allGear.find(g => g.id === item.itemId);
                             const isPackage = gear?.type === "package";
+                            const qKey = item.variantId ? `${item.itemId}__${item.variantId}` : item.itemId;
+                            const currentQty = itemEditMode ? (quantities[qKey] ?? item.qty) : item.qty;
+                            const removed = itemEditMode && currentQty === 0;
                             return (
-                              <div key={idx}>
+                              <div key={idx} className={removed ? "opacity-30" : ""}>
                                 <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl gap-2 min-w-0">
                                   <div className="min-w-0 flex-1 overflow-hidden">
                                     <div className="flex items-center gap-1.5">
                                       {item.variantColor && <span className="w-3.5 h-3.5 rounded-full border border-slate-200 flex-shrink-0" style={{ backgroundColor: item.variantColor }}></span>}
-                                      <p className="text-[12px] font-bold text-[#062c24] truncate">{item.name}</p>
+                                      <p className={`text-[12px] font-bold truncate ${removed ? "line-through text-slate-400" : "text-[#062c24]"}`}>{item.name}</p>
                                       {isPackage && <span className="text-[8px] font-black bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded flex-shrink-0">PKG</span>}
                                     </div>
                                     <p className="text-[10px] text-slate-400 uppercase tracking-wide">
                                       {item.variantLabel ? `${item.variantLabel} · ` : ""}{item.category}
                                     </p>
                                   </div>
-                                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded-lg flex-shrink-0">
-                                    ×{item.qty}
-                                  </span>
+                                  {itemEditMode ? (
+                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                      <button onClick={() => setQuantities(p => ({ ...p, [qKey]: Math.max(0, (p[qKey] ?? item.qty) - 1) }))}
+                                        className="w-6 h-6 rounded-lg bg-white border border-slate-200 text-slate-500 flex items-center justify-center text-sm font-black hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors">−</button>
+                                      <span className="text-[11px] font-bold text-[#062c24] w-5 text-center">{currentQty}</span>
+                                      <button onClick={() => setQuantities(p => ({ ...p, [qKey]: Math.min(gear?.stock || 99, (p[qKey] ?? item.qty) + 1) }))}
+                                        className="w-6 h-6 rounded-lg bg-white border border-slate-200 text-slate-500 flex items-center justify-center text-sm font-black hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-300 transition-colors">+</button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded-lg flex-shrink-0">×{item.qty}</span>
+                                  )}
                                 </div>
-                                {isPackage && gear?.linkedItems?.map((li, j) => {
+                                {!removed && isPackage && gear?.linkedItems?.map((li, j) => {
                                   const child = selectedEntry.items.find(it => it.itemId === li.itemId);
                                   const childGear = allGear.find(g => g.id === li.itemId);
                                   return (
@@ -1564,6 +1594,52 @@ export default function CalendarPage() {
                             );
                           });
                       })()}
+                      {/* Add Item picker */}
+                      {itemEditMode && (
+                        <div className="border-t border-slate-100 pt-2 mt-1">
+                          <button onClick={() => setShowItemPicker(v => !v)}
+                            className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] font-black text-emerald-600 uppercase tracking-widest hover:bg-emerald-50 rounded-xl transition-colors">
+                            <i className={`fas ${showItemPicker ? "fa-chevron-up" : "fa-plus"} text-[9px]`}></i>
+                            {showItemPicker ? "Hide" : "Add Item"}
+                          </button>
+                          {showItemPicker && (() => {
+                            const cats = Array.from(new Set(allGear.map(g => g.category || (g.type === "package" ? "Packages" : "Add-ons"))));
+                            const cat = pickerCat || cats[0];
+                            const gearInCat = allGear.filter(g => (g.category || (g.type === "package" ? "Packages" : "Add-ons")) === cat);
+                            return (
+                              <div className="mt-2 space-y-2">
+                                <div className="flex gap-1.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+                                  {cats.map(c => (
+                                    <button key={c} onClick={() => setPickerCat(c)}
+                                      className={`flex-shrink-0 px-3 py-1 rounded-lg text-[9px] font-black uppercase transition-all ${cat === c ? "bg-[#062c24] text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
+                                      {c}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div className="space-y-1 max-h-40 overflow-y-auto">
+                                  {gearInCat.map(g => {
+                                    const key = g.id;
+                                    const qty = quantities[key] || 0;
+                                    return (
+                                      <div key={g.id} className="flex items-center gap-2 px-2 py-1.5 bg-slate-50 rounded-lg">
+                                        {g.img && <img src={g.img} className="w-7 h-7 rounded-lg object-cover flex-shrink-0" alt="" />}
+                                        <p className="text-[10px] font-bold text-[#062c24] flex-1 truncate">{g.name}</p>
+                                        <div className="flex items-center gap-1 flex-shrink-0">
+                                          <button onClick={() => setQuantities(p => ({ ...p, [key]: Math.max(0, (p[key] || 0) - 1) }))}
+                                            className="w-5 h-5 rounded bg-white border border-slate-200 text-slate-500 flex items-center justify-center text-[10px] font-black hover:bg-red-50 hover:text-red-500 transition-colors">−</button>
+                                          <span className="text-[10px] font-bold text-[#062c24] w-4 text-center">{qty}</span>
+                                          <button onClick={() => setQuantities(p => ({ ...p, [key]: Math.min(g.stock || 99, (p[key] || 0) + 1) }))}
+                                            className="w-5 h-5 rounded bg-white border border-slate-200 text-slate-500 flex items-center justify-center text-[10px] font-black hover:bg-emerald-50 hover:text-emerald-600 transition-colors">+</button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
                     </div>
                   )}
                 </>
@@ -1571,32 +1647,46 @@ export default function CalendarPage() {
             </div>
 
             {/* Footer */}
-            <div className="px-4 pt-2 pb-5 flex-shrink-0 flex gap-2">
-              {isEditing ? (
-                <button
-                  onClick={updateEntry}
-                  className="flex-1 py-4 bg-[#062c24] text-white rounded-2xl font-bold uppercase text-[11px] tracking-widest hover:bg-[#0d4a3a] transition-all"
-                >
+            <div className="px-4 pt-2 pb-5 flex-shrink-0 flex flex-col gap-2">
+              {itemEditMode ? (
+                <div className="flex gap-2">
+                  <button onClick={() => { setItemEditMode(false); setShowItemPicker(false); setQuantities({}); }}
+                    className="flex-1 py-3.5 bg-slate-100 text-slate-500 rounded-2xl font-bold uppercase text-[11px] tracking-widest hover:bg-slate-200 transition-all">
+                    Cancel
+                  </button>
+                  <button onClick={async () => { await updateEntry(); setItemEditMode(false); setShowItemPicker(false); }}
+                    className="flex-1 py-3.5 bg-[#062c24] text-white rounded-2xl font-bold uppercase text-[11px] tracking-widest hover:bg-[#0d4a3a] transition-all">
+                    Save Items
+                  </button>
+                </div>
+              ) : isEditing ? (
+                <button onClick={updateEntry}
+                  className="flex-1 py-4 bg-[#062c24] text-white rounded-2xl font-bold uppercase text-[11px] tracking-widest hover:bg-[#0d4a3a] transition-all">
                   Save Changes
                 </button>
               ) : (
                 <>
-                  <button
-                    onClick={() => {
-                      if (selectedEntry.type === "block") setBlockReason(selectedEntry.reason || "");
-                      else { setCustName(selectedEntry.customer || ""); setCustPhone(selectedEntry.phone || ""); }
-                      setIsEditing(true);
-                    }}
-                    className="flex-1 py-4 bg-blue-50 text-blue-700 rounded-2xl font-bold uppercase text-[11px] tracking-widest hover:bg-blue-100 transition-all"
-                  >
-                    ✏ Edit Info
-                  </button>
-                  <button
-                    onClick={() => deleteEntry(selectedEntry)}
-                    className="flex-1 py-4 bg-red-50 text-red-600 rounded-2xl font-bold uppercase text-[11px] tracking-widest hover:bg-red-100 transition-all"
-                  >
-                    🗑 Delete
-                  </button>
+                  {selectedEntry.type === "booking" && (
+                    <button onClick={() => openItemEditMode(selectedEntry)}
+                      className="w-full py-3 bg-emerald-50 text-emerald-700 rounded-2xl font-bold uppercase text-[11px] tracking-widest hover:bg-emerald-100 transition-all">
+                      <i className="fas fa-boxes mr-1.5"></i>Edit Items
+                    </button>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        if (selectedEntry.type === "block") setBlockReason(selectedEntry.reason || "");
+                        else { setCustName(selectedEntry.customer || ""); setCustPhone(selectedEntry.phone || ""); }
+                        setIsEditing(true);
+                      }}
+                      className="flex-1 py-3.5 bg-blue-50 text-blue-700 rounded-2xl font-bold uppercase text-[11px] tracking-widest hover:bg-blue-100 transition-all">
+                      ✏ Edit Info
+                    </button>
+                    <button onClick={() => deleteEntry(selectedEntry)}
+                      className="flex-1 py-3.5 bg-red-50 text-red-600 rounded-2xl font-bold uppercase text-[11px] tracking-widest hover:bg-red-100 transition-all">
+                      🗑 Delete
+                    </button>
+                  </div>
                 </>
               )}
             </div>
