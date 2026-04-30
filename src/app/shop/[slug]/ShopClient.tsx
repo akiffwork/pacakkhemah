@@ -331,7 +331,7 @@ function ShopPageContent({
         const csSnaps = await Promise.all(campsiteRefs.map(c => getDoc(doc(db, "campsites", c.id))));
         setNearbyCampsites(
           csSnaps.filter(s => s.exists()).map((s, i) => ({
-            id: s.id, ...s.data(),
+            ...s.data(), id: s.id,
             km: campsiteRefs[i]?.km,
           } as { id: string; name: string; location?: string; state?: string; direction?: string; carousel?: string[]; km?: number }))
         );
@@ -372,16 +372,16 @@ function ShopPageContent({
         // Parallelize weeklyOff instead of awaiting serially after
         getDoc(doc(db, "vendors", vendorId, "settings", "weeklyOff")).catch(() => null),
       ]);
-      setAllGear(gearSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted));
+      setAllGear(gearSnap.docs.map(d => ({ ...d.data(), id: d.id } as GearItem)).filter(g => !g.deleted));
       setAvailRules(availSnap.docs.map(d => d.data() as AvailRule));
       setWeeklyOff(weeklyOffSnap?.exists() ? weeklyOffSnap.data() as Record<number, boolean> : {});
-      setDiscounts(discSnap.docs.map(d => ({ id: d.id, ...d.data() } as Discount)).filter(d => !d.deleted));
-      setPosts(postsSnap.docs.map(d => ({ id: d.id, ...d.data() } as VendorPost)).sort((a, b) => {
+      setDiscounts(discSnap.docs.map(d => ({ ...d.data(), id: d.id } as Discount)).filter(d => !d.deleted));
+      setPosts(postsSnap.docs.map(d => ({ ...d.data(), id: d.id } as VendorPost)).sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
         if (!a.pinned && b.pinned) return 1;
         return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
       }));
-      setReviews(reviewsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Review)));
+      setReviews(reviewsSnap.docs.map(d => ({ ...d.data(), id: d.id } as Review)));
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
