@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, query, orderBy, limit, where, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, limit, where, addDoc, updateDoc, doc, serverTimestamp, increment } from "firebase/firestore";
 
 type Transaction = {
   id: string;
@@ -56,11 +56,19 @@ export default function FinanceTab() {
     setSaving(true);
     try {
       const vendor = vendors.find(v => v.id === newTx.vendorId);
+      // Record transaction log
       await addDoc(collection(db, "transactions"), {
         ...newTx,
         vendorName: vendor?.name || "Unknown",
         createdAt: serverTimestamp(),
       });
+      // Update vendor credit balance — refunds subtract, purchases/bonus add
+      const creditDelta = newTx.type === "refund" ? -newTx.credits : newTx.credits;
+      if (creditDelta !== 0) {
+        await updateDoc(doc(db, "vendors", newTx.vendorId), {
+          credits: increment(creditDelta),
+        });
+      }
       setShowAddModal(false);
       setNewTx({ vendorId: "", amount: 0, credits: 0, type: "purchase", note: "" });
       loadData();
@@ -201,7 +209,10 @@ export default function FinanceTab() {
                     <p className="text-xs font-bold text-[#062c24]">{v.name}</p>
                     <p className="text-[9px] text-amber-600 font-bold">{v.credits || 0} credits left</p>
                   </div>
-                  <button className="text-[9px] font-bold text-emerald-600 bg-white px-3 py-1.5 rounded-lg hover:bg-emerald-50 border border-emerald-200">
+                  <button
+                    onClick={() => { setNewTx(t => ({ ...t, vendorId: v.id })); setShowAddModal(true); }}
+                    className="text-[9px] font-bold text-emerald-600 bg-white px-3 py-1.5 rounded-lg hover:bg-emerald-50 border border-emerald-200"
+                  >
                     Add Credits
                   </button>
                 </div>
