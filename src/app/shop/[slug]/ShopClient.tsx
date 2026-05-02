@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
 import {
   doc, getDoc, collection, query, where, getDocs, getDocsFromServer,
-  runTransaction, serverTimestamp, addDoc, orderBy, updateDoc, arrayUnion, increment,
+  serverTimestamp, addDoc, orderBy, updateDoc, arrayUnion, increment,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import "flatpickr/dist/flatpickr.min.css";
@@ -1056,24 +1056,6 @@ function ShopPageContent({
         });
       } catch (e) { console.error("Analytics write error:", e); }
 
-      // Credit deduction - 1 per unique customer per 24hrs
-      const storageKey = `click_${vendorId}`;
-      const lastClick = localStorage.getItem(storageKey);
-      if (!lastClick || Date.now() - Number(lastClick) > 86400000) {
-        try {
-          let deducted = false;
-          await runTransaction(db, async (t) => {
-            const vRef = doc(db, "vendors", vendorId!);
-            const vDoc = await t.get(vRef);
-            const c = vDoc.data()?.credits || 0;
-            if (c > 0) {
-              t.update(vRef, { credits: c - 1 });
-              deducted = true;
-            }
-          });
-          if (deducted) localStorage.setItem(storageKey, String(Date.now()));
-        } catch (e) { console.error("Credit deduction error:", e); }
-      }
 
       // ═══ Create order in orders collection ═══
       try {

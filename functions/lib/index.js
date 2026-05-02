@@ -36,9 +36,41 @@ exports.onNewOrder = (0, firestore_1.onDocumentCreated)("analytics/{docId}", asy
         return;
     if (data.type !== "whatsapp_lead")
         return;
-    const { vendorId, vendorName, totalAmount, items } = data;
+    const { vendorId, vendorName, totalAmount, items, visitorId } = data;
     if (!vendorId)
         return;
+    // ── Credit deduction (Admin SDK bypasses Firestore security rules) ──────
+    // Deduct 1 credit per unique visitorId per vendor per 24 hours.
+    // The client-side transaction was silently blocked by security rules.
+    if (visitorId) {
+        try {
+            const twentyFourHoursAgo = new Date(Date.now() - 86400000);
+            const recentSnap = await db
+                .collection("analytics")
+                .where("vendorId", "==", vendorId)
+                .where("visitorId", "==", visitorId)
+                .where("creditDeducted", "==", true)
+                .where("timestamp", ">=", twentyFourHoursAgo)
+                .get();
+            if (recentSnap.empty) {
+                await db.runTransaction(async (t) => {
+                    var _a, _b;
+                    const vRef = db.doc(`vendors/${vendorId}`);
+                    const vDoc = await t.get(vRef);
+                    const c = ((_b = (_a = vDoc.data()) === null || _a === void 0 ? void 0 : _a.credits) !== null && _b !== void 0 ? _b : 0);
+                    if (c > 0) {
+                        t.update(vRef, { credits: firestore_2.FieldValue.increment(-1) });
+                    }
+                });
+                // Mark this doc so future deduplication queries find it
+                await event.data.ref.update({ creditDeducted: true });
+            }
+        }
+        catch (e) {
+            console.error("Credit deduction error:", e);
+        }
+    }
+    // ────────────────────────────────────────────────────────────────────────
     const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
     const fcmToken = (_b = vendorSnap.data()) === null || _b === void 0 ? void 0 : _b.fcmToken;
     if (!fcmToken) {

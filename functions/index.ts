@@ -42,8 +42,40 @@ export const onNewOrder = onDocumentCreated(
 
     if (data.type !== "whatsapp_lead") return;
 
-    const { vendorId, vendorName, totalAmount, items } = data;
+    const { vendorId, vendorName, totalAmount, items, visitorId } = data;
     if (!vendorId) return;
+
+    // ── Credit deduction (Admin SDK bypasses Firestore security rules) ──────
+    // Deduct 1 credit per unique visitorId per vendor per 24 hours.
+    // The client-side transaction was silently blocked by security rules.
+    if (visitorId) {
+      try {
+        const twentyFourHoursAgo = new Date(Date.now() - 86400000);
+        const recentSnap = await db
+          .collection("analytics")
+          .where("vendorId", "==", vendorId)
+          .where("visitorId", "==", visitorId)
+          .where("creditDeducted", "==", true)
+          .where("timestamp", ">=", twentyFourHoursAgo)
+          .get();
+
+        if (recentSnap.empty) {
+          await db.runTransaction(async (t) => {
+            const vRef = db.doc(`vendors/${vendorId}`);
+            const vDoc = await t.get(vRef);
+            const c = (vDoc.data()?.credits ?? 0) as number;
+            if (c > 0) {
+              t.update(vRef, { credits: FieldValue.increment(-1) });
+            }
+          });
+          // Mark this doc so future deduplication queries find it
+          await event.data!.ref.update({ creditDeducted: true });
+        }
+      } catch (e) {
+        console.error("Credit deduction error:", e);
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
     const fcmToken = vendorSnap.data()?.fcmToken;
