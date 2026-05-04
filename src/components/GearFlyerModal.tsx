@@ -194,7 +194,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
           {/* HEADER */}
           <div className="bg-[#062c24] flex items-center p-8 text-white break-inside-avoid">
             {vendor.image && (
-              <img src={vendor.image} crossOrigin="anonymous" className="w-20 h-20 rounded-xl object-cover bg-white p-1 mr-6 shrink-0" alt="Vendor Logo" />
+              <img src={vendor.image} className="w-20 h-20 rounded-xl object-cover bg-white p-1 mr-6 shrink-0" alt="Vendor Logo" />
             )}
             <div>
               <h1 className="text-3xl font-black uppercase tracking-wide leading-tight">{vendor.name}</h1>
@@ -231,7 +231,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
                   {/* Item Image */}
                   <div className="aspect-[4/3] w-full relative bg-slate-50 border-b border-slate-100">
                     {imgUrl ? (
-                      <img src={imgUrl} crossOrigin="anonymous" className="w-full h-full object-cover" alt={item.name} />
+                      <img src={imgUrl} className="w-full h-full object-cover" alt={item.name} />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-slate-300"><i className="fas fa-image text-2xl"></i></div>
                     )}
@@ -261,7 +261,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
                           const linkedItem = allGear.find(g => g.id === li.itemId);
                           const linkedImg = linkedItem?.images?.[0] || linkedItem?.img;
                           return linkedImg ? (
-                            <img key={idx} src={linkedImg} crossOrigin="anonymous" className="w-6 h-6 rounded object-cover border border-slate-200 bg-slate-50" title={linkedItem?.name} alt="" />
+                            <img key={idx} src={linkedImg} className="w-6 h-6 rounded object-cover border border-slate-200 bg-slate-50" title={linkedItem?.name} alt="" />
                           ) : null;
                         })}
                       </div>
@@ -281,7 +281,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
 
           {/* FOOTER */}
           <div className="bg-[#062c24] p-8 text-white flex items-center gap-6 mt-auto break-inside-avoid">
-            <img src={qrUrl} crossOrigin="anonymous" className="w-24 h-24 rounded-xl bg-white p-1.5 shrink-0" alt="QR Code" />
+            <img src={qrUrl} className="w-24 h-24 rounded-xl bg-white p-1.5 shrink-0" alt="QR Code" />
             <div>
               <h2 className="text-xl font-black uppercase tracking-wide mb-1 text-emerald-50">Imbas Untuk Tempah</h2>
               <p className="text-emerald-100 text-sm mb-2 opacity-90">Scan to browse & book via WhatsApp</p>
