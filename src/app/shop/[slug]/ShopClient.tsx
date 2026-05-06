@@ -742,42 +742,49 @@ function ShopPageContent({
   const hasCombo = services?.combo?.enabled ?? false;
   const hasTimeSlots = services?.timeSlots?.enabled ?? false;
 
-  const nights = selectedDates[0] && selectedDates[1] ? Math.max(1, Math.ceil((selectedDates[1].getTime() - selectedDates[0].getTime()) / 86400000)) : 1;
+  // Allow 0 nights for same-day (Day Trip) bookings so the nights:0 tier can match.
+  const nights = selectedDates[0] && selectedDates[1] ? Math.ceil((selectedDates[1].getTime() - selectedDates[0].getTime()) / 86400000) : 1;
 
   // Returns the total price for one unit of an item for the current stay duration.
-  // If the item has a matching pricing tier for `nights`, returns that flat price.
-  // Otherwise falls back to price × nights.
+  // Tier-priced items: use the matching tier flat price (tier IS the volume discount).
+  // Non-tier items: price × nights (1 for day trips so price is never 0).
   function itemStayPrice(item: GearItem, n: number): number {
     if (item.pricingTiers?.length) {
       const tier = item.pricingTiers.find(t => t.nights === n);
       if (tier) return tier.price;
     }
-    return item.price * n;
+    return item.price * Math.max(1, n);
   }
+
+  // True when this item has an exact tier match for the current duration.
+  const itemHasActiveTier = (item: GearItem) => !!item.pricingTiers?.find(t => t.nights === nights);
 
   const sub = cart.reduce((acc, i) => acc + itemStayPrice(i, nights) * i.qty, 0);
   const dailyTotal = cart.reduce((acc, i) => acc + i.price * i.qty, 0); // kept for discount calc fallback
 
-  // Auto discount calculation
+  // Auto discount calculation — skips items that already use a pricing tier
+  // (the tier IS the volume discount; stacking both would be double-discounting).
+  // Day trips (nights === 0) also don't qualify for multi-night discounts.
   let autoDisc = 0;
-  const rule = discounts.filter(d => {
+  const rule = nights > 0 ? discounts.filter(d => {
     if (d.type !== "nightly_discount" || (d.trigger_nights ?? 0) > nights) return false;
     if (d.maxUses != null && (d.usedCount ?? 0) >= d.maxUses) return false;
     const now = new Date();
     if (d.validFrom && now < new Date(d.validFrom)) return false;
     if (d.validUntil && now > new Date(d.validUntil)) return false;
     return true;
-  }).sort((a, b) => b.discount_percent - a.discount_percent)[0];
+  }).sort((a, b) => b.discount_percent - a.discount_percent)[0] : undefined;
   if (rule) {
     const fn = (rule.trigger_nights ?? 0) - 1;
     const dn = nights - fn;
     if (dn > 0) {
-      let eligibleTotal = sub;
+      // Only include items that DON'T have an active tier match
+      const nonTierCart = cart.filter(i => !itemHasActiveTier(i));
+      let eligibleTotal = nonTierCart.reduce((s, i) => s + itemStayPrice(i, nights) * i.qty, 0);
       if (rule.appliesTo?.type === "specific" && rule.appliesTo.itemIds?.length) {
         const eligibleIds = new Set(rule.appliesTo.itemIds);
-        eligibleTotal = cart.reduce((s, i) => eligibleIds.has(i.id) ? s + itemStayPrice(i, nights) * i.qty : s, 0);
+        eligibleTotal = nonTierCart.reduce((s, i) => eligibleIds.has(i.id) ? s + itemStayPrice(i, nights) * i.qty : s, 0);
       }
-      // Discount applies only to nights beyond the free threshold
       const discountedNightsFraction = dn / nights;
       autoDisc = eligibleTotal * discountedNightsFraction * (rule.discount_percent / 100);
     }
@@ -1012,14 +1019,14 @@ function ShopPageContent({
     let msg: string;
     if (isMockupShop) {
       msg = `Hi Pacak Khemah,%0A%0AI just tried the DEMO SHOP and I'm interested in becoming a vendor!%0A%0A📦 *DEMO ORDER PREVIEW*%0A${cartLines}` +
-        `%0A%0A📅 *DATES*%0APick-up: ${pickupDate}%0AReturn: ${returnDate}%0ADuration: ${nights} night${nights > 1 ? "s" : ""}` +
+        `%0A%0A📅 *DATES*%0APick-up: ${pickupDate}%0AReturn: ${returnDate}%0ADuration: ${nights === 0 ? "Day Trip" : `${nights} night${nights > 1 ? "s" : ""}`}` +
         fulfillmentSection +
         pricingSection +
         `%0A%0A----%0A🚀 I want to register my own shop like this!`;
     } else {
       msg = `Hi ${vendorData?.name}, Booking Request:%0A` +
         `%0A📦 *ITEMS*%0A${cartLines}` +
-        `%0A%0A📅 *DATES*%0APick-up: ${pickupDate}%0AReturn: ${returnDate}%0ADuration: ${nights} night${nights > 1 ? "s" : ""}` +
+        `%0A%0A📅 *DATES*%0APick-up: ${pickupDate}%0AReturn: ${returnDate}%0ADuration: ${nights === 0 ? "Day Trip" : `${nights} night${nights > 1 ? "s" : ""}`}` +
         fulfillmentSection +
         pricingSection;
     }
@@ -1950,7 +1957,8 @@ function ShopPageContent({
                                 <i className="fas fa-tags mr-1"></i>{activeTier.label} · RM {activeTier.price} × {item.qty} = RM {activeTier.price * item.qty}
                               </p>
                             );
-                            return <p className="text-[9px] font-bold text-slate-400">RM {item.price}/night × {item.qty} × {nights}N = RM {item.price * item.qty * nights}</p>;
+                            const effNights = Math.max(1, nights);
+                            return <p className="text-[9px] font-bold text-slate-400">RM {item.price}/night × {item.qty} × {effNights}N = RM {item.price * item.qty * effNights}</p>;
                           })()}
                         </div>
                         <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-100 p-1">
@@ -2096,7 +2104,7 @@ function ShopPageContent({
               )}
 
               <div className="bg-slate-50 p-5 rounded-2xl space-y-2 text-[10px] font-bold uppercase">
-                <div className="flex justify-between"><span>Duration</span><span className="text-[#062c24]">{nights} Night{nights > 1 ? "s" : ""}</span></div>
+                <div className="flex justify-between"><span>Duration</span><span className="text-[#062c24]">{nights === 0 ? "Day Trip" : `${nights} Night${nights > 1 ? "s" : ""}`}</span></div>
                 <div className="flex justify-between"><span>Subtotal</span><span className="text-[#062c24]">RM {sub}</span></div>
                 {showAuto && <div className="flex justify-between text-emerald-600"><span>Extended Stay</span><span>− RM {Math.round(autoDisc)}</span></div>}
                 {showPromo && <div className="flex justify-between text-emerald-600"><span>Promo Code</span><span>− RM {Math.round(promoDisc)}</span></div>}
