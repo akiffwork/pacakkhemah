@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/firebase";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import {
   doc, getDoc, collection, addDoc,
   serverTimestamp,
@@ -100,6 +101,8 @@ export default function ReviewPage() {
   });
   const [comment, setComment] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
@@ -138,6 +141,21 @@ export default function ReviewPage() {
     setRatings(prev => ({ ...prev, [key]: value }));
   }
 
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []).slice(0, 3 - photoFiles.length);
+    const valid = files.filter(f => f.size <= 5 * 1024 * 1024);
+    const combined = [...photoFiles, ...valid].slice(0, 3);
+    setPhotoFiles(combined);
+    setPhotoPreviews(combined.map(f => URL.createObjectURL(f)));
+    e.target.value = "";
+  }
+
+  function removePhoto(i: number) {
+    const next = photoFiles.filter((_, idx) => idx !== i);
+    setPhotoFiles(next);
+    setPhotoPreviews(next.map(f => URL.createObjectURL(f)));
+  }
+
   const filledCount = Object.values(ratings).filter(v => v > 0).length;
   const avgRating = filledCount > 0
     ? Math.round((Object.values(ratings).reduce((a, b) => a + b, 0) / filledCount) * 10) / 10
@@ -154,6 +172,17 @@ export default function ReviewPage() {
 
     setSubmitting(true);
     try {
+      // Upload photos first
+      const storage = getStorage();
+      const uploadedUrls: string[] = [];
+      for (const file of photoFiles) {
+        const snap = await uploadBytes(
+          storageRef(storage, `reviews/${orderId}/${Date.now()}_${file.name}`),
+          file
+        );
+        uploadedUrls.push(await getDownloadURL(snap.ref));
+      }
+
       await addDoc(collection(db, "reviews"), {
         orderId,
         vendorId: order.vendorId,
@@ -162,6 +191,7 @@ export default function ReviewPage() {
         rating: avgRating,
         ratings,
         comment: comment.trim() || null,
+        photos: uploadedUrls.length > 0 ? uploadedUrls : null,
         isVerified: true,
         reviewToken: token,
         status: "published",
@@ -332,6 +362,36 @@ export default function ReviewPage() {
               rows={3}
               className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-sm font-medium outline-none focus:border-emerald-500 resize-none"
             />
+          </div>
+
+          {/* Photo Upload */}
+          <div>
+            <label className="text-[9px] font-black text-slate-400 uppercase mb-1.5 block">
+              Photos (Optional · max 3)
+            </label>
+            <div className="flex gap-2">
+              {photoPreviews.map((src, i) => (
+                <div key={i} className="relative w-20 h-20 flex-shrink-0">
+                  <img src={src} className="w-full h-full object-cover rounded-xl border border-slate-200" />
+                  <button
+                    onClick={() => removePhoto(i)}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-[9px] flex items-center justify-center shadow"
+                  >
+                    <i className="fas fa-times"></i>
+                  </button>
+                </div>
+              ))}
+              {photoFiles.length < 3 && (
+                <label className="w-20 h-20 flex-shrink-0 flex flex-col items-center justify-center bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 transition-colors">
+                  <i className="fas fa-camera text-slate-400 text-lg mb-1"></i>
+                  <span className="text-[8px] font-bold text-slate-400">Add Photo</span>
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoChange} />
+                </label>
+              )}
+            </div>
+            {photoFiles.length > 0 && (
+              <p className="text-[9px] text-slate-400 mt-1.5">{photoFiles.length}/3 photos · max 5MB each</p>
+            )}
           </div>
         </div>
 

@@ -6,7 +6,6 @@ import {
   collection, query, where, onSnapshot, doc, updateDoc,
   orderBy, serverTimestamp, getDocs, deleteDoc,
 } from "firebase/firestore";
-import { v4 as uuidv4 } from "uuid";
 
 type Order = {
   id: string;
@@ -208,9 +207,8 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
     const updates: any = { status: newStatus };
     
     if (newStatus === "completed") {
-      const token = uuidv4();
       updates.completedAt = serverTimestamp();
-      updates.reviewToken = token;
+      updates.reviewToken = orderId;
       updates.reviewTokenUsed = false;
     }
 

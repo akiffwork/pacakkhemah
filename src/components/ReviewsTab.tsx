@@ -13,6 +13,7 @@ type Review = {
   rating: number;
   ratings?: Record<string, number>;
   comment?: string | null;
+  photos?: string[] | null;
   status: "published" | "hidden";
   isVerified?: boolean;
   createdAt: any;
@@ -37,6 +38,7 @@ export default function ReviewsTab({ vendorId }: { vendorId: string }) {
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
   const [saving, setSaving] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
 
@@ -255,6 +257,20 @@ export default function ReviewsTab({ vendorId }: { vendorId: string }) {
                   <p className="text-xs text-slate-600 leading-relaxed mb-3 bg-slate-50 p-3 rounded-xl">{review.comment}</p>
                 )}
 
+                {/* Photos */}
+                {review.photos?.length && (
+                  <div className="flex gap-2 mb-3">
+                    {review.photos.slice(0, 3).map((url, i) => (
+                      <button key={i} onClick={() => setLightboxUrl(url)} className="relative flex-shrink-0 group">
+                        <img src={url} className="w-20 h-20 object-cover rounded-xl border border-slate-100 group-hover:opacity-90 transition-opacity" />
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <i className="fas fa-expand text-white text-xs drop-shadow"></i>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {/* Vendor Reply */}
                 {review.vendorReply && replyingTo !== review.id && (
                   <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 mb-3">
@@ -323,6 +339,16 @@ export default function ReviewsTab({ vendorId }: { vendorId: string }) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div className="fixed inset-0 z-[600] bg-black/90 flex items-center justify-center p-4" onClick={() => setLightboxUrl(null)}>
+          <button className="absolute top-4 right-4 w-10 h-10 bg-white/10 rounded-full text-white flex items-center justify-center hover:bg-white/20">
+            <i className="fas fa-times"></i>
+          </button>
+          <img src={lightboxUrl} className="max-w-full max-h-full rounded-2xl object-contain" onClick={e => e.stopPropagation()} />
         </div>
       )}
 
