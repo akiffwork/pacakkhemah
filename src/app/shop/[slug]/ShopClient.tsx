@@ -135,7 +135,7 @@ type CartItem = GearItem & { qty: number; addSetup?: boolean; selectedVariant?: 
 type AvailRule = { itemId?: string; variantId?: string; type?: string; start: string; end?: string; qty?: number };
 type Discount = { id?: string; type: string; trigger_nights?: number; discount_percent: number; discount_fixed?: number; code?: string; deleted?: boolean; is_public?: boolean; appliesTo?: { type: "all" | "specific"; itemIds?: string[] }; maxUses?: number | null; usedCount?: number; validFrom?: string | null; validUntil?: string | null; min_spend?: number; min_qty?: number; bundle_category?: string; freeItemId?: string; freeItemQty?: number; free_trigger?: string; free_trigger_nights?: number; free_trigger_spend?: number; free_trigger_qty?: number; free_trigger_category?: string; };
 type VendorPost = { id: string; content: string; image?: string; pinned?: boolean; createdAt: any };
-type Review = { id: string; customerName: string; rating: number; comment?: string | null; createdAt: any; isVerified?: boolean };
+type Review = { id: string; customerName: string; rating: number; comment?: string | null; photos?: string[] | null; createdAt: any; isVerified?: boolean; vendorReply?: string | null; vendorRepliedAt?: any };
 
 type FulfillmentType = "pickup" | "delivery";
 
@@ -200,6 +200,7 @@ function ShopPageContent({
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [posts, setPosts] = useState<VendorPost[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewLightbox, setReviewLightbox] = useState<string | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedDates, setSelectedDates] = useState<[Date | null, Date | null]>([null, null]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -1915,6 +1916,24 @@ function ShopPageContent({
                       </span>
                     </div>
                     {r.comment && <p className="text-xs text-slate-500 leading-relaxed">{r.comment}</p>}
+                    {r.photos && r.photos.length > 0 && (
+                      <div className="flex gap-2 mt-3">
+                        {r.photos.slice(0, 3).map((url, i) => (
+                          <button key={i} onClick={() => setReviewLightbox(url)} className="relative flex-shrink-0 group">
+                            <img src={url} className="w-20 h-20 object-cover rounded-xl border border-slate-100 group-hover:opacity-90 transition-opacity" />
+                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <i className="fas fa-expand text-white text-xs drop-shadow"></i>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {r.vendorReply && (
+                      <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                        <p className="text-[9px] font-black text-emerald-700 uppercase mb-1"><i className="fas fa-reply mr-1"></i>Vendor Reply</p>
+                        <p className="text-xs text-emerald-800 leading-relaxed">{r.vendorReply}</p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2503,6 +2522,16 @@ function ShopPageContent({
       {showShareToast && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[500] bg-[#062c24] text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-toastIn">
           <i className="fas fa-check-circle text-emerald-400"></i><span className="text-[10px] font-black uppercase tracking-widest">Link Copied!</span>
+        </div>
+      )}
+
+      {/* Review photo lightbox */}
+      {reviewLightbox && (
+        <div className="fixed inset-0 z-[700] bg-black/90 flex items-center justify-center p-4" onClick={() => setReviewLightbox(null)}>
+          <button className="absolute top-4 right-4 w-10 h-10 bg-white/10 rounded-full text-white flex items-center justify-center hover:bg-white/20">
+            <i className="fas fa-times"></i>
+          </button>
+          <img src={reviewLightbox} className="max-w-full max-h-full rounded-2xl object-contain" onClick={e => e.stopPropagation()} />
         </div>
       )}
       {addToast && (
