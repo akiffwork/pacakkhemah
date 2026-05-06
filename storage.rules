@@ -2,35 +2,63 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // Gear images — vendor-uploaded (authenticated)
-    match /gear/{allPaths=**} {
-      allow read: if true;
-      allow write: if request.auth != null
-        && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+    // HELPER: Check if user is the specific Admin
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'akiff.work@gmail.com';
     }
 
-    // Vendor logos / branding
-    match /vendors/{allPaths=**} {
+    // 1. VENDOR LOGOS
+    match /logos/{allPaths=**} {
       allow read: if true;
       allow write: if request.auth != null
-        && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
     }
 
-    // Food partner images
-    match /foodPartners/{allPaths=**} {
+    // 2. GEAR IMAGES
+    match /gear/{vendorId}/{allPaths=**} {
       allow read: if true;
       allow write: if request.auth != null
-        && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
     }
 
-    // Review photos — unauthenticated upload (customer review form)
+    // 3. EVENTS (Admin Only)
+    match /events/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin()
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // 4. CAMPSITES (Admin Only)
+    match /campsites/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin()
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // 5. CUSTOMER VERIFICATIONS (IC/Passport Uploads)
+    match /verifications/{vendorId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // 6. FOOD PARTNER IMAGES
+    match /foodPartners/{vendorId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // 7. REVIEW PHOTOS (unauthenticated — customer review form is public)
     match /reviews/{allPaths=**} {
       allow read: if true;
       allow write: if request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+                   && request.resource.contentType.matches('image/.*');
     }
   }
 }
