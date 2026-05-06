@@ -1807,9 +1807,9 @@ function ShopPageContent({
                             </button>
                           </div>
                         ) : (
-                          <button onClick={() => canAdd && addToCart(item)} disabled={!canAdd}
-                            className={`w-full mt-2 py-2.5 rounded-xl text-[9px] font-black uppercase transition-all ${canAdd ? "bg-[#062c24] text-white hover:bg-emerald-800 active:scale-95" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
-                            {canAdd ? "Add to Cart" : avail === 0 ? "Sold Out" : "Max Added"}
+                          <button onClick={() => { setSelectedItem(item); setSelectedVariant(null); setLinkedVarSelections({}); setShowItemModal(true); }}
+                            className="w-full mt-2 py-2.5 rounded-xl text-[9px] font-black uppercase transition-all bg-slate-100 text-slate-600 hover:bg-slate-200 active:scale-95">
+                            View Details
                           </button>
                         )}
                       </div>
