@@ -127,6 +127,7 @@ type GearItem = {
     tentType?: string;
   };
   pickupLocation?: string;
+  pricingTiers?: { nights: number; label: string; price: number }[];
 };
 
 type LinkedVariantSelection = { itemId: string; variantId: string; variantLabel: string; variantColor?: string };
@@ -742,8 +743,20 @@ function ShopPageContent({
   const hasTimeSlots = services?.timeSlots?.enabled ?? false;
 
   const nights = selectedDates[0] && selectedDates[1] ? Math.max(1, Math.ceil((selectedDates[1].getTime() - selectedDates[0].getTime()) / 86400000)) : 1;
-  const dailyTotal = cart.reduce((acc, i) => acc + i.price * i.qty, 0);
-  const sub = dailyTotal * nights;
+
+  // Returns the total price for one unit of an item for the current stay duration.
+  // If the item has a matching pricing tier for `nights`, returns that flat price.
+  // Otherwise falls back to price × nights.
+  function itemStayPrice(item: GearItem, n: number): number {
+    if (item.pricingTiers?.length) {
+      const tier = item.pricingTiers.find(t => t.nights === n);
+      if (tier) return tier.price;
+    }
+    return item.price * n;
+  }
+
+  const sub = cart.reduce((acc, i) => acc + itemStayPrice(i, nights) * i.qty, 0);
+  const dailyTotal = cart.reduce((acc, i) => acc + i.price * i.qty, 0); // kept for discount calc fallback
 
   // Auto discount calculation
   let autoDisc = 0;
@@ -759,12 +772,14 @@ function ShopPageContent({
     const fn = (rule.trigger_nights ?? 0) - 1;
     const dn = nights - fn;
     if (dn > 0) {
-      let eligibleDaily = dailyTotal;
+      let eligibleTotal = sub;
       if (rule.appliesTo?.type === "specific" && rule.appliesTo.itemIds?.length) {
         const eligibleIds = new Set(rule.appliesTo.itemIds);
-        eligibleDaily = cart.reduce((s, i) => eligibleIds.has(i.id) ? s + i.price * i.qty : s, 0);
+        eligibleTotal = cart.reduce((s, i) => eligibleIds.has(i.id) ? s + itemStayPrice(i, nights) * i.qty : s, 0);
       }
-      autoDisc = eligibleDaily * dn * (rule.discount_percent / 100);
+      // Discount applies only to nights beyond the free threshold
+      const discountedNightsFraction = dn / nights;
+      autoDisc = eligibleTotal * discountedNightsFraction * (rule.discount_percent / 100);
     }
   }
   
@@ -777,7 +792,7 @@ function ShopPageContent({
     let eligibleSub = sub;
     if (appliedPromo.appliesTo?.type === "specific" && appliedPromo.appliesTo.itemIds?.length) {
       const eligibleIds = new Set(appliedPromo.appliesTo.itemIds);
-      eligibleSub = cart.reduce((s, i) => eligibleIds.has(i.id) ? s + (i.price * i.qty * nights) : s, 0);
+      eligibleSub = cart.reduce((s, i) => eligibleIds.has(i.id) ? s + itemStayPrice(i, nights) * i.qty : s, 0);
     }
     
     if (appliedPromo.discount_fixed) return Math.min(appliedPromo.discount_fixed, eligibleSub);
@@ -1670,12 +1685,22 @@ function ShopPageContent({
                           <p className="text-[7px] font-bold text-emerald-600 mt-1"><i className="fas fa-map-marker-alt mr-1"></i>{item.pickupLocation}</p>
                         )}
                         {/* Price */}
-                        <p className="text-[10px] font-bold text-emerald-600 mt-1">
-                          {priceRange && priceRange.min !== priceRange.max
-                            ? `RM ${priceRange.min} – ${priceRange.max}/night`
-                            : `RM ${item.price}/night`
-                          }
-                        </p>
+                        {item.pricingTiers?.length ? (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {item.pricingTiers.map(tier => (
+                              <span key={tier.nights} className={`text-[8px] font-black px-1.5 py-0.5 rounded-md ${tier.nights === nights ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
+                                {tier.label} RM{tier.price}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[10px] font-bold text-emerald-600 mt-1">
+                            {priceRange && priceRange.min !== priceRange.max
+                              ? `RM ${priceRange.min} – ${priceRange.max}/night`
+                              : `RM ${item.price}/night`
+                            }
+                          </p>
+                        )}
                         {/* Add to cart / Select variant */}
                         {hasVars ? (
                           avail === 0 ? (
@@ -1918,7 +1943,15 @@ function ShopPageContent({
                               })}
                             </div>
                           )}
-                          <p className="text-[9px] font-bold text-slate-400">RM {item.price} × {item.qty} = RM {item.price * item.qty}</p>
+                          {(() => {
+                            const activeTier = item.pricingTiers?.find(t => t.nights === nights);
+                            if (activeTier) return (
+                              <p className="text-[9px] font-bold text-amber-600">
+                                <i className="fas fa-tags mr-1"></i>{activeTier.label} · RM {activeTier.price} × {item.qty} = RM {activeTier.price * item.qty}
+                              </p>
+                            );
+                            return <p className="text-[9px] font-bold text-slate-400">RM {item.price}/night × {item.qty} × {nights}N = RM {item.price * item.qty * nights}</p>;
+                          })()}
                         </div>
                         <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-100 p-1">
                           <button onClick={() => updateCartQty(key, -1)} className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors font-black">−</button>

@@ -49,6 +49,7 @@ type GearItem = {
     tentType?: string;
   };
   pickupLocation?: string;
+  pricingTiers?: { nights: number; label: string; price: number }[];
 };
 
 type Discount = {
@@ -117,6 +118,9 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
   const [specTentType, setSpecTentType] = useState("");
   const [gearPickup, setGearPickup] = useState("");
 
+  // Pricing tiers form state
+  const [pricingTiers, setPricingTiers] = useState<{ nights: number; label: string; price: number }[]>([]);
+
   // Variant form state
   const [hasVariants, setHasVariants] = useState(false);
   const [variants, setVariants] = useState<GearVariant[]>([]);
@@ -171,6 +175,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     setSpecSize(""); setSpecMaxPax(""); setSpecPuRating(""); setSpecLayers(""); setSpecWeight(""); setSpecTentType("");
     setGearPickup("");
     setHasVariants(false); setVariants([]);
+    setPricingTiers([]);
     setShowGearModal(true);
   }
 
@@ -198,6 +203,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     setGearPickup(g.pickupLocation || "");
     setHasVariants(g.hasVariants || false);
     setVariants(g.variants || []);
+    setPricingTiers(g.pricingTiers || []);
     setShowGearModal(true);
   }
 
@@ -267,6 +273,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
       if (specTentType.trim()) specs.tentType = specTentType.trim();
       data.specs = specs;
       if (gearPickup.trim()) data.pickupLocation = gearPickup.trim();
+      data.pricingTiers = pricingTiers.filter(t => t.price > 0).sort((a, b) => a.nights - b.nights);
       
       if (editingGear) {
         await updateDoc(doc(db, "gear", editingGear.id), data);
@@ -839,6 +846,74 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                 <label className={labelCls}><i className="fas fa-map-marker-alt mr-1 text-emerald-500"></i>Pickup Location</label>
                 <input value={gearPickup} onChange={e => setGearPickup(e.target.value)} className={inputCls} placeholder="e.g. Kuantan Hub, Pandan Store" />
                 <p className={helperCls}>Where customer picks up this item. Leave empty to use your default shop locations.</p>
+              </div>
+
+              {/* Pricing Tiers */}
+              <div className={`p-4 rounded-xl border transition-all ${pricingTiers.length > 0 ? "bg-amber-50 border-amber-200" : "bg-slate-50 border-slate-100"}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <label className="text-[10px] font-black text-amber-700 uppercase flex items-center gap-2">
+                      <i className="fas fa-tags"></i> Duration Pricing Tiers
+                    </label>
+                    <p className="text-[9px] text-amber-600">Set flat prices per rental duration. Overrides the per-night price above.</p>
+                  </div>
+                </div>
+
+                {/* Preset quick-add buttons */}
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {[
+                    { label: "Day Trip", nights: 0 },
+                    { label: "2D1N", nights: 1 },
+                    { label: "3D2N", nights: 2 },
+                    { label: "4D3N", nights: 3 },
+                    { label: "5D4N", nights: 4 },
+                  ].map(preset => {
+                    const exists = pricingTiers.some(t => t.nights === preset.nights);
+                    return (
+                      <button
+                        key={preset.nights}
+                        type="button"
+                        disabled={exists}
+                        onClick={() => setPricingTiers(prev => [...prev, { nights: preset.nights, label: preset.label, price: 0 }].sort((a, b) => a.nights - b.nights))}
+                        className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border transition-all ${exists ? "bg-amber-100 border-amber-300 text-amber-500 cursor-not-allowed opacity-50" : "bg-white border-amber-200 text-amber-700 hover:bg-amber-100"}`}
+                      >
+                        + {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Tier rows */}
+                {pricingTiers.length > 0 && (
+                  <div className="space-y-2">
+                    {pricingTiers.map((tier, idx) => (
+                      <div key={tier.nights} className="flex items-center gap-2 bg-white rounded-xl p-2.5 border border-amber-100">
+                        <div className="w-16 text-[10px] font-black text-amber-700 uppercase shrink-0">{tier.label}</div>
+                        <div className="text-[9px] text-slate-400 shrink-0">{tier.nights === 0 ? "Same day" : `${tier.nights} night${tier.nights > 1 ? "s" : ""}`}</div>
+                        <div className="flex-1 flex items-center gap-1">
+                          <span className="text-[11px] font-bold text-slate-500 shrink-0">RM</span>
+                          <input
+                            type="number"
+                            value={tier.price || ""}
+                            onChange={e => setPricingTiers(prev => prev.map((t, i) => i === idx ? { ...t, price: Number(e.target.value) } : t))}
+                            className="w-full bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-sm font-bold outline-none focus:border-amber-400"
+                            placeholder="0"
+                            min="0"
+                          />
+                        </div>
+                        <span className="text-[9px] text-slate-400 shrink-0">flat</span>
+                        <button
+                          type="button"
+                          onClick={() => setPricingTiers(prev => prev.filter((_, i) => i !== idx))}
+                          className="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-red-400 transition-colors shrink-0"
+                        >
+                          <i className="fas fa-times text-[10px]"></i>
+                        </button>
+                      </div>
+                    ))}
+                    <p className="text-[9px] text-amber-600 mt-1"><i className="fas fa-info-circle mr-1"></i>Base price (RM/night) is used when no tier matches the customer's dates.</p>
+                  </div>
+                )}
               </div>
 
               {/* NEW: Setup Service */}
