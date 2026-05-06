@@ -63,6 +63,7 @@ export type GearItem = {
     tentType?: string;
   };
   pickupLocation?: string;
+  pricingTiers?: { nights: number; label: string; price: number }[];
 };
 
 export type LinkedVariantSelection = { itemId: string; variantId: string; variantLabel: string; variantColor?: string };

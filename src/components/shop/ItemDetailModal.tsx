@@ -16,6 +16,7 @@ type ItemDetailModalProps = {
   selectedVariant: GearVariant | null;
   linkedVarSelections: Record<string, GearVariant | null>;
   cart: CartItem[];
+  nights?: number;
 
   // Actions
   onClose: () => void;
@@ -52,6 +53,7 @@ export default function ItemDetailModal({
   getCartKey,
   updateCartQty,
   addToCart,
+  nights = 1,
 }: ItemDetailModalProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(false);
@@ -90,15 +92,36 @@ export default function ItemDetailModal({
         </div>
         <div className="p-6">
           <h3 className="text-lg font-black uppercase text-[#062c24] mb-1">{selectedItem.name}</h3>
-          <p className="text-emerald-600 font-black text-xl mb-3">
-            RM {selectedVariant ? selectedVariant.price : selectedItem.price}
-            <span className="text-xs text-slate-400 font-bold">/night</span>
-            {selectedVariant && (
-              <span className="text-xs font-bold text-slate-400 ml-2">
-                ({[selectedVariant.color?.label, selectedVariant.size].filter(Boolean).join(", ")})
-              </span>
-            )}
-          </p>
+          {selectedItem.pricingTiers?.length && !selectedVariant ? (() => {
+            const at = selectedItem.pricingTiers!.find(t => t.nights === nights);
+            return (
+              <div className="mb-3">
+                <p className="text-[#062c24] font-black text-xl">
+                  RM {at ? at.price : Math.min(...selectedItem.pricingTiers!.map(t => t.price))}
+                  {at
+                    ? <span className="text-xs text-slate-400 font-bold ml-1.5">{at.label}</span>
+                    : <span className="text-xs text-slate-400 font-bold ml-1"> onwards</span>}
+                </p>
+                <div className="flex flex-wrap gap-x-3 mt-1">
+                  {selectedItem.pricingTiers!.map(tier => (
+                    <span key={tier.nights} className={`text-[11px] font-bold ${tier.nights === nights ? "text-emerald-600" : "text-slate-300"}`}>
+                      {tier.label} RM{tier.price}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })() : (
+            <p className="text-emerald-600 font-black text-xl mb-3">
+              RM {selectedVariant ? selectedVariant.price : selectedItem.price}
+              <span className="text-xs text-slate-400 font-bold">/night</span>
+              {selectedVariant && (
+                <span className="text-xs font-bold text-slate-400 ml-2">
+                  ({[selectedVariant.color?.label, selectedVariant.size].filter(Boolean).join(", ")})
+                </span>
+              )}
+            </p>
+          )}
           {selectedItem.desc && <p className="text-slate-500 text-sm mb-4 leading-relaxed">{selectedItem.desc}</p>}
 
           {/* Variant Selector */}
