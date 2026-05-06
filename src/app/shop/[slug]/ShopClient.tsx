@@ -1769,24 +1769,12 @@ function ShopPageContent({
                           <p className="text-[7px] font-bold text-emerald-600 mt-1"><i className="fas fa-map-marker-alt mr-1"></i>{item.pickupLocation}</p>
                         )}
                         {/* Price */}
-                        {item.pricingTiers?.length ? (() => {
-                          const at = item.pricingTiers!.find(t => t.nights === nights);
-                          return (
-                            <div className="mt-1">
-                              <p className="text-[10px] font-black text-[#062c24]">
-                                {at ? `RM ${at.price}` : `From RM ${Math.min(...item.pricingTiers!.map(t => t.price))}`}
-                                {at && <span className="ml-1.5 text-[8px] font-semibold text-slate-400">{at.label}</span>}
-                              </p>
-                              <div className="flex flex-wrap gap-x-2 mt-0.5">
-                                {item.pricingTiers!.map(tier => (
-                                  <span key={tier.nights} className={`text-[8px] ${tier.nights === nights ? "font-black text-emerald-500" : "font-medium text-slate-300"}`}>
-                                    {tier.label}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })() : (
+                        {item.pricingTiers?.length ? (
+                          <p className="text-[10px] font-bold text-emerald-600 mt-1">
+                            From RM {Math.min(...item.pricingTiers.map(t => t.price))}
+                            <span className="text-slate-400 font-medium"> · {item.pricingTiers.length} options</span>
+                          </p>
+                        ) : (
                           <p className="text-[10px] font-bold text-emerald-600 mt-1">
                             {priceRange && priceRange.min !== priceRange.max
                               ? `RM ${priceRange.min} – ${priceRange.max}/night`

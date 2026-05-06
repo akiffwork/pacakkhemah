@@ -92,26 +92,25 @@ export default function ItemDetailModal({
         </div>
         <div className="p-6">
           <h3 className="text-lg font-black uppercase text-[#062c24] mb-1">{selectedItem.name}</h3>
-          {selectedItem.pricingTiers?.length && !selectedVariant ? (() => {
-            const at = selectedItem.pricingTiers!.find(t => t.nights === nights);
-            return (
-              <div className="mb-3">
-                <p className="text-[#062c24] font-black text-xl">
-                  RM {at ? at.price : Math.min(...selectedItem.pricingTiers!.map(t => t.price))}
-                  {at
-                    ? <span className="text-xs text-slate-400 font-bold ml-1.5">{at.label}</span>
-                    : <span className="text-xs text-slate-400 font-bold ml-1"> onwards</span>}
-                </p>
-                <div className="flex flex-wrap gap-x-3 mt-1">
-                  {selectedItem.pricingTiers!.map(tier => (
-                    <span key={tier.nights} className={`text-[11px] font-bold ${tier.nights === nights ? "text-emerald-600" : "text-slate-300"}`}>
-                      {tier.label} RM{tier.price}
-                    </span>
-                  ))}
-                </div>
+          {selectedItem.pricingTiers?.length && !selectedVariant ? (
+            <div className="mb-4">
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Pricing</p>
+              <div className="rounded-xl border border-slate-100 overflow-hidden">
+                {selectedItem.pricingTiers.map((tier, i) => {
+                  const active = tier.nights === nights;
+                  return (
+                    <div key={tier.nights} className={`flex items-center justify-between px-4 py-2.5 ${active ? "bg-emerald-50" : i % 2 === 0 ? "bg-white" : "bg-slate-50/60"} ${i < selectedItem.pricingTiers!.length - 1 ? "border-b border-slate-100" : ""}`}>
+                      <span className={`text-xs font-bold ${active ? "text-emerald-700" : "text-slate-500"}`}>{tier.label}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm font-black ${active ? "text-emerald-600" : "text-[#062c24]"}`}>RM {tier.price}</span>
+                        {active && <span className="text-[8px] font-black text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full">Selected</span>}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })() : (
+            </div>
+          ) : (
             <p className="text-emerald-600 font-black text-xl mb-3">
               RM {selectedVariant ? selectedVariant.price : selectedItem.price}
               <span className="text-xs text-slate-400 font-bold">/night</span>
