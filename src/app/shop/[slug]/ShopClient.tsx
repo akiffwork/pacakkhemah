@@ -154,10 +154,12 @@ export default function ShopPage({
   params,
   initialVendor,
   initialVendorId,
+  initialItemId,
 }: {
   params: Promise<{ slug: string }>;
   initialVendor?: VendorData | null;
   initialVendorId?: string | null;
+  initialItemId?: string;
 }) {
   return (
     <Suspense fallback={
@@ -169,6 +171,7 @@ export default function ShopPage({
         params={params}
         initialVendor={initialVendor}
         initialVendorId={initialVendorId}
+        initialItemId={initialItemId}
       />
     </Suspense>
   );
@@ -178,10 +181,12 @@ function ShopPageContent({
   params,
   initialVendor,
   initialVendorId,
+  initialItemId,
 }: {
   params: Promise<{ slug: string }>;
   initialVendor?: VendorData | null;
   initialVendorId?: string | null;
+  initialItemId?: string;
 }) {
   const searchParams = useSearchParams();
   const resolvedParams = use(params);
@@ -443,9 +448,9 @@ function ShopPageContent({
     return () => { cancelled = true; cartCpRef.current?.destroy(); cartOpRef.current?.destroy(); };
   }, [showCart, vendorData, availRules, weeklyOff]);
 
-  // Auto-open item modal from URL param
+  // Auto-open item modal from URL param or server-passed initialItemId
   useEffect(() => {
-    const itemParam = searchParams.get("item");
+    const itemParam = initialItemId || searchParams.get("item");
     if (itemParam && allGear.length > 0) {
       const item = allGear.find(g => g.id === itemParam);
       if (item) {
@@ -455,12 +460,13 @@ function ShopPageContent({
         setShowItemModal(true);
       }
     }
-  }, [allGear, searchParams]);
+  }, [allGear, searchParams, initialItemId]);
 
   function getItemShareUrl(item: GearItem): string {
     const base = typeof window !== "undefined" ? window.location.origin : "";
-    const shopPath = vendorData?.slug ? `/shop/${vendorData.slug}` : `/shop/${vendorId}`;
-    return `${base}${shopPath}?item=${item.id}`;
+    const shopSlug = vendorData?.slug || vendorId;
+    // Path-based URL so social crawlers (Threads, etc.) see correct OG tags server-side
+    return `${base}/shop/${shopSlug}/item/${item.id}`;
   }
 
   async function shareItem(item: GearItem) {
