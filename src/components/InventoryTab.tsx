@@ -56,6 +56,7 @@ type Discount = {
   id: string;
   type: string;
   discount_percent: number;
+  discount_fixed?: number;
   trigger_nights?: number;
   code?: string;
   appliesTo?: { type: "all" | "specific"; itemIds?: string[] };
@@ -66,6 +67,19 @@ type Discount = {
   usedBy?: { phone: string; name?: string; date: string; orderId?: string }[];
   validFrom?: string | null;
   validUntil?: string | null;
+  // min_spend
+  min_spend?: number;
+  // quantity_bundle
+  min_qty?: number;
+  bundle_category?: string;
+  // free_item
+  freeItemId?: string;
+  freeItemQty?: number;
+  free_trigger?: string;
+  free_trigger_nights?: number;
+  free_trigger_spend?: number;
+  free_trigger_qty?: number;
+  free_trigger_category?: string;
 };
 
 function discountStatus(d: Discount): "active" | "expired" | "not_started" | "maxed" {
@@ -128,6 +142,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
   // Discount form state
   const [discType, setDiscType] = useState("nightly_discount");
   const [discPercent, setDiscPercent] = useState("");
+  const [discFixed, setDiscFixed] = useState("");
   const [discTrigger, setDiscTrigger] = useState("");
   const [discCode, setDiscCode] = useState("");
   const [discPublic, setDiscPublic] = useState(true);
@@ -136,6 +151,16 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
   const [discMaxUses, setDiscMaxUses] = useState("");
   const [discValidFrom, setDiscValidFrom] = useState("");
   const [discValidUntil, setDiscValidUntil] = useState("");
+  const [discMinSpend, setDiscMinSpend] = useState("");
+  const [discMinQty, setDiscMinQty] = useState("");
+  const [discBundleCategory, setDiscBundleCategory] = useState("");
+  const [discFreeItemId, setDiscFreeItemId] = useState("");
+  const [discFreeItemQty, setDiscFreeItemQty] = useState("1");
+  const [discFreeTrigger, setDiscFreeTrigger] = useState("always");
+  const [discFreeTriggerNights, setDiscFreeTriggerNights] = useState("");
+  const [discFreeTriggerSpend, setDiscFreeTriggerSpend] = useState("");
+  const [discFreeTriggerQty, setDiscFreeTriggerQty] = useState("");
+  const [discFreeTriggerCategory, setDiscFreeTriggerCategory] = useState("");
 
   // Real-time listeners
   useEffect(() => {
@@ -379,18 +404,27 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
   }
 
   // --- DISCOUNT ACTIONS ---
-  function openAddDisc() {
-    setEditingDisc(null);
-    setDiscType("nightly_discount"); setDiscPercent("");
-    setDiscTrigger(""); setDiscCode(""); setDiscPublic(true);
+  function resetDiscForm() {
+    setDiscPercent(""); setDiscFixed(""); setDiscTrigger(""); setDiscCode(""); setDiscPublic(true);
     setDiscAppliesTo("all"); setDiscSelectedItems([]);
     setDiscMaxUses(""); setDiscValidFrom(""); setDiscValidUntil("");
+    setDiscMinSpend(""); setDiscMinQty(""); setDiscBundleCategory("");
+    setDiscFreeItemId(""); setDiscFreeItemQty("1"); setDiscFreeTrigger("always");
+    setDiscFreeTriggerNights(""); setDiscFreeTriggerSpend(""); setDiscFreeTriggerQty(""); setDiscFreeTriggerCategory("");
+  }
+
+  function openAddDisc() {
+    setEditingDisc(null);
+    setDiscType("nightly_discount");
+    resetDiscForm();
     setShowDiscModal(true);
   }
 
   function openEditDisc(d: Discount) {
     setEditingDisc(d);
-    setDiscType(d.type); setDiscPercent(String(d.discount_percent));
+    setDiscType(d.type);
+    setDiscPercent(d.discount_percent ? String(d.discount_percent) : "");
+    setDiscFixed(d.discount_fixed ? String(d.discount_fixed) : "");
     setDiscTrigger(String(d.trigger_nights || ""));
     setDiscCode(d.code || ""); setDiscPublic(d.is_public !== false);
     setDiscAppliesTo(d.appliesTo?.type || "all");
@@ -398,34 +432,71 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
     setDiscMaxUses(d.maxUses != null ? String(d.maxUses) : "");
     setDiscValidFrom(d.validFrom || "");
     setDiscValidUntil(d.validUntil || "");
+    setDiscMinSpend(d.min_spend ? String(d.min_spend) : "");
+    setDiscMinQty(d.min_qty ? String(d.min_qty) : "");
+    setDiscBundleCategory(d.bundle_category || "");
+    setDiscFreeItemId(d.freeItemId || "");
+    setDiscFreeItemQty(String(d.freeItemQty ?? 1));
+    setDiscFreeTrigger(d.free_trigger || "always");
+    setDiscFreeTriggerNights(d.free_trigger_nights ? String(d.free_trigger_nights) : "");
+    setDiscFreeTriggerSpend(d.free_trigger_spend ? String(d.free_trigger_spend) : "");
+    setDiscFreeTriggerQty(d.free_trigger_qty ? String(d.free_trigger_qty) : "");
+    setDiscFreeTriggerCategory(d.free_trigger_category || "");
     setShowDiscModal(true);
   }
 
   async function saveDisc() {
-    const data: any = {
+    const base: any = {
       type: discType,
-      discount_percent: Number(discPercent),
-      trigger_nights: discType === "nightly_discount" ? Number(discTrigger) : null,
-      code: discType === "promo_code" ? discCode.toUpperCase() : null,
-      is_public: discPublic,
       deleted: false,
-      appliesTo: {
-        type: discAppliesTo,
-        itemIds: discAppliesTo === "specific" ? discSelectedItems : [],
-      },
       maxUses: discMaxUses ? Number(discMaxUses) : null,
       validFrom: discValidFrom || null,
       validUntil: discValidUntil || null,
     };
-    if (!editingDisc) {
-      data.usedCount = 0;
-      data.usedBy = [];
+
+    if (discType === "free_item") {
+      Object.assign(base, {
+        freeItemId: discFreeItemId,
+        freeItemQty: Number(discFreeItemQty) || 1,
+        free_trigger: discFreeTrigger,
+        free_trigger_nights: discFreeTrigger === "min_nights" ? Number(discFreeTriggerNights) : null,
+        free_trigger_spend: discFreeTrigger === "min_spend" ? Number(discFreeTriggerSpend) : null,
+        free_trigger_qty: discFreeTrigger === "min_qty" ? Number(discFreeTriggerQty) : null,
+        free_trigger_category: discFreeTrigger === "min_qty" ? (discFreeTriggerCategory || null) : null,
+        discount_percent: 0,
+      });
+    } else if (discType === "min_spend") {
+      Object.assign(base, {
+        min_spend: Number(discMinSpend),
+        discount_percent: discPercent ? Number(discPercent) : 0,
+        discount_fixed: discFixed ? Number(discFixed) : null,
+        is_public: discPublic,
+      });
+    } else if (discType === "quantity_bundle") {
+      Object.assign(base, {
+        min_qty: Number(discMinQty),
+        bundle_category: discBundleCategory || null,
+        discount_percent: Number(discPercent),
+        is_public: discPublic,
+        appliesTo: { type: discAppliesTo, itemIds: discAppliesTo === "specific" ? discSelectedItems : [] },
+      });
+    } else {
+      // nightly_discount + promo_code
+      Object.assign(base, {
+        discount_percent: Number(discPercent),
+        is_public: discPublic,
+        appliesTo: { type: discAppliesTo, itemIds: discAppliesTo === "specific" ? discSelectedItems : [] },
+        trigger_nights: discType === "nightly_discount" ? Number(discTrigger) : null,
+        code: discType === "promo_code" ? discCode.toUpperCase() : null,
+      });
     }
+
+    if (!editingDisc) { base.usedCount = 0; base.usedBy = []; }
     try {
       if (editingDisc) {
-        await updateDoc(doc(db, "vendors", vendorId, "discounts", editingDisc.id), data);
+        await updateDoc(doc(db, "vendors", vendorId, "discounts", editingDisc.id), base);
       } else {
-        await addDoc(collection(db, "vendors", vendorId, "discounts"), data);
+        await addDoc(collection(db, "vendors", vendorId, "discounts"), base);
       }
       setShowDiscModal(false);
       showToast(editingDisc ? "Discount updated!" : "Discount added!");
@@ -491,11 +562,20 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
               <div key={d.id} onClick={() => openEditDisc(d)}
                 className={`flex-shrink-0 bg-gradient-to-br from-indigo-50 to-purple-50 border px-4 py-3 rounded-xl cursor-pointer min-w-[130px] hover:border-indigo-300 transition-all ${status === "active" ? "border-indigo-100" : "border-slate-200 opacity-70"}`}>
                 <div className="flex items-center justify-between gap-2 mb-0.5">
-                  <p className="text-sm font-black text-indigo-600">{d.discount_percent}% OFF</p>
+                  <p className="text-sm font-black text-indigo-600">
+                    {d.type === "free_item" ? "🎁 Free Item"
+                      : d.discount_fixed ? `RM${d.discount_fixed} OFF`
+                      : `${d.discount_percent}% OFF`}
+                  </p>
                   <span className={`text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase ${statusColors[status]}`}>{statusLabels[status]}</span>
                 </div>
                 <p className="text-[9px] text-indigo-400 font-medium">
-                  {d.type === "promo_code" ? `Code: ${d.code}` : `${d.trigger_nights}+ nights`}
+                  {d.type === "promo_code" ? `Code: ${d.code}`
+                    : d.type === "nightly_discount" ? `${d.trigger_nights}+ nights`
+                    : d.type === "min_spend" ? `Spend RM${d.min_spend}+`
+                    : d.type === "quantity_bundle" ? `${d.min_qty}+ items`
+                    : d.type === "free_item" ? (allGear.find(g => g.id === d.freeItemId)?.name || "Item")
+                    : ""}
                 </p>
                 {(d.maxUses != null || d.validUntil) && (
                   <p className="text-[8px] text-purple-400 mt-1">
@@ -1164,24 +1244,31 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
               {/* Type */}
               <div>
                 <label className={labelCls}>Discount Type</label>
-                <select value={discType} onChange={e => setDiscType(e.target.value)} className={inputCls}>
+                <select value={discType} onChange={e => { setDiscType(e.target.value); resetDiscForm(); }} className={inputCls}>
                   <option value="nightly_discount">Nightly Bulk Discount</option>
                   <option value="promo_code">Promo Code</option>
+                  <option value="min_spend">Min. Spend Reward</option>
+                  <option value="quantity_bundle">Quantity Bundle Deal</option>
+                  <option value="free_item">Free Item Gift</option>
                 </select>
                 <p className={helperCls}>
-                  {discType === "nightly_discount" 
-                    ? "Auto-applied when customer books X+ nights" 
-                    : "Customer enters code at checkout"}
+                  {discType === "nightly_discount" ? "Auto-applied when customer books X+ nights"
+                    : discType === "promo_code" ? "Customer enters code at checkout"
+                    : discType === "min_spend" ? "Auto-applied when cart total reaches a threshold"
+                    : discType === "quantity_bundle" ? "Auto-applied when customer rents X+ items"
+                    : "Auto-adds a free item to cart when conditions are met"}
                 </p>
               </div>
 
-              {/* Trigger or Code */}
+              {/* ── Nightly Discount ── */}
               {discType === "nightly_discount" && (
                 <div>
                   <label className={labelCls}>Minimum Nights</label>
                   <input type="number" value={discTrigger} onChange={e => setDiscTrigger(e.target.value)} placeholder="e.g. 3" className={inputCls} />
                 </div>
               )}
+
+              {/* ── Promo Code ── */}
               {discType === "promo_code" && (
                 <div>
                   <label className={labelCls}>Promo Code</label>
@@ -1189,13 +1276,113 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                 </div>
               )}
 
-              {/* Percentage */}
-              <div>
-                <label className={labelCls}>Discount Percentage (%)</label>
-                <input type="number" value={discPercent} onChange={e => setDiscPercent(e.target.value)} placeholder="e.g. 10" className={inputCls} />
-              </div>
+              {/* ── Min. Spend ── */}
+              {discType === "min_spend" && (
+                <>
+                  <div>
+                    <label className={labelCls}>Minimum Spend (RM)</label>
+                    <input type="number" value={discMinSpend} onChange={e => setDiscMinSpend(e.target.value)} placeholder="e.g. 150" className={inputCls} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelCls}>Discount % (optional)</label>
+                      <input type="number" value={discPercent} onChange={e => { setDiscPercent(e.target.value); if (e.target.value) setDiscFixed(""); }} placeholder="e.g. 10" className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Or Fixed RM (optional)</label>
+                      <input type="number" value={discFixed} onChange={e => { setDiscFixed(e.target.value); if (e.target.value) setDiscPercent(""); }} placeholder="e.g. 20" className={inputCls} />
+                    </div>
+                  </div>
+                  <p className={helperCls}>Set either % or RM — not both</p>
+                </>
+              )}
 
-              {/* Validity Period */}
+              {/* ── Quantity Bundle ── */}
+              {discType === "quantity_bundle" && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelCls}>Minimum Items in Cart</label>
+                      <input type="number" value={discMinQty} onChange={e => setDiscMinQty(e.target.value)} placeholder="e.g. 3" className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Discount %</label>
+                      <input type="number" value={discPercent} onChange={e => setDiscPercent(e.target.value)} placeholder="e.g. 10" className={inputCls} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Count Items From (optional)</label>
+                    <select value={discBundleCategory} onChange={e => setDiscBundleCategory(e.target.value)} className={inputCls}>
+                      <option value="">All categories</option>
+                      {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <p className={helperCls}>Leave blank to count all items in cart</p>
+                  </div>
+                </>
+              )}
+
+              {/* ── Free Item ── */}
+              {discType === "free_item" && (
+                <>
+                  <div>
+                    <label className={labelCls}>Free Item</label>
+                    <select value={discFreeItemId} onChange={e => setDiscFreeItemId(e.target.value)} className={inputCls}>
+                      <option value="">Select an item…</option>
+                      {allGear.map(g => <option key={g.id} value={g.id}>{g.name} (RM{g.price})</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Free Quantity</label>
+                    <input type="number" min="1" value={discFreeItemQty} onChange={e => setDiscFreeItemQty(e.target.value)} placeholder="1" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Trigger Condition</label>
+                    <select value={discFreeTrigger} onChange={e => setDiscFreeTrigger(e.target.value)} className={inputCls}>
+                      <option value="always">Always (when cart is not empty)</option>
+                      <option value="min_nights">Minimum Nights</option>
+                      <option value="min_spend">Minimum Spend</option>
+                      <option value="min_qty">Minimum Items</option>
+                    </select>
+                  </div>
+                  {discFreeTrigger === "min_nights" && (
+                    <div>
+                      <label className={labelCls}>Minimum Nights</label>
+                      <input type="number" value={discFreeTriggerNights} onChange={e => setDiscFreeTriggerNights(e.target.value)} placeholder="e.g. 3" className={inputCls} />
+                    </div>
+                  )}
+                  {discFreeTrigger === "min_spend" && (
+                    <div>
+                      <label className={labelCls}>Minimum Spend (RM)</label>
+                      <input type="number" value={discFreeTriggerSpend} onChange={e => setDiscFreeTriggerSpend(e.target.value)} placeholder="e.g. 200" className={inputCls} />
+                    </div>
+                  )}
+                  {discFreeTrigger === "min_qty" && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={labelCls}>Minimum Items</label>
+                        <input type="number" value={discFreeTriggerQty} onChange={e => setDiscFreeTriggerQty(e.target.value)} placeholder="e.g. 3" className={inputCls} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>From Category (optional)</label>
+                        <select value={discFreeTriggerCategory} onChange={e => setDiscFreeTriggerCategory(e.target.value)} className={inputCls}>
+                          <option value="">Any category</option>
+                          {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* ── Discount Amount (nightly + promo) ── */}
+              {(discType === "nightly_discount" || discType === "promo_code") && (
+                <div>
+                  <label className={labelCls}>Discount Percentage (%)</label>
+                  <input type="number" value={discPercent} onChange={e => setDiscPercent(e.target.value)} placeholder="e.g. 10" className={inputCls} />
+                </div>
+              )}
+
+              {/* Validity Period — all types */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={labelCls}>Valid From (optional)</label>
@@ -1207,7 +1394,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                 </div>
               </div>
 
-              {/* Max Uses */}
+              {/* Max Uses — all types */}
               <div>
                 <label className={labelCls}>Max Uses (optional)</label>
                 <input type="number" min="1" value={discMaxUses} onChange={e => setDiscMaxUses(e.target.value)} placeholder="Unlimited if blank" className={inputCls} />
@@ -1216,54 +1403,55 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
                 )}
               </div>
 
-              {/* Applies To - NEW */}
-              <div>
-                <label className={labelCls}>Applies To</label>
-                <select value={discAppliesTo} onChange={e => setDiscAppliesTo(e.target.value as "all" | "specific")} className={inputCls}>
-                  <option value="all">All Items</option>
-                  <option value="specific">Specific Items Only</option>
-                </select>
-              </div>
-
-              {/* Item Selection */}
-              {discAppliesTo === "specific" && (
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 max-h-48 overflow-y-auto">
-                  <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Select Items</p>
-                  <div className="space-y-2">
-                    {allGear.map(g => (
-                      <label key={g.id} className="flex items-center gap-3 p-2 bg-white rounded-lg cursor-pointer hover:bg-emerald-50 transition-colors">
-                        <input 
-                          type="checkbox" 
-                          checked={discSelectedItems.includes(g.id)}
-                          onChange={() => toggleDiscountItem(g.id)}
-                          className="w-4 h-4 accent-emerald-500"
-                        />
-                        <span className="text-xs font-medium text-slate-700 flex-1">{g.name}</span>
-                        <span className="text-[9px] text-slate-400">RM{g.price}</span>
-                      </label>
-                    ))}
+              {/* Applies To — nightly, promo, bundle */}
+              {(discType === "nightly_discount" || discType === "promo_code" || discType === "quantity_bundle") && (
+                <>
+                  <div>
+                    <label className={labelCls}>Applies To</label>
+                    <select value={discAppliesTo} onChange={e => setDiscAppliesTo(e.target.value as "all" | "specific")} className={inputCls}>
+                      <option value="all">All Items</option>
+                      <option value="specific">Specific Items Only</option>
+                    </select>
                   </div>
-                  {discSelectedItems.length > 0 && (
-                    <p className="text-[9px] text-emerald-600 mt-2 font-medium">
-                      {discSelectedItems.length} item(s) selected
-                    </p>
+                  {discAppliesTo === "specific" && (
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 max-h-48 overflow-y-auto">
+                      <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Select Items</p>
+                      <div className="space-y-2">
+                        {allGear.map(g => (
+                          <label key={g.id} className="flex items-center gap-3 p-2 bg-white rounded-lg cursor-pointer hover:bg-emerald-50 transition-colors">
+                            <input type="checkbox" checked={discSelectedItems.includes(g.id)} onChange={() => toggleDiscountItem(g.id)} className="w-4 h-4 accent-emerald-500" />
+                            <span className="text-xs font-medium text-slate-700 flex-1">{g.name}</span>
+                            <span className="text-[9px] text-slate-400">RM{g.price}</span>
+                          </label>
+                        ))}
+                      </div>
+                      {discSelectedItems.length > 0 && <p className="text-[9px] text-emerald-600 mt-2 font-medium">{discSelectedItems.length} item(s) selected</p>}
+                    </div>
                   )}
-                </div>
+                </>
               )}
 
-              {/* Public Banner */}
-              <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
-                <div>
-                  <p className="text-xs font-bold text-slate-700">Show Public Banner</p>
-                  <p className="text-[9px] text-slate-400">Display on your shop page</p>
+              {/* Public Banner — not for free_item */}
+              {discType !== "free_item" && (
+                <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <div>
+                    <p className="text-xs font-bold text-slate-700">Show Public Banner</p>
+                    <p className="text-[9px] text-slate-400">Display on your shop page</p>
+                  </div>
+                  <input type="checkbox" checked={discPublic} onChange={e => setDiscPublic(e.target.checked)} className="w-5 h-5 accent-emerald-500" />
                 </div>
-                <input type="checkbox" checked={discPublic} onChange={e => setDiscPublic(e.target.checked)} className="w-5 h-5 accent-emerald-500" />
-              </div>
+              )}
             </div>
 
             {/* Footer */}
             <div className="p-5 border-t border-slate-100">
-              <button onClick={saveDisc} disabled={!discPercent}
+              <button onClick={saveDisc} disabled={
+                discType === "free_item" ? !discFreeItemId
+                  : discType === "nightly_discount" ? (!discPercent || !discTrigger)
+                  : discType === "min_spend" ? (!discMinSpend || (!discPercent && !discFixed))
+                  : discType === "quantity_bundle" ? (!discPercent || !discMinQty)
+                  : !discPercent
+              }
                 className="w-full bg-[#062c24] text-white py-3.5 rounded-xl font-black uppercase text-xs disabled:opacity-50 hover:bg-emerald-800 transition-colors">
                 Save Discount
               </button>

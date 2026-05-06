@@ -133,7 +133,7 @@ type GearItem = {
 type LinkedVariantSelection = { itemId: string; variantId: string; variantLabel: string; variantColor?: string };
 type CartItem = GearItem & { qty: number; addSetup?: boolean; selectedVariant?: GearVariant; linkedVariants?: LinkedVariantSelection[] };
 type AvailRule = { itemId?: string; variantId?: string; type?: string; start: string; end?: string; qty?: number };
-type Discount = { id?: string; type: string; trigger_nights?: number; discount_percent: number; discount_fixed?: number; code?: string; deleted?: boolean; is_public?: boolean; appliesTo?: { type: "all" | "specific"; itemIds?: string[] }; maxUses?: number | null; usedCount?: number; validFrom?: string | null; validUntil?: string | null; };
+type Discount = { id?: string; type: string; trigger_nights?: number; discount_percent: number; discount_fixed?: number; code?: string; deleted?: boolean; is_public?: boolean; appliesTo?: { type: "all" | "specific"; itemIds?: string[] }; maxUses?: number | null; usedCount?: number; validFrom?: string | null; validUntil?: string | null; min_spend?: number; min_qty?: number; bundle_category?: string; freeItemId?: string; freeItemQty?: number; free_trigger?: string; free_trigger_nights?: number; free_trigger_spend?: number; free_trigger_qty?: number; free_trigger_category?: string; };
 type VendorPost = { id: string; content: string; image?: string; pinned?: boolean; createdAt: any };
 type Review = { id: string; customerName: string; rating: number; comment?: string | null; createdAt: any; isVerified?: boolean };
 
@@ -762,53 +762,124 @@ function ShopPageContent({
   const sub = cart.reduce((acc, i) => acc + itemStayPrice(i, nights) * i.qty, 0);
   const dailyTotal = cart.reduce((acc, i) => acc + i.price * i.qty, 0); // kept for discount calc fallback
 
-  // Auto discount calculation — skips items that already use a pricing tier
-  // (the tier IS the volume discount; stacking both would be double-discounting).
-  // Day trips (nights === 0) also don't qualify for multi-night discounts.
-  let autoDisc = 0;
-  const rule = nights > 0 ? discounts.filter(d => {
-    if (d.type !== "nightly_discount" || (d.trigger_nights ?? 0) > nights) return false;
+  function isDiscountValid(d: Discount): boolean {
+    if (d.deleted) return false;
     if (d.maxUses != null && (d.usedCount ?? 0) >= d.maxUses) return false;
     const now = new Date();
     if (d.validFrom && now < new Date(d.validFrom)) return false;
     if (d.validUntil && now > new Date(d.validUntil)) return false;
     return true;
+  }
+
+  // ── Nightly bulk discount (skips tier-priced items; day trips excluded) ──
+  let autoDisc = 0;
+  const rule = nights > 0 ? discounts.filter(d => {
+    if (d.type !== "nightly_discount" || (d.trigger_nights ?? 0) > nights) return false;
+    return isDiscountValid(d);
   }).sort((a, b) => b.discount_percent - a.discount_percent)[0] : undefined;
   if (rule) {
     const fn = (rule.trigger_nights ?? 0) - 1;
     const dn = nights - fn;
     if (dn > 0) {
-      // Only include items that DON'T have an active tier match
       const nonTierCart = cart.filter(i => !itemHasActiveTier(i));
       let eligibleTotal = nonTierCart.reduce((s, i) => s + itemStayPrice(i, nights) * i.qty, 0);
       if (rule.appliesTo?.type === "specific" && rule.appliesTo.itemIds?.length) {
         const eligibleIds = new Set(rule.appliesTo.itemIds);
         eligibleTotal = nonTierCart.reduce((s, i) => eligibleIds.has(i.id) ? s + itemStayPrice(i, nights) * i.qty : s, 0);
       }
-      const discountedNightsFraction = dn / nights;
-      autoDisc = eligibleTotal * discountedNightsFraction * (rule.discount_percent / 100);
+      autoDisc = eligibleTotal * (dn / nights) * (rule.discount_percent / 100);
     }
   }
-  
-  // Promo discount
-  // Promo discount — respects appliesTo for item-specific codes
+
+  // ── Min. spend reward ──
+  let minSpendDisc = 0;
+  const minSpendRule = discounts.filter(d => d.type === "min_spend" && isDiscountValid(d) && sub >= (d.min_spend ?? 0))
+    .sort((a, b) => {
+      const av = a.discount_fixed ?? (sub * a.discount_percent / 100);
+      const bv = b.discount_fixed ?? (sub * b.discount_percent / 100);
+      return bv - av;
+    })[0];
+  if (minSpendRule) {
+    minSpendDisc = minSpendRule.discount_fixed ?? (sub * minSpendRule.discount_percent / 100);
+  }
+
+  // ── Quantity bundle deal ──
+  let bundleDisc = 0;
+  const cartTotalQty = cart.reduce((s, i) => s + i.qty, 0);
+  const bundleRule = discounts.filter(d => {
+    if (d.type !== "quantity_bundle" || !isDiscountValid(d)) return false;
+    const eligibleQty = d.bundle_category
+      ? cart.filter(i => i.category === d.bundle_category).reduce((s, i) => s + i.qty, 0)
+      : cartTotalQty;
+    return eligibleQty >= (d.min_qty ?? 2);
+  }).sort((a, b) => b.discount_percent - a.discount_percent)[0];
+  if (bundleRule) {
+    let bundleBase = sub;
+    if (bundleRule.appliesTo?.type === "specific" && bundleRule.appliesTo.itemIds?.length) {
+      const eligibleIds = new Set(bundleRule.appliesTo.itemIds);
+      bundleBase = cart.reduce((s, i) => eligibleIds.has(i.id) ? s + itemStayPrice(i, nights) * i.qty : s, 0);
+    }
+    bundleDisc = bundleBase * (bundleRule.discount_percent / 100);
+  }
+
+  // ── Free items (auto-added; shown in cart but don't affect subtotal) ──
+  const freeCartItems: { item: GearItem; ruleId: string; qty: number }[] = cart.length > 0
+    ? discounts.filter(d => {
+        if (d.type !== "free_item" || !isDiscountValid(d) || !d.freeItemId) return false;
+        switch (d.free_trigger) {
+          case "min_nights": return nights >= (d.free_trigger_nights ?? 1);
+          case "min_spend": return sub >= (d.free_trigger_spend ?? 0);
+          case "min_qty": {
+            const qty = d.free_trigger_category
+              ? cart.filter(i => i.category === d.free_trigger_category).reduce((s, i) => s + i.qty, 0)
+              : cartTotalQty;
+            return qty >= (d.free_trigger_qty ?? 1);
+          }
+          default: return true;
+        }
+      }).map(d => {
+        const item = allGear.find(g => g.id === d.freeItemId);
+        return item ? { item, ruleId: d.id!, qty: d.freeItemQty ?? 1 } : null;
+      }).filter(Boolean) as { item: GearItem; ruleId: string; qty: number }[]
+    : [];
+
+  // ── Promo code discount ──
   const promoDisc = (() => {
     if (!appliedPromo) return 0;
-    
-    // Calculate eligible subtotal based on appliesTo
     let eligibleSub = sub;
     if (appliedPromo.appliesTo?.type === "specific" && appliedPromo.appliesTo.itemIds?.length) {
       const eligibleIds = new Set(appliedPromo.appliesTo.itemIds);
       eligibleSub = cart.reduce((s, i) => eligibleIds.has(i.id) ? s + itemStayPrice(i, nights) * i.qty : s, 0);
     }
-    
     if (appliedPromo.discount_fixed) return Math.min(appliedPromo.discount_fixed, eligibleSub);
     return eligibleSub * (appliedPromo.discount_percent / 100);
   })();
+
+  // ── Combine all auto discounts ──
   const allowStacking = vendorData?.allow_stacking === true;
-  let finalDiscount = 0, showAuto = false, showPromo = false;
-  if (allowStacking) { finalDiscount = autoDisc + promoDisc; if (autoDisc > 0) showAuto = true; if (promoDisc > 0) showPromo = true; }
-  else { finalDiscount = Math.max(autoDisc, promoDisc); if (finalDiscount > 0) { if (promoDisc >= autoDisc && promoDisc > 0) showPromo = true; else showAuto = true; } }
+  const totalAutoDisc = allowStacking
+    ? autoDisc + minSpendDisc + bundleDisc
+    : Math.max(autoDisc, minSpendDisc, bundleDisc);
+  let showAuto = false, showMinSpend = false, showBundle = false, showPromo = false;
+  let finalDiscount = 0;
+  if (allowStacking) {
+    finalDiscount = totalAutoDisc + promoDisc;
+    if (autoDisc > 0) showAuto = true;
+    if (minSpendDisc > 0) showMinSpend = true;
+    if (bundleDisc > 0) showBundle = true;
+    if (promoDisc > 0) showPromo = true;
+  } else {
+    // Best auto discount competes with promo code
+    const bestAuto = Math.max(autoDisc, minSpendDisc, bundleDisc);
+    if (promoDisc >= bestAuto && promoDisc > 0) {
+      finalDiscount = promoDisc; showPromo = true;
+    } else if (bestAuto > 0) {
+      finalDiscount = bestAuto;
+      if (bestAuto === autoDisc) showAuto = true;
+      else if (bestAuto === minSpendDisc) showMinSpend = true;
+      else showBundle = true;
+    }
+  }
   const subAfterDisc = sub - finalDiscount;
 
   // ═══ Delivery fee calculation ═══
@@ -969,7 +1040,10 @@ function ShopPageContent({
     // Build discount text
     let discountLines = "";
     if (showAuto) discountLines += `%0AExtended Stay Discount: -RM${Math.round(autoDisc)}`;
+    if (showMinSpend) discountLines += `%0ASpend Reward: -RM${Math.round(minSpendDisc)}`;
+    if (showBundle) discountLines += `%0ABundle Deal: -RM${Math.round(bundleDisc)}`;
     if (showPromo && appliedPromo) discountLines += `%0APromo Code (${appliedPromo.code}): -RM${Math.round(promoDisc)}`;
+    if (freeCartItems.length > 0) discountLines += `%0AFree Items: ${freeCartItems.map(f => `${f.item.name} x${f.qty}`).join(", ")}`;
     
     // Build fulfillment section
     let fulfillmentSection = "";
@@ -1147,23 +1221,26 @@ function ShopPageContent({
             promoType: appliedPromo.discount_fixed ? "fixed" : "percent",
           } : {}),
           ...(showAuto ? { autoDiscount: Math.round(autoDisc) } : {}),
+          ...(showMinSpend ? { minSpendDiscount: Math.round(minSpendDisc) } : {}),
+          ...(showBundle ? { bundleDiscount: Math.round(bundleDisc) } : {}),
+          ...(freeCartItems.length > 0 ? { freeItems: freeCartItems.map(f => ({ id: f.item.id, name: f.item.name, qty: f.qty })) } : {}),
         };
         const orderRef = await addDoc(collection(db, "orders"), orderData);
 
-        // Track usage on vendor discount / nightly discount rules
+        // Track usage on all applied discount rules
         const usageEntry = { phone: savedPhone, name: savedName, orderId: orderRef.id, date: new Date().toISOString() };
-        if (appliedPromo?.id && vendorId) {
-          await updateDoc(doc(db, "vendors", vendorId, "discounts", appliedPromo.id), {
-            usedCount: increment(1),
-            usedBy: arrayUnion(usageEntry),
-          }).catch(() => {});
-        }
-        if (showAuto && rule?.id && vendorId) {
-          await updateDoc(doc(db, "vendors", vendorId, "discounts", rule.id), {
-            usedCount: increment(1),
-            usedBy: arrayUnion(usageEntry),
-          }).catch(() => {});
-        }
+        const usageUpdates: Promise<void>[] = [];
+        const trackRule = (id?: string) => {
+          if (id && vendorId) usageUpdates.push(
+            updateDoc(doc(db, "vendors", vendorId, "discounts", id), { usedCount: increment(1), usedBy: arrayUnion(usageEntry) }).catch(() => {})
+          );
+        };
+        if (appliedPromo?.id) trackRule(appliedPromo.id);
+        if (showAuto) trackRule(rule?.id);
+        if (showMinSpend) trackRule(minSpendRule?.id);
+        if (showBundle) trackRule(bundleRule?.id);
+        freeCartItems.forEach(f => trackRule(f.ruleId));
+        await Promise.all(usageUpdates);
 
         // Auto-create calendar availability entries for each cart item
         if (vendorId && pickupDate && returnDate) {
@@ -1978,6 +2055,24 @@ function ShopPageContent({
                 })}
               </div>
 
+              {/* Free Items (auto-added by discount rules) */}
+              {freeCartItems.length > 0 && (
+                <div className="space-y-2">
+                  {freeCartItems.map(({ item, ruleId, qty }) => (
+                    <div key={ruleId} className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                      {(item.images?.[0] || item.img) && (
+                        <img src={item.images?.[0] || item.img} className="w-10 h-10 rounded-xl object-cover flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] font-black uppercase truncate text-emerald-700">{item.name}</p>
+                        <p className="text-[9px] font-bold text-emerald-500">×{qty}</p>
+                      </div>
+                      <span className="text-[9px] font-black text-white bg-emerald-500 px-2 py-1 rounded-lg flex-shrink-0"><i className="fas fa-gift mr-1"></i>FREE</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Date Selection */}
               <div className="bg-gradient-to-br from-emerald-50/50 to-slate-50 p-4 rounded-2xl border border-emerald-100">
                 <p className="text-[9px] font-black text-slate-400 uppercase mb-3 flex items-center gap-2"><i className="fas fa-calendar-alt text-emerald-500"></i>Rental Dates</p>
@@ -2107,7 +2202,10 @@ function ShopPageContent({
                 <div className="flex justify-between"><span>Duration</span><span className="text-[#062c24]">{nights === 0 ? "Day Trip" : `${nights} Night${nights > 1 ? "s" : ""}`}</span></div>
                 <div className="flex justify-between"><span>Subtotal</span><span className="text-[#062c24]">RM {sub}</span></div>
                 {showAuto && <div className="flex justify-between text-emerald-600"><span>Extended Stay</span><span>− RM {Math.round(autoDisc)}</span></div>}
+                {showMinSpend && <div className="flex justify-between text-emerald-600"><span><i className="fas fa-star mr-1"></i>Spend Reward</span><span>− RM {Math.round(minSpendDisc)}</span></div>}
+                {showBundle && <div className="flex justify-between text-emerald-600"><span><i className="fas fa-boxes mr-1"></i>Bundle Deal</span><span>− RM {Math.round(bundleDisc)}</span></div>}
                 {showPromo && <div className="flex justify-between text-emerald-600"><span>Promo Code</span><span>− RM {Math.round(promoDisc)}</span></div>}
+                {freeCartItems.length > 0 && <div className="flex justify-between text-emerald-600"><span><i className="fas fa-gift mr-1"></i>Free Item{freeCartItems.length > 1 ? "s" : ""}</span><span>{freeCartItems.map(f => f.item.name).join(", ")}</span></div>}
                 {fulfillmentType === "delivery" && (
                   <>
                     {useCombo && hasCombo ? (
