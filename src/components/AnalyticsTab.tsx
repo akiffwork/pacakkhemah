@@ -20,6 +20,7 @@ type Lead = {
   type?: string;
   visitorId?: string;
   isRepeatVisitor?: boolean;
+  creditDeducted?: boolean;
 };
 
 type OrderData = {
@@ -207,13 +208,13 @@ export default function AnalyticsTab({ vendorId, vendorData }: AnalyticsTabProps
               <div key={lead.id} className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                    lead.isRepeatVisitor ? "bg-blue-100 text-blue-600" : "bg-emerald-100 text-emerald-600"
+                    lead.creditDeducted ? "bg-emerald-100 text-emerald-600" : "bg-blue-100 text-blue-600"
                   }`}>
-                    <i className={lead.isRepeatVisitor ? "fas fa-redo-alt" : "fab fa-whatsapp"}></i>
+                    <i className={lead.creditDeducted ? "fab fa-whatsapp" : "fas fa-redo-alt"}></i>
                   </div>
                   <div>
                     <p className="text-[10px] font-black uppercase text-[#062c24]">
-                      {lead.isRepeatVisitor ? "Repeat Lead" : "New Lead"}
+                      {lead.creditDeducted ? "New Lead" : "Repeat Lead"}
                     </p>
                     <p className="text-[9px] text-slate-400 font-medium">
                       {lead.timestamp?.toDate().toLocaleDateString() || "Now"}
