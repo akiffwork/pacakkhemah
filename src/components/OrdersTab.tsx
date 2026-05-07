@@ -16,6 +16,11 @@ type Order = {
   totalAmount: number;
   rentalAmount?: number;
   depositAmount?: number;
+  serviceFee?: number;
+  promoCode?: string;
+  promoDiscount?: number;
+  promoType?: string;
+  autoDiscount?: number;
   pickupLocation: string;
   bookingDates: { start: string; end: string };
   status: "pending" | "confirmed" | "completed" | "cancelled" | "conflict";
@@ -130,13 +135,28 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/agreement?v=${vendorId}&o=${order.id}`;
     try {
+      const discounts: { label: string; amount: number }[] = [];
+      if (order.autoDiscount) discounts.push({ label: "Extended Stay Discount", amount: order.autoDiscount });
+      if (order.promoCode && order.promoDiscount) {
+        const promoLabel = order.promoType === "fixed"
+          ? `Promo Code "${order.promoCode}" (RM${order.promoDiscount} off)`
+          : `Promo Code "${order.promoCode}"`;
+        discounts.push({ label: promoLabel, amount: order.promoDiscount });
+      }
+      const total = (order as any).manualPrice || order.totalAmount;
+      const depositAmount = order.depositAmount;
+      const rentalAmount = order.rentalAmount ?? (depositAmount != null ? total - depositAmount : undefined);
       const summary = {
         items: order.items.map(i => ({
           name: i.name, qty: i.qty, price: i.price,
           ...(i.variantLabel ? { variantLabel: i.variantLabel, variantColor: i.variantColor } : {}),
         })),
         dates: order.bookingDates,
-        total: (order as any).manualPrice || order.totalAmount,
+        ...(discounts.length ? { discounts } : {}),
+        ...(order.serviceFee ? { serviceFee: order.serviceFee } : {}),
+        ...(rentalAmount != null ? { rentalAmount } : {}),
+        ...(depositAmount != null ? { depositAmount } : {}),
+        total,
       };
       const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(summary))));
       return `${base}&d=${encoded}`;

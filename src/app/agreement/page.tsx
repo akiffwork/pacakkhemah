@@ -71,6 +71,11 @@ function AgreementContent() {
               orderId: orderIdParam,
               items: decoded.items || [],
               dates: decoded.dates || { start: "TBD", end: "TBD" },
+              subtotal: decoded.subtotal,
+              discounts: decoded.discounts,
+              serviceFee: decoded.serviceFee,
+              rentalAmount: decoded.rentalAmount,
+              depositAmount: decoded.depositAmount,
               total: decoded.total || 0,
             });
             setLoading(false);
@@ -122,12 +127,12 @@ function AgreementContent() {
           }
         }
 
-        // Priority 3: localStorage (same-browser flow)
+        // Priority 3: localStorage (same-browser flow after checkout)
         try {
           const stored = localStorage.getItem("current_booking");
           if (stored) {
-            const parsed = JSON.parse(stored) as BookingData;
-            if (parsed.vendorId === vendorId) setBooking(parsed);
+            const parsed = JSON.parse(stored);
+            if (parsed.vendorId === vendorId) setBooking(parsed as BookingData);
           }
         } catch { /* ignore */ }
 
