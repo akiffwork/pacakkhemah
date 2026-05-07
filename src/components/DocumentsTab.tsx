@@ -154,17 +154,33 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
     return a.bookingDetails as BookingDetails;
   }
 
+  async function storageToDataUrl(path: string): Promise<string> {
+    const storage = getStorage();
+    const url = await getDownloadURL(ref(storage, path));
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
   async function downloadAgreementPDF(agreement: Agreement) {
     setPdfLoading(agreement.id);
     try {
-      const storage = getStorage();
-      let fUrl = "", bUrl = "";
-      try {
-        [fUrl, bUrl] = await Promise.all([
-          getDownloadURL(ref(storage, agreement.icFrontPath || "")),
-          getDownloadURL(ref(storage, agreement.icBackPath || "")),
-        ]);
-      } catch { /* IC images may not be accessible */ }
+      let fDataUrl = "", bDataUrl = "";
+      if (agreement.icFrontPath && agreement.icBackPath) {
+        try {
+          [fDataUrl, bDataUrl] = await Promise.all([
+            storageToDataUrl(agreement.icFrontPath),
+            storageToDataUrl(agreement.icBackPath),
+          ]);
+        } catch (e) {
+          console.warn("Could not load IC images for PDF:", e);
+        }
+      }
 
       const booking = getBooking(agreement);
       const ts = agreement.timestamp?.toDate() || new Date();
@@ -184,7 +200,7 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
           total: booking.total,
         } : null,
         vendorData.rules,
-        (fUrl && bUrl) ? { frontUrl: fUrl, backUrl: bUrl } : undefined,
+        (fDataUrl && bDataUrl) ? { frontUrl: fDataUrl, backUrl: bDataUrl } : undefined,
       );
     } catch (e) {
       console.error(e);

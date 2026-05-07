@@ -250,11 +250,11 @@ function buildICPage(vendor: PDFVendor, images: PDFImages) {
   <p style="font-size:11px;color:#555;margin-bottom:20px;">The following identification documents were submitted by the Customer as part of the rental agreement verification process.</p>
   <div style="margin-bottom:24px;">
     <p style="font-size:10px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:8px;">Front — IC / MyKad</p>
-    <img src="${images.frontUrl}" style="width:100%;max-height:280px;object-fit:contain;border:1px solid #ddd;" crossorigin="anonymous">
+    <img src="${images.frontUrl}" style="width:100%;max-height:280px;object-fit:contain;border:1px solid #ddd;">
   </div>
   <div style="margin-bottom:24px;">
     <p style="font-size:10px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:8px;">Back — IC / MyKad</p>
-    <img src="${images.backUrl}" style="width:100%;max-height:280px;object-fit:contain;border:1px solid #ddd;" crossorigin="anonymous">
+    <img src="${images.backUrl}" style="width:100%;max-height:280px;object-fit:contain;border:1px solid #ddd;">
   </div>
 
   ${buildFooter(vendor)}
