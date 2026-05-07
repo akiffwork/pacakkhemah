@@ -42,8 +42,42 @@ export const onNewOrder = onDocumentCreated(
 
     if (data.type !== "whatsapp_lead") return;
 
-    const { vendorId, vendorName, totalAmount, items } = data;
+    const { vendorId, vendorName, totalAmount, items, visitorId } = data;
     if (!vendorId) return;
+
+    // ── Credit deduction (Admin SDK bypasses Firestore security rules) ──────
+    // Deduct 1 credit per unique visitorId per vendor per 24 hours.
+    // Dedup is done atomically inside a transaction by reading a per-visitor
+    // doc at vendors/{vendorId}/leadCredits/{visitorId}.
+    if (visitorId) {
+      try {
+        const dedupRef = db.doc(`vendors/${vendorId}/leadCredits/${visitorId}`);
+        const vRef = db.doc(`vendors/${vendorId}`);
+
+        let deducted = false;
+        await db.runTransaction(async (t) => {
+          const dedupSnap = await t.get(dedupRef);
+          const last = dedupSnap.data()?.lastDeductedAt as { toMillis?: () => number } | undefined;
+          const lastMs = typeof last?.toMillis === "function" ? last.toMillis() : 0;
+          if (lastMs && Date.now() - lastMs < 86_400_000) return;
+
+          const vDoc = await t.get(vRef);
+          const c = (vDoc.data()?.credits ?? 0) as number;
+          if (c <= 0) return;
+
+          t.update(vRef, { credits: FieldValue.increment(-1) });
+          t.set(dedupRef, { lastDeductedAt: FieldValue.serverTimestamp() }, { merge: true });
+          deducted = true;
+        });
+
+        if (deducted) {
+          await event.data!.ref.update({ creditDeducted: true });
+        }
+      } catch (e) {
+        console.error("Credit deduction error:", e);
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
     const fcmToken = vendorSnap.data()?.fcmToken;
