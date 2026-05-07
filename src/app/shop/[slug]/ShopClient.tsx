@@ -158,10 +158,12 @@ export default function ShopPage({
   params,
   initialVendor,
   initialVendorId,
+  initialItemId,
 }: {
   params: Promise<{ slug: string }>;
   initialVendor?: VendorData | null;
   initialVendorId?: string | null;
+  initialItemId?: string;
 }) {
   return (
     <Suspense fallback={
@@ -173,6 +175,7 @@ export default function ShopPage({
         params={params}
         initialVendor={initialVendor}
         initialVendorId={initialVendorId}
+        initialItemId={initialItemId}
       />
     </Suspense>
   );
@@ -182,10 +185,12 @@ function ShopPageContent({
   params,
   initialVendor,
   initialVendorId,
+  initialItemId,
 }: {
   params: Promise<{ slug: string }>;
   initialVendor?: VendorData | null;
   initialVendorId?: string | null;
+  initialItemId?: string;
 }) {
   const searchParams = useSearchParams();
   const resolvedParams = use(params);
@@ -460,9 +465,9 @@ function ShopPageContent({
     return () => { cancelled = true; cartCpRef.current?.destroy(); cartOpRef.current?.destroy(); };
   }, [showCart, vendorData, availRules, weeklyOff]);
 
-  // Auto-open item modal from URL param
+  // Auto-open item modal from URL param or server-passed initialItemId
   useEffect(() => {
-    const itemParam = searchParams.get("item");
+    const itemParam = initialItemId || searchParams.get("item");
     if (itemParam && allGear.length > 0) {
       const item = allGear.find(g => g.id === itemParam);
       if (item) {
@@ -472,12 +477,13 @@ function ShopPageContent({
         setShowItemModal(true);
       }
     }
-  }, [allGear, searchParams]);
+  }, [allGear, searchParams, initialItemId]);
 
   function getItemShareUrl(item: GearItem): string {
     const base = typeof window !== "undefined" ? window.location.origin : "";
-    const shopPath = vendorData?.slug ? `/shop/${vendorData.slug}` : `/shop/${vendorId}`;
-    return `${base}${shopPath}?item=${item.id}`;
+    const shopSlug = vendorData?.slug || vendorId;
+    // Path-based URL so social crawlers (Threads, etc.) see correct OG tags server-side
+    return `${base}/shop/${shopSlug}/item/${item.id}`;
   }
 
   async function shareItem(item: GearItem) {
@@ -1276,6 +1282,14 @@ function ShopPageContent({
         }
 
         // Save booking data to localStorage for agreement page
+        const discountLines: { label: string; amount: number }[] = [];
+        if (showAuto && autoDisc > 0) discountLines.push({ label: `Extended Stay Discount (${rule?.discount_percent}%)`, amount: Math.round(autoDisc) });
+        if (showPromo && appliedPromo && promoDisc > 0) {
+          const promoLabel = appliedPromo.discount_fixed
+            ? `Promo Code "${appliedPromo.code}" (RM${appliedPromo.discount_fixed} off)`
+            : `Promo Code "${appliedPromo.code}" (${appliedPromo.discount_percent}% off)`;
+          discountLines.push({ label: promoLabel, amount: Math.round(promoDisc) });
+        }
         localStorage.setItem("current_booking", JSON.stringify({
           vendorId,
           orderId: orderRef.id,
@@ -1286,6 +1300,11 @@ function ShopPageContent({
             return { name, qty: i.qty, price: i.price };
           }),
           dates: { start: pickupDate, end: returnDate },
+          subtotal: sub,
+          discounts: discountLines.length ? discountLines : undefined,
+          serviceFee: serviceFee > 0 ? Math.round(serviceFee) : undefined,
+          rentalAmount: Math.round(subAfterDisc + serviceFee),
+          depositAmount: Math.round(dep),
           total,
         }));
       } catch (e) { console.error("Order creation error:", e); }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, limit } from "firebase/firestore";
 import { getStorage, ref, getDownloadURL } from "firebase/storage";
 import { generateAgreementPDF, buildAgreementMeta } from "@/lib/agreementPDF";
 
@@ -16,6 +16,11 @@ type BookingDetails = {
   orderId?: string;
   items: { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string }[];
   dates: { start: string; end: string };
+  subtotal?: number;
+  discounts?: { label: string; amount: number }[];
+  serviceFee?: number;
+  rentalAmount?: number;
+  depositAmount?: number;
   total: number;
 };
 
@@ -31,10 +36,31 @@ type Agreement = {
   status?: string;
 };
 
+type PendingOrder = {
+  id: string;
+  customerName?: string;
+  customerPhone?: string;
+  items: { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string }[];
+  totalAmount: number;
+  rentalAmount?: number;
+  depositAmount?: number;
+  promoCode?: string;
+  promoDiscount?: number;
+  promoType?: string;
+  autoDiscount?: number;
+  serviceFee?: number;
+  bookingDates: { start: string; end: string };
+  status: string;
+  agreementSigned?: boolean;
+  deleted?: boolean;
+  createdAt: any;
+};
+
 export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps) {
   const [agreements, setAgreements] = useState<Agreement[]>([]);
+  const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [copyMsg, setCopyMsg] = useState(false);
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const agreementLink = typeof window !== "undefined"
@@ -42,22 +68,71 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
     : "";
 
   useEffect(() => {
-    const q = query(
-      collection(db, "agreements"),
-      where("vendorId", "==", vendorId),
-      orderBy("timestamp", "desc")
+    const unsubAgreements = onSnapshot(
+      query(collection(db, "agreements"), where("vendorId", "==", vendorId), orderBy("timestamp", "desc")),
+      (snap) => {
+        setAgreements(snap.docs.map(d => ({ id: d.id, ...d.data() } as Agreement)));
+        setLoading(false);
+      }
     );
-    const unsub = onSnapshot(q, (snap) => {
-      setAgreements(snap.docs.map(d => ({ id: d.id, ...d.data() } as Agreement)));
-      setLoading(false);
-    });
-    return () => unsub();
+
+    const unsubOrders = onSnapshot(
+      query(collection(db, "orders"), where("vendorId", "==", vendorId), orderBy("createdAt", "desc"), limit(60)),
+      (snap) => {
+        const orders = snap.docs
+          .map(d => ({ id: d.id, ...d.data() } as PendingOrder))
+          .filter(o => !o.deleted && !o.agreementSigned);
+        setPendingOrders(orders);
+      }
+    );
+
+    return () => { unsubAgreements(); unsubOrders(); };
   }, [vendorId]);
 
-  function copyLink() {
-    navigator.clipboard.writeText(agreementLink);
-    setCopyMsg(true);
-    setTimeout(() => setCopyMsg(false), 2000);
+  function copyLink(text: string, key: string) {
+    navigator.clipboard.writeText(text);
+    setCopyMsg(key);
+    setTimeout(() => setCopyMsg(null), 2000);
+  }
+
+  function getOrderAgreementLink(order: PendingOrder): string {
+    const base = `${window.location.origin}/agreement?v=${vendorId}&o=${order.id}`;
+    try {
+      const discounts: { label: string; amount: number }[] = [];
+      if (order.autoDiscount) discounts.push({ label: "Extended Stay Discount", amount: order.autoDiscount });
+      if (order.promoCode && order.promoDiscount) {
+        const lbl = order.promoType === "fixed"
+          ? `Promo Code "${order.promoCode}" (RM${order.promoDiscount} off)`
+          : `Promo Code "${order.promoCode}"`;
+        discounts.push({ label: lbl, amount: order.promoDiscount });
+      }
+      const total = order.totalAmount;
+      const depositAmount = order.depositAmount;
+      const rentalAmount = order.rentalAmount ?? (depositAmount != null ? total - depositAmount : undefined);
+      const summary = {
+        items: order.items.map(i => ({
+          name: i.name, qty: i.qty, price: i.price,
+          ...(i.variantLabel ? { variantLabel: i.variantLabel, variantColor: i.variantColor } : {}),
+        })),
+        dates: order.bookingDates,
+        ...(discounts.length ? { discounts } : {}),
+        ...(order.serviceFee ? { serviceFee: order.serviceFee } : {}),
+        ...(rentalAmount != null ? { rentalAmount } : {}),
+        ...(depositAmount != null ? { depositAmount } : {}),
+        total,
+      };
+      return `${base}&d=${btoa(unescape(encodeURIComponent(JSON.stringify(summary))))}`;
+    } catch {
+      return base;
+    }
+  }
+
+  function sendOrderAgreementWhatsApp(order: PendingOrder) {
+    const link = getOrderAgreementLink(order);
+    const name = order.customerName ? ` untuk ${order.customerName}` : "";
+    const msg = `Sila lengkapkan pengesahan identiti${name} untuk tempahan anda:\n\n${link}\n\n1. Masukkan nama penuh\n2. Masukkan nombor WhatsApp\n3. Muat naik gambar IC (depan & belakang)\n4. Tandatangan waiver\n\nTerima kasih!`;
+    const phone = order.customerPhone?.replace(/\D/g, "");
+    window.open(`https://wa.me/${phone || ""}?text=${encodeURIComponent(msg)}`, "_blank");
   }
 
   function shareViaWhatsApp() {
@@ -98,7 +173,16 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
       generateAgreementPDF(
         { name: vendorData.name, phone: vendorData.phone, city: vendorData.city },
         { customerName: agreement.customerName, customerPhone: agreement.customerPhone, ...meta },
-        booking ? { items: booking.items, dates: booking.dates, total: booking.total } : null,
+        booking ? {
+          items: booking.items,
+          dates: booking.dates,
+          subtotal: booking.subtotal,
+          discounts: booking.discounts,
+          serviceFee: booking.serviceFee,
+          rentalAmount: booking.rentalAmount,
+          deposit: booking.depositAmount,
+          total: booking.total,
+        } : null,
         vendorData.rules,
         (fUrl && bUrl) ? { frontUrl: fUrl, backUrl: bUrl } : undefined,
       );
@@ -163,10 +247,10 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
             <input type="text" readOnly value={agreementLink}
               className="flex-1 bg-white border border-slate-200 p-3.5 rounded-xl text-xs font-bold text-slate-600 outline-none select-all" />
             <div className="flex gap-2">
-              <button onClick={copyLink}
-                className={`px-5 py-3 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${copyMsg ? "bg-emerald-500 text-white" : "bg-[#062c24] text-white hover:bg-emerald-800"}`}>
-                <i className={`fas ${copyMsg ? "fa-check" : "fa-copy"}`}></i>
-                {copyMsg ? "Copied!" : "Copy Link"}
+              <button onClick={() => copyLink(agreementLink, "generic")}
+                className={`px-5 py-3 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${copyMsg === "generic" ? "bg-emerald-500 text-white" : "bg-[#062c24] text-white hover:bg-emerald-800"}`}>
+                <i className={`fas ${copyMsg === "generic" ? "fa-check" : "fa-copy"}`}></i>
+                {copyMsg === "generic" ? "Copied!" : "Copy Link"}
               </button>
               <button onClick={shareViaWhatsApp}
                 className="px-5 py-3 rounded-xl text-[10px] font-black uppercase bg-emerald-500 text-white hover:bg-emerald-600 transition-all flex items-center gap-2">
@@ -180,6 +264,84 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
           </p>
         </div>
       </div>
+
+      {/* Pending Agreements */}
+      {pendingOrders.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-amber-100 text-amber-600 rounded-lg flex items-center justify-center">
+                <i className="fas fa-clock text-sm"></i>
+              </div>
+              <h3 className="text-sm font-black text-[#062c24] uppercase">Awaiting Agreement</h3>
+            </div>
+            <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">
+              {pendingOrders.length} pending
+            </span>
+          </div>
+
+          <div className="divide-y divide-slate-50">
+            {pendingOrders.map(order => {
+              const itemSummary = order.items?.length
+                ? order.items[0].name + (order.items.length > 1 ? ` +${order.items.length - 1} more` : "")
+                : "—";
+              const orderLink = getOrderAgreementLink(order);
+              const isCopied = copyMsg === order.id;
+
+              return (
+                <div key={order.id} className="p-4 hover:bg-slate-50 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center shrink-0 mt-0.5">
+                        <i className="fas fa-box text-slate-400 text-sm"></i>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                          <p className="text-sm font-black text-[#062c24] truncate">
+                            {order.customerName || order.customerPhone || "Unknown Customer"}
+                          </p>
+                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                            order.status === "confirmed"
+                              ? "bg-emerald-50 text-emerald-600"
+                              : "bg-slate-100 text-slate-500"
+                          }`}>{order.status}</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 truncate mb-0.5">{itemSummary}</p>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          {order.bookingDates?.start && (
+                            <span className="text-[10px] text-slate-400">
+                              <i className="fas fa-calendar-alt mr-1"></i>
+                              {order.bookingDates.start} → {order.bookingDates.end}
+                            </span>
+                          )}
+                          <span className="text-[10px] font-black text-emerald-600">RM {order.totalAmount}</span>
+                          {order.depositAmount != null && order.depositAmount > 0 && (
+                            <span className="text-[9px] text-amber-600">
+                              <i className="fas fa-shield-alt mr-0.5"></i>RM {order.depositAmount} deposit
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 shrink-0">
+                      <button onClick={() => sendOrderAgreementWhatsApp(order)}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500 text-white rounded-xl text-[9px] font-black uppercase hover:bg-emerald-600 transition-all">
+                        <i className="fab fa-whatsapp text-sm"></i> Send
+                      </button>
+                      <button onClick={() => copyLink(orderLink, order.id)}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${isCopied ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                        <i className={`fas ${isCopied ? "fa-check" : "fa-link"} text-sm`}></i>
+                        {isCopied ? "Copied" : "Copy"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Agreements List */}
       <div className="bg-white p-6 rounded-2xl border border-slate-100">

@@ -8,11 +8,17 @@ import { getStorage, ref, uploadBytes } from "firebase/storage";
 import { generateAgreementPDF, buildAgreementMeta } from "@/lib/agreementPDF";
 
 type VendorData = { name: string; rules?: string[] };
+type BookingDiscount = { label: string; amount: number };
 type BookingData = {
   vendorId: string;
   orderId?: string;
   items: { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string }[];
   dates: { start: string; end: string };
+  subtotal?: number;
+  discounts?: BookingDiscount[];
+  serviceFee?: number;
+  rentalAmount?: number;
+  depositAmount?: number;
   total: number;
 };
 
@@ -65,6 +71,11 @@ function AgreementContent() {
               orderId: orderIdParam,
               items: decoded.items || [],
               dates: decoded.dates || { start: "TBD", end: "TBD" },
+              subtotal: decoded.subtotal,
+              discounts: decoded.discounts,
+              serviceFee: decoded.serviceFee,
+              rentalAmount: decoded.rentalAmount,
+              depositAmount: decoded.depositAmount,
               total: decoded.total || 0,
             });
             setLoading(false);
@@ -78,6 +89,18 @@ function AgreementContent() {
             const orderSnap = await getDoc(doc(db, "orders", orderIdParam));
             if (orderSnap.exists()) {
               const o = orderSnap.data();
+              const discounts: BookingDiscount[] = [];
+              if (o.autoDiscount) discounts.push({ label: "Extended Stay Discount", amount: o.autoDiscount });
+              if (o.promoCode && o.promoDiscount) {
+                const promoLabel = o.promoType === "fixed"
+                  ? `Promo Code "${o.promoCode}" (RM${o.promoDiscount} off)`
+                  : `Promo Code "${o.promoCode}"`;
+                discounts.push({ label: promoLabel, amount: o.promoDiscount });
+              }
+              const totalAmount = o.manualPrice || o.totalAmount || 0;
+              const depositAmount = o.depositAmount || 0;
+              const rentalAmount = o.rentalAmount || (totalAmount - depositAmount);
+              const subtotal = o.subtotal || (discounts.length ? rentalAmount + discounts.reduce((s: number, d: BookingDiscount) => s + d.amount, 0) : undefined);
               setBooking({
                 vendorId: vendorId!,
                 orderId: orderIdParam,
@@ -86,7 +109,12 @@ function AgreementContent() {
                   variantLabel: i.variantLabel, variantColor: i.variantColor,
                 })),
                 dates: o.bookingDates || { start: "TBD", end: "TBD" },
-                total: o.manualPrice || o.totalAmount || 0,
+                subtotal,
+                discounts: discounts.length ? discounts : undefined,
+                serviceFee: o.serviceFee || undefined,
+                rentalAmount: depositAmount ? rentalAmount : undefined,
+                depositAmount: depositAmount || undefined,
+                total: totalAmount,
               });
               setLoading(false);
               return;
@@ -99,12 +127,12 @@ function AgreementContent() {
           }
         }
 
-        // Priority 3: localStorage (same-browser flow)
+        // Priority 3: localStorage (same-browser flow after checkout)
         try {
           const stored = localStorage.getItem("current_booking");
           if (stored) {
-            const parsed = JSON.parse(stored) as BookingData;
-            if (parsed.vendorId === vendorId) setBooking(parsed);
+            const parsed = JSON.parse(stored);
+            if (parsed.vendorId === vendorId) setBooking(parsed as BookingData);
           }
         } catch { /* ignore */ }
 
@@ -238,7 +266,16 @@ function AgreementContent() {
     generateAgreementPDF(
       { name: vendor?.name || "—" },
       { customerName: custName || "—", customerPhone: formatPhone(custPhone) || undefined, ...meta },
-      booking ? { items: booking.items, dates: booking.dates, total: booking.total } : null,
+      booking ? {
+        items: booking.items,
+        dates: booking.dates,
+        subtotal: booking.subtotal,
+        discounts: booking.discounts,
+        serviceFee: booking.serviceFee,
+        rentalAmount: booking.rentalAmount,
+        deposit: booking.depositAmount,
+        total: booking.total,
+      } : null,
       vendor?.rules,
     );
   }
@@ -368,17 +405,53 @@ function AgreementContent() {
                     <p className="italic text-slate-400 font-normal text-sm">Items as discussed in WhatsApp / Chat Record</p>
                   )}
                 </div>
-                <div className="bg-slate-50 px-5 py-4 border-t border-slate-200 flex justify-between items-center">
-                  <div>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase mb-0.5">Rental Period</p>
-                    <p className="font-bold text-xs flex items-center gap-2">
-                      <span>{booking?.dates?.start || "TBD"}</span>
-                      <i className="fas fa-arrow-right text-slate-300 text-[8px]"></i>
-                      <span>{booking?.dates?.end || "TBD"}</span>
-                    </p>
+                <div className="bg-slate-50 px-5 py-4 border-t border-slate-200 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase mb-0.5">Rental Period</p>
+                      <p className="font-bold text-xs flex items-center gap-2">
+                        <span>{booking?.dates?.start || "TBD"}</span>
+                        <i className="fas fa-arrow-right text-slate-300 text-[8px]"></i>
+                        <span>{booking?.dates?.end || "TBD"}</span>
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-[9px] font-bold text-slate-400 uppercase mb-0.5">Total Value</p>
+                  {(booking?.discounts?.length || booking?.depositAmount) && (
+                    <div className="space-y-1 pt-1 border-t border-slate-200">
+                      {booking.subtotal != null && (
+                        <div className="flex justify-between text-xs text-slate-500">
+                          <span>Subtotal</span>
+                          <span>RM {booking.subtotal}</span>
+                        </div>
+                      )}
+                      {booking.discounts?.map((d, i) => (
+                        <div key={i} className="flex justify-between text-xs text-emerald-600 font-semibold">
+                          <span><i className="fas fa-tag mr-1 text-[9px]"></i>{d.label}</span>
+                          <span>− RM {d.amount}</span>
+                        </div>
+                      ))}
+                      {booking.serviceFee != null && booking.serviceFee > 0 && (
+                        <div className="flex justify-between text-xs text-slate-500">
+                          <span>Service Fee</span>
+                          <span>RM {booking.serviceFee}</span>
+                        </div>
+                      )}
+                      {booking.rentalAmount != null && (
+                        <div className="flex justify-between text-xs font-bold text-[#062c24]">
+                          <span>Rental Amount</span>
+                          <span>RM {booking.rentalAmount}</span>
+                        </div>
+                      )}
+                      {booking.depositAmount != null && booking.depositAmount > 0 && (
+                        <div className="flex justify-between text-xs font-bold text-amber-700 bg-amber-50 -mx-5 px-5 py-1.5 rounded">
+                          <span><i className="fas fa-shield-alt mr-1 text-[9px]"></i>Refundable Deposit</span>
+                          <span>RM {booking.depositAmount}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center pt-1 border-t border-slate-200">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">Total Payable</p>
                     <p className="font-black text-xl text-emerald-600">
                       {booking?.total ? `RM ${booking.total}` : "—"}
                     </p>

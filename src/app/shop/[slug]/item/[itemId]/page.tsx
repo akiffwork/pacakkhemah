@@ -1,51 +1,45 @@
 import { Metadata } from "next";
-import ShopClient from "./ShopClient";
-import { buildItemMetadata, buildVendorMetadata, getGearItem, getVendorData, parseFirestoreDoc } from "./_lib/metadata";
+import ShopClient from "../../ShopClient";
+import { buildItemMetadata, getGearItem, getVendorData, parseFirestoreDoc } from "../../_lib/metadata";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Metadata — supports both vendor page and old `?item=` deep links (back-compat)
+// Metadata — item-specific OG tags served from a clean path URL (no ?item=)
+// Path-based so social crawlers (Threads, etc.) can't strip the item identity.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function generateMetadata({
   params,
-  searchParams,
 }: {
-  params: Promise<{ slug: string }>;
-  searchParams: Promise<{ [key: string]: string | undefined }>;
+  params: Promise<{ slug: string; itemId: string }>;
 }): Promise<Metadata> {
-  const { slug } = await params;
-  const { item: itemId } = await searchParams;
-
-  const vendor = await getVendorData(slug);
-
-  if (itemId) {
-    const gear = await getGearItem(itemId);
-    return buildItemMetadata({ itemId, vendor, gear });
-  }
-
-  return buildVendorMetadata(vendor);
+  const { slug, itemId } = await params;
+  const [vendor, gear] = await Promise.all([getVendorData(slug), getGearItem(itemId)]);
+  return buildItemMetadata({ itemId, vendor, gear });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Page — fetches vendor on the server and seeds ShopClient
+// Page — renders ShopClient with the specific item pre-opened
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default async function ShopPage({
+export default async function ItemPage({
   params,
 }: {
-  params: Promise<{ slug: string }>;
+  params: Promise<{ slug: string; itemId: string }>;
 }) {
-  const { slug } = await params;
+  const { slug, itemId } = await params;
   const vendor = await getVendorData(slug);
-
   const initialVendor = vendor ? parseFirestoreDoc(vendor.doc) : null;
   const initialVendorId = vendor?.id || null;
 
+  // ShopClient only needs slug; rewrap as Promise<{slug}>
+  const slugParams = Promise.resolve({ slug });
+
   return (
     <ShopClient
-      params={params}
+      params={slugParams}
       initialVendor={initialVendor}
       initialVendorId={initialVendorId}
+      initialItemId={itemId}
     />
   );
 }

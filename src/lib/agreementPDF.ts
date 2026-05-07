@@ -10,9 +10,16 @@ type PDFVendor = {
   city?: string;
 };
 
+type PDFDiscount = { label: string; amount: number };
+
 type PDFBooking = {
   items?: { name: string; qty: number; price?: number; variantLabel?: string }[];
   dates?: { start: string; end: string };
+  subtotal?: number;
+  discounts?: PDFDiscount[];
+  serviceFee?: number;
+  rentalAmount?: number;
+  deposit?: number;
   total?: number;
 };
 
@@ -76,9 +83,45 @@ function buildPage1(vendor: PDFVendor, agreement: PDFAgreement, booking: PDFBook
       <tr>
         <td style="padding:8px 12px;border:1px solid #ddd;font-size:11px;">${i.name}${i.variantLabel ? ` <span style="color:#0d9488;font-size:10px;">(${i.variantLabel})</span>` : ""}</td>
         <td style="padding:8px 12px;border:1px solid #ddd;text-align:center;font-size:11px;">${i.qty}</td>
-        <td style="padding:8px 12px;border:1px solid #ddd;text-align:right;font-size:11px;">${i.price ? `RM${i.price * i.qty}` : ""}</td>
+        <td style="padding:8px 12px;border:1px solid #ddd;text-align:right;font-size:11px;">${i.price ? `RM${i.price}/night` : ""}</td>
       </tr>`).join("")
     : `<tr><td colspan="3" style="padding:12px;border:1px solid #ddd;color:#999;font-style:italic;font-size:11px;">Items as discussed via WhatsApp / Chat Record</td></tr>`;
+
+  const hasBreakdown = booking && (booking.discounts?.length || booking.deposit != null || booking.rentalAmount != null);
+
+  const subtotalRow = hasBreakdown && booking.subtotal != null ? `
+      <tr style="background:#fafafa;">
+        <td colspan="2" style="padding:8px 12px;border:1px solid #ddd;font-size:11px;font-weight:600;color:#555;">Subtotal (before discount)</td>
+        <td style="padding:8px 12px;border:1px solid #ddd;text-align:right;font-size:11px;font-weight:600;color:#555;">RM${booking.subtotal}</td>
+      </tr>` : "";
+
+  const discountRows = hasBreakdown && booking.discounts?.length ? booking.discounts.map(d => `
+      <tr>
+        <td colspan="2" style="padding:8px 12px;border:1px solid #ddd;font-size:11px;color:#059669;font-weight:600;">
+          <span style="font-size:9px;background:#d1fae5;color:#065f46;padding:1px 6px;border-radius:99px;margin-right:6px;font-weight:700;text-transform:uppercase;">DISCOUNT</span>${d.label}
+        </td>
+        <td style="padding:8px 12px;border:1px solid #ddd;text-align:right;font-size:11px;color:#059669;font-weight:700;">− RM${d.amount}</td>
+      </tr>`).join("") : "";
+
+  const serviceFeeRow = hasBreakdown && booking.serviceFee ? `
+      <tr style="background:#fafafa;">
+        <td colspan="2" style="padding:8px 12px;border:1px solid #ddd;font-size:11px;font-weight:600;color:#555;">Service Fee (Delivery/Setup)</td>
+        <td style="padding:8px 12px;border:1px solid #ddd;text-align:right;font-size:11px;font-weight:600;color:#555;">RM${booking.serviceFee}</td>
+      </tr>` : "";
+
+  const rentalRow = hasBreakdown && booking.rentalAmount != null ? `
+      <tr style="background:#f0fdf4;">
+        <td colspan="2" style="padding:8px 12px;border:1px solid #ddd;font-size:11px;font-weight:700;color:#062c24;">Rental Amount</td>
+        <td style="padding:8px 12px;border:1px solid #ddd;text-align:right;font-size:12px;font-weight:800;color:#062c24;">RM${booking.rentalAmount}</td>
+      </tr>` : "";
+
+  const depositRow = hasBreakdown && booking.deposit ? `
+      <tr style="background:#fffbeb;">
+        <td colspan="2" style="padding:8px 12px;border:1px solid #b45309;font-size:11px;font-weight:700;color:#92400e;">
+          <span style="font-size:9px;background:#fef3c7;color:#78350f;padding:1px 6px;border-radius:99px;margin-right:6px;font-weight:700;text-transform:uppercase;">REFUNDABLE</span>Security Deposit
+        </td>
+        <td style="padding:8px 12px;border:1px solid #b45309;text-align:right;font-size:12px;font-weight:800;color:#92400e;">RM${booking.deposit}</td>
+      </tr>` : "";
 
   const rulesHtml = rules.map(r => `
     <li style="margin-bottom:6px;font-size:11px;color:#333;line-height:1.6;">${r}</li>`).join("");
@@ -118,19 +161,26 @@ function buildPage1(vendor: PDFVendor, agreement: PDFAgreement, booking: PDFBook
 
   <div class="section">
     <div class="section-title">2) &nbsp; SUBJECT OF RENTAL</div>
+    <div style="margin-bottom:8px;"><span style="font-size:10px;color:#888;font-weight:700;">Rental Period:</span> <span style="font-size:11px;font-weight:700;">${booking?.dates?.start || "TBD"} — ${booking?.dates?.end || "TBD"}</span></div>
     <table>
       <thead><tr style="background:#f5f5f5;">
         <th style="padding:8px 12px;border:1px solid #ddd;text-align:left;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;">Description</th>
         <th style="padding:8px 12px;border:1px solid #ddd;text-align:center;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;width:60px;">Qty</th>
-        <th style="padding:8px 12px;border:1px solid #ddd;text-align:right;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;width:100px;">Amount (RM)</th>
+        <th style="padding:8px 12px;border:1px solid #ddd;text-align:right;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;width:110px;">Rate / Night</th>
       </tr></thead>
       <tbody>${itemsRows}</tbody>
-      <tfoot><tr>
-        <td colspan="2" style="padding:10px 12px;border:1px solid #ddd;text-align:right;font-size:11px;font-weight:700;">Total Amount (RM)</td>
-        <td style="padding:10px 12px;border:1px solid #ddd;text-align:right;font-size:13px;font-weight:900;color:#062c24;">${booking?.total ? `RM${booking.total}` : "—"}</td>
-      </tr></tfoot>
+      <tfoot>
+        ${subtotalRow}
+        ${discountRows}
+        ${serviceFeeRow}
+        ${rentalRow}
+        ${depositRow}
+        <tr style="background:#062c24;">
+          <td colspan="2" style="padding:10px 12px;border:1px solid #062c24;text-align:right;font-size:11px;font-weight:700;color:#fff;">TOTAL PAYABLE</td>
+          <td style="padding:10px 12px;border:1px solid #062c24;text-align:right;font-size:14px;font-weight:900;color:#fff;">${booking?.total ? `RM${booking.total}` : "—"}</td>
+        </tr>
+      </tfoot>
     </table>
-    <div style="margin-top:10px;"><span style="font-size:10px;color:#888;font-weight:700;">Rental Period:</span> <span style="font-size:11px;font-weight:700;">${booking?.dates?.start || "TBD"} — ${booking?.dates?.end || "TBD"}</span></div>
   </div>
 
   <div class="section">
