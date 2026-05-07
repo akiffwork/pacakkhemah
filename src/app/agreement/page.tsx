@@ -218,7 +218,9 @@ function AgreementContent() {
         customerPhone: formatPhone(custPhone),
         icFrontPath: snapFront.metadata.fullPath,
         icBackPath: snapBack.metadata.fullPath,
-        bookingDetails: booking || "Manual/Chat Booking",
+        bookingDetails: booking
+          ? JSON.parse(JSON.stringify(booking))  // strips undefined fields
+          : "Manual/Chat Booking",
         orderId: booking?.orderId || null,
         timestamp: serverTimestamp(),
         status: "signed",
