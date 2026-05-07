@@ -49,21 +49,29 @@ export const onNewOrder = onDocumentCreated(
     // Deduct 1 credit per unique visitorId per vendor per 24 hours.
     // Dedup is done atomically inside a transaction by reading a per-visitor
     // doc at vendors/{vendorId}/leadCredits/{visitorId}.
+    console.log(`onNewOrder fired: vendorId=${vendorId} visitorId=${visitorId || "MISSING"}`);
     if (visitorId) {
       try {
         const dedupRef = db.doc(`vendors/${vendorId}/leadCredits/${visitorId}`);
         const vRef = db.doc(`vendors/${vendorId}`);
 
         let deducted = false;
+        let skipReason = "";
         await db.runTransaction(async (t) => {
           const dedupSnap = await t.get(dedupRef);
           const last = dedupSnap.data()?.lastDeductedAt as { toMillis?: () => number } | undefined;
           const lastMs = typeof last?.toMillis === "function" ? last.toMillis() : 0;
-          if (lastMs && Date.now() - lastMs < 86_400_000) return;
+          if (lastMs && Date.now() - lastMs < 86_400_000) {
+            skipReason = `within 24h (last=${new Date(lastMs).toISOString()})`;
+            return;
+          }
 
           const vDoc = await t.get(vRef);
           const c = (vDoc.data()?.credits ?? 0) as number;
-          if (c <= 0) return;
+          if (c <= 0) {
+            skipReason = `vendor has no credits (current=${c})`;
+            return;
+          }
 
           t.update(vRef, { credits: FieldValue.increment(-1) });
           t.set(dedupRef, { lastDeductedAt: FieldValue.serverTimestamp() }, { merge: true });
@@ -72,10 +80,15 @@ export const onNewOrder = onDocumentCreated(
 
         if (deducted) {
           await event.data!.ref.update({ creditDeducted: true });
+          console.log(`Credit deducted for vendor=${vendorId} visitor=${visitorId}`);
+        } else {
+          console.log(`Credit NOT deducted for vendor=${vendorId} visitor=${visitorId}: ${skipReason}`);
         }
       } catch (e) {
         console.error("Credit deduction error:", e);
       }
+    } else {
+      console.warn(`Skipping credit deduction — no visitorId on analytics doc ${event.data?.id}`);
     }
     // ────────────────────────────────────────────────────────────────────────
 

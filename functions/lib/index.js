@@ -30,7 +30,7 @@ async function sendPush(token, title, body, extraData = {}) {
 }
 // Trigger on every new analytics doc (new order/inquiry)
 exports.onNewOrder = (0, firestore_1.onDocumentCreated)("analytics/{docId}", async (event) => {
-    var _a, _b;
+    var _a, _b, _c;
     const data = (_a = event.data) === null || _a === void 0 ? void 0 : _a.data();
     if (!data)
         return;
@@ -43,37 +43,50 @@ exports.onNewOrder = (0, firestore_1.onDocumentCreated)("analytics/{docId}", asy
     // Deduct 1 credit per unique visitorId per vendor per 24 hours.
     // Dedup is done atomically inside a transaction by reading a per-visitor
     // doc at vendors/{vendorId}/leadCredits/{visitorId}.
+    console.log(`onNewOrder fired: vendorId=${vendorId} visitorId=${visitorId || "MISSING"}`);
     if (visitorId) {
         try {
             const dedupRef = db.doc(`vendors/${vendorId}/leadCredits/${visitorId}`);
             const vRef = db.doc(`vendors/${vendorId}`);
             let deducted = false;
+            let skipReason = "";
             await db.runTransaction(async (t) => {
                 var _a, _b, _c;
                 const dedupSnap = await t.get(dedupRef);
                 const last = (_a = dedupSnap.data()) === null || _a === void 0 ? void 0 : _a.lastDeductedAt;
                 const lastMs = typeof (last === null || last === void 0 ? void 0 : last.toMillis) === "function" ? last.toMillis() : 0;
-                if (lastMs && Date.now() - lastMs < 86400000)
+                if (lastMs && Date.now() - lastMs < 86400000) {
+                    skipReason = `within 24h (last=${new Date(lastMs).toISOString()})`;
                     return;
+                }
                 const vDoc = await t.get(vRef);
                 const c = ((_c = (_b = vDoc.data()) === null || _b === void 0 ? void 0 : _b.credits) !== null && _c !== void 0 ? _c : 0);
-                if (c <= 0)
+                if (c <= 0) {
+                    skipReason = `vendor has no credits (current=${c})`;
                     return;
+                }
                 t.update(vRef, { credits: firestore_2.FieldValue.increment(-1) });
                 t.set(dedupRef, { lastDeductedAt: firestore_2.FieldValue.serverTimestamp() }, { merge: true });
                 deducted = true;
             });
             if (deducted) {
                 await event.data.ref.update({ creditDeducted: true });
+                console.log(`Credit deducted for vendor=${vendorId} visitor=${visitorId}`);
+            }
+            else {
+                console.log(`Credit NOT deducted for vendor=${vendorId} visitor=${visitorId}: ${skipReason}`);
             }
         }
         catch (e) {
             console.error("Credit deduction error:", e);
         }
     }
+    else {
+        console.warn(`Skipping credit deduction — no visitorId on analytics doc ${(_b = event.data) === null || _b === void 0 ? void 0 : _b.id}`);
+    }
     // ────────────────────────────────────────────────────────────────────────
     const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
-    const fcmToken = (_b = vendorSnap.data()) === null || _b === void 0 ? void 0 : _b.fcmToken;
+    const fcmToken = (_c = vendorSnap.data()) === null || _c === void 0 ? void 0 : _c.fcmToken;
     if (!fcmToken) {
         console.log(`No FCM token for vendor ${vendorId}`);
         return;
