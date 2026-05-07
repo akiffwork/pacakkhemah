@@ -1145,6 +1145,14 @@ function ShopPageContent({
         // or automatically by Cloud Function when agreement is signed
 
         // Save booking data to localStorage for agreement page
+        const discountLines: { label: string; amount: number }[] = [];
+        if (showAuto && autoDisc > 0) discountLines.push({ label: `Extended Stay Discount (${rule?.discount_percent}%)`, amount: Math.round(autoDisc) });
+        if (showPromo && appliedPromo && promoDisc > 0) {
+          const promoLabel = appliedPromo.discount_fixed
+            ? `Promo Code "${appliedPromo.code}" (RM${appliedPromo.discount_fixed} off)`
+            : `Promo Code "${appliedPromo.code}" (${appliedPromo.discount_percent}% off)`;
+          discountLines.push({ label: promoLabel, amount: Math.round(promoDisc) });
+        }
         localStorage.setItem("current_booking", JSON.stringify({
           vendorId,
           orderId: orderRef.id,
@@ -1155,6 +1163,11 @@ function ShopPageContent({
             return { name, qty: i.qty, price: i.price };
           }),
           dates: { start: pickupDate, end: returnDate },
+          subtotal: sub,
+          discounts: discountLines.length ? discountLines : undefined,
+          serviceFee: serviceFee > 0 ? Math.round(serviceFee) : undefined,
+          rentalAmount: Math.round(subAfterDisc + serviceFee),
+          depositAmount: Math.round(dep),
           total,
         }));
       } catch (e) { console.error("Order creation error:", e); }

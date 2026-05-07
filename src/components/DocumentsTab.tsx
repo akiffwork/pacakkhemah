@@ -16,6 +16,11 @@ type BookingDetails = {
   orderId?: string;
   items: { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string }[];
   dates: { start: string; end: string };
+  subtotal?: number;
+  discounts?: { label: string; amount: number }[];
+  serviceFee?: number;
+  rentalAmount?: number;
+  depositAmount?: number;
   total: number;
 };
 
@@ -98,7 +103,16 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
       generateAgreementPDF(
         { name: vendorData.name, phone: vendorData.phone, city: vendorData.city },
         { customerName: agreement.customerName, customerPhone: agreement.customerPhone, ...meta },
-        booking ? { items: booking.items, dates: booking.dates, total: booking.total } : null,
+        booking ? {
+          items: booking.items,
+          dates: booking.dates,
+          subtotal: booking.subtotal,
+          discounts: booking.discounts,
+          serviceFee: booking.serviceFee,
+          rentalAmount: booking.rentalAmount,
+          deposit: booking.depositAmount,
+          total: booking.total,
+        } : null,
         vendorData.rules,
         (fUrl && bUrl) ? { frontUrl: fUrl, backUrl: bUrl } : undefined,
       );
