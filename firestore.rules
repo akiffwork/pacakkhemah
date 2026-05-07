@@ -26,7 +26,13 @@ service cloud.firestore {
 
       match /discounts/{discountId} {
         allow read: if true;
-        allow write: if isVendorOwner(vendorId);
+        allow create, delete: if isVendorOwner(vendorId);
+        allow update: if isVendorOwner(vendorId) ||
+          // Customers can record discount usage after placing an order:
+          // only usedCount and usedBy may change, and usedCount must increase by exactly 1.
+          (request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['usedCount', 'usedBy']) &&
+           request.resource.data.usedCount == resource.data.usedCount + 1);
       }
       match /referrals/{referralId} {
         allow read: if true;
