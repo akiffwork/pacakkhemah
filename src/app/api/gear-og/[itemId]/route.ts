@@ -23,12 +23,21 @@ async function proxyImage(imgUrl: string): Promise<NextResponse | null> {
   }
 }
 
+function extractImgUrl(gearDoc: any): string {
+  return (
+    gearDoc?.fields?.images?.arrayValue?.values?.[0]?.stringValue ||
+    gearDoc?.fields?.img?.stringValue ||
+    ""
+  );
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ itemId: string }> }
 ) {
   const { itemId } = await params;
 
+  // Attempt 1: Direct doc fetch by Firestore document ID
   try {
     const fsRes = await fetch(
       `${FIRESTORE_BASE}/gear/${encodeURIComponent(itemId)}?key=${FIREBASE_API_KEY}`,
@@ -36,18 +45,51 @@ export async function GET(
     );
     if (fsRes.ok) {
       const gear = await fsRes.json();
-      const imgUrl: string =
-        gear?.fields?.images?.arrayValue?.values?.[0]?.stringValue ||
-        gear?.fields?.img?.stringValue ||
-        "";
-
-      if (imgUrl.startsWith("http")) {
-        const proxied = await proxyImage(imgUrl);
-        if (proxied) return proxied;
+      if (gear?.fields) {
+        const imgUrl = extractImgUrl(gear);
+        if (imgUrl.startsWith("http")) {
+          const proxied = await proxyImage(imgUrl);
+          if (proxied) return proxied;
+        }
       }
     }
   } catch {
-    // fall through
+    // fall through to query
+  }
+
+  // Attempt 2: Query by name (handles items whose doc ID changed after recreate)
+  try {
+    const queryRes = await fetch(`${FIRESTORE_BASE}:runQuery?key=${FIREBASE_API_KEY}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId: "gear" }],
+          where: {
+            fieldFilter: {
+              field: { fieldPath: "name" },
+              op: "EQUAL",
+              value: { stringValue: itemId },
+            },
+          },
+          limit: 1,
+        },
+      }),
+      next: { revalidate: 300 },
+    });
+    if (queryRes.ok) {
+      const qData = await queryRes.json();
+      const firstDoc = qData?.[0]?.document;
+      if (firstDoc?.fields) {
+        const imgUrl = extractImgUrl(firstDoc);
+        if (imgUrl.startsWith("http")) {
+          const proxied = await proxyImage(imgUrl);
+          if (proxied) return proxied;
+        }
+      }
+    }
+  } catch {
+    // fall through to fallback
   }
 
   // Return fallback image bytes (not a redirect — some crawlers don't follow redirects)

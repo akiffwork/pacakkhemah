@@ -13,7 +13,8 @@ export async function generateMetadata({
   params: Promise<{ slug: string; itemId: string }>;
 }): Promise<Metadata> {
   const { slug, itemId } = await params;
-  const [vendor, gear] = await Promise.all([getVendorData(slug), getGearItem(itemId)]);
+  const vendor = await getVendorData(slug);
+  const gear = await getGearItem(itemId, vendor?.id);
   return buildItemMetadata({ itemId, vendor, gear });
 }
 
