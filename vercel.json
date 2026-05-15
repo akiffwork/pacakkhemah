@@ -1,0 +1,31 @@
+{
+  "headers": [
+    {
+      "source": "/shop/:slug/item/:itemId",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, s-maxage=300, stale-while-revalidate=60"
+        }
+      ]
+    },
+    {
+      "source": "/shop/:slug",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, s-maxage=60, stale-while-revalidate=30"
+        }
+      ]
+    },
+    {
+      "source": "/api/gear-og/:itemId",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, s-maxage=86400"
+        }
+      ]
+    }
+  ]
+}
