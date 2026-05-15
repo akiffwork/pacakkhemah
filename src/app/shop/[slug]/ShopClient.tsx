@@ -486,9 +486,20 @@ function ShopPageContent({
     return `${base}/shop/${shopSlug}/item/${item.id}`;
   }
 
+  function getSharePriceText(item: GearItem): string {
+    if (item.type === "package") {
+      return item.price > 0 ? `RM${item.price}/night` : "Package deal";
+    }
+    if (item.hasVariants && item.variants?.length) {
+      const prices = item.variants.filter(v => v.price > 0).map(v => v.price);
+      if (prices.length) return `From RM${Math.min(...prices)}/night`;
+    }
+    return `RM${item.price}/night`;
+  }
+
   async function shareItem(item: GearItem) {
     const url = getItemShareUrl(item);
-    const text = `${item.name} — RM${item.price}/night @ ${vendorData?.name || "Pacak Khemah"}`;
+    const text = `${item.name} — ${getSharePriceText(item)} @ ${vendorData?.name || "Pacak Khemah"}`;
 
     if (navigator.share) {
       try {
