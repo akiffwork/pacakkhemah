@@ -469,7 +469,7 @@ function ShopPageContent({
   useEffect(() => {
     const itemParam = initialItemId || searchParams.get("item");
     if (itemParam && allGear.length > 0) {
-      const item = allGear.find(g => g.id === itemParam);
+      const item = allGear.find(g => g.id === itemParam) || allGear.find(g => g.name === itemParam);
       if (item) {
         setSelectedItem(item);
         setSelectedVariant(null);
