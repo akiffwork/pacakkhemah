@@ -160,6 +160,80 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
   // PRINT PREVIEW
   // ==========================================
   if (showPreview && vendor) {
+    // Group items into rows of 2 for the table layout
+    const itemRows: GearItem[][] = [];
+    for (let i = 0; i < selectedItems.length; i += 2) {
+      itemRows.push(selectedItems.slice(i, i + 2));
+    }
+
+    // Shared header markup (used in both thead and repeated on every page)
+    const flyerHeader = (
+      <>
+        <div style={{ background: "#062c24", padding: "20px 28px", display: "flex", alignItems: "center", gap: "16px" }}>
+          {vendor.image && (
+            <img src={vendor.image} crossOrigin="anonymous"
+              style={{ width: 64, height: 64, borderRadius: 14, objectFit: "cover", border: "2px solid rgba(255,255,255,0.2)", flexShrink: 0 }} alt="Logo" />
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 24, fontWeight: 900, color: "#fff", textTransform: "uppercase", letterSpacing: "-0.5px", lineHeight: 1 }}>{vendor.name}</div>
+            {vendor.tagline && <div style={{ fontSize: 10, color: "#6ee7b7", fontStyle: "italic", marginTop: 4 }}>{vendor.tagline}</div>}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "12px 20px", marginTop: 6 }}>
+              {(vendor.city || vendor.pickup?.[0]) && (
+                <span style={{ fontSize: 9, color: "rgba(209,250,229,0.8)", display: "flex", alignItems: "center", gap: 4 }}>
+                  <i className="fas fa-map-marker-alt" style={{ color: "#34d399" }}></i>
+                  {vendor.city || vendor.pickup?.[0]}
+                </span>
+              )}
+              {vendor.pickup && vendor.pickup.length > 0 && (
+                <span style={{ fontSize: 9, color: "rgba(209,250,229,0.8)", display: "flex", alignItems: "center", gap: 4 }}>
+                  <i className="fas fa-car" style={{ color: "#34d399" }}></i>
+                  Pickup: {vendor.pickup.join(" · ")}
+                </span>
+              )}
+              {vendor.phone && (
+                <span style={{ fontSize: 9, color: "rgba(209,250,229,0.8)", display: "flex", alignItems: "center", gap: 4 }}>
+                  <i className="fab fa-whatsapp" style={{ color: "#34d399" }}></i>
+                  {vendor.phone}
+                </span>
+              )}
+            </div>
+          </div>
+          <div style={{ flexShrink: 0, textAlign: "right" }}>
+            <div style={{ fontSize: 7, color: "#34d399", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.15em" }}>Powered by</div>
+            <div style={{ fontSize: 9, color: "#fff", fontWeight: 900 }}>Pacak Khemah</div>
+          </div>
+        </div>
+        <div style={{ background: "#059669", padding: "8px", textAlign: "center" }}>
+          <span style={{ fontSize: 8, color: "#fff", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.2em" }}>
+            Gear Rental Catalogue &nbsp;·&nbsp; Senarai Gear Untuk DiSewa
+          </span>
+        </div>
+      </>
+    );
+
+    const flyerFooter = (
+      <div style={{ background: "#062c24", padding: "20px 28px", display: "flex", alignItems: "center", gap: "20px" }}>
+        <img src={qrUrl} crossOrigin="anonymous"
+          style={{ width: 72, height: 72, borderRadius: 12, background: "#fff", padding: 5, flexShrink: 0 }} alt="QR" />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 8, color: "#34d399", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.2em", marginBottom: 3 }}>
+            Imbas / Scan to Browse &amp; Order
+          </div>
+          <div style={{ fontSize: 13, color: "#fff", fontWeight: 900, marginBottom: 2 }}>{vendor.name}</div>
+          <div style={{ fontSize: 8, color: "rgba(209,250,229,0.6)", fontFamily: "monospace" }}>{shopUrl}</div>
+          {vendor.phone && (
+            <div style={{ fontSize: 9, color: "rgba(209,250,229,0.8)", marginTop: 4, display: "flex", alignItems: "center", gap: 5 }}>
+              <i className="fab fa-whatsapp" style={{ color: "#34d399" }}></i> WhatsApp: {vendor.phone}
+            </div>
+          )}
+        </div>
+        <div style={{ flexShrink: 0, textAlign: "right", alignSelf: "flex-end" }}>
+          <div style={{ fontSize: 7, color: "#065f46", textTransform: "uppercase", letterSpacing: "0.1em" }}>Powered by</div>
+          <div style={{ fontSize: 9, color: "#34d399", fontWeight: 900 }}>Pacak Khemah</div>
+        </div>
+      </div>
+    );
+
     return (
       <div id="flyer-preview-root" className="fixed inset-0 bg-slate-800 z-[600] overflow-y-auto print:bg-white print:overflow-visible">
         <style>{`
@@ -170,13 +244,16 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
             #flyer-preview-root, #flyer-preview-root * { visibility: visible; }
             #flyer-preview-root { position: absolute; top: 0; left: 0; width: 100%; background: none !important; overflow: visible !important; }
             #flyer-toolbar { display: none !important; }
-            #flyer-paper { margin: 0 !important; box-shadow: none !important; width: 210mm !important; min-height: 297mm; }
+            #flyer-wrap { margin: 0 !important; box-shadow: none !important; width: 100% !important; }
+            /* thead and tfoot repeat on every printed page */
+            #flyer-table thead { display: table-header-group; }
+            #flyer-table tfoot { display: table-footer-group; }
+            #flyer-table tbody { display: table-row-group; }
           }
-          .item-card { break-inside: avoid; page-break-inside: avoid; }
         `}</style>
 
         {/* Toolbar */}
-        <div id="flyer-toolbar" className="sticky top-0 bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center z-50 shadow-md print:hidden">
+        <div id="flyer-toolbar" className="sticky top-0 bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center z-50 shadow-md">
           <button onClick={() => setShowPreview(false)} className="text-slate-500 hover:text-[#062c24] font-bold text-sm flex items-center gap-2">
             <i className="fas fa-arrow-left"></i> Back to Editor
           </button>
@@ -186,242 +263,218 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
           </button>
         </div>
 
-        {/* A4 Paper */}
-        <div id="flyer-paper" className="w-[210mm] mx-auto bg-white my-6 shadow-2xl overflow-hidden print:my-0 print:shadow-none">
+        {/* A4 paper wrapper — shadow + centering on screen only */}
+        <div id="flyer-wrap" className="w-[210mm] mx-auto my-6 bg-white shadow-2xl print:my-0 print:shadow-none print:w-full">
 
-          {/* ── HEADER ── */}
-          <div className="bg-[#062c24] px-8 py-6 flex items-center gap-5">
-            {vendor.image && (
-              <img src={vendor.image} crossOrigin="anonymous"
-                className="w-[72px] h-[72px] rounded-2xl object-cover bg-white/10 shrink-0 border-2 border-white/20" alt="Logo" />
-            )}
-            <div className="flex-1 min-w-0">
-              <h1 className="text-[28px] font-black text-white uppercase leading-none tracking-tight">{vendor.name}</h1>
-              {vendor.tagline && (
-                <p className="text-emerald-300 text-[11px] font-semibold mt-1 italic">{vendor.tagline}</p>
-              )}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2">
-                {(vendor.city || (vendor.pickup && vendor.pickup.length > 0)) && (
-                  <span className="text-emerald-100/80 text-[10px] flex items-center gap-1.5">
-                    <i className="fas fa-map-marker-alt text-emerald-400"></i>
-                    {vendor.city || vendor.pickup?.[0]}
-                  </span>
-                )}
-                {vendor.pickup && vendor.pickup.length > 0 && (
-                  <span className="text-emerald-100/80 text-[10px] flex items-center gap-1.5">
-                    <i className="fas fa-car text-emerald-400"></i>
-                    Pickup: {vendor.pickup.join(" · ")}
-                  </span>
-                )}
-                {vendor.phone && (
-                  <span className="text-emerald-100/80 text-[10px] flex items-center gap-1.5">
-                    <i className="fab fa-whatsapp text-emerald-400"></i>
-                    {vendor.phone}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="shrink-0 text-right">
-              <p className="text-emerald-400 text-[8px] font-black uppercase tracking-widest">Powered by</p>
-              <p className="text-white text-[10px] font-black">Pacak Khemah</p>
-            </div>
-          </div>
+          {/*
+            THE KEY: wrapping in <table> makes browsers automatically repeat
+            <thead> (header) and <tfoot> (footer) on every printed page.
+            Each <tbody> <tr> is a row of 2 item cards.
+          */}
+          <table id="flyer-table" style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
 
-          {/* ── SUBTITLE BAR ── */}
-          <div className="bg-emerald-600 py-2.5 text-center">
-            <p className="text-white text-[9px] font-black uppercase tracking-[0.25em]">
-              Gear Rental Catalogue &nbsp;·&nbsp; Senarai Gear Untuk DiSewa
-            </p>
-          </div>
+            <thead>
+              <tr>
+                <td colSpan={2} style={{ padding: 0 }}>
+                  {flyerHeader}
+                </td>
+              </tr>
+            </thead>
 
-          {/* ── ITEM GRID (2 columns) ── */}
-          <div className="p-5 grid grid-cols-2 gap-4">
-            {selectedItems.map((item) => {
-              const imgUrl = item.images?.[0] || item.img;
-              const specs = resolveSpecs(item);
-              const activeSpecs = SPEC_CHIPS.filter(({ key }) => {
-                const v = specs[key];
-                return v !== undefined && v !== null && v !== "";
-              });
-              const isPkg = item.type === "package" && item.linkedItems && item.linkedItems.length > 0;
-              const pricing = getPrice(item);
-              const hasInc = item.inc && item.inc.filter(Boolean).length > 0;
-              const durations = DURATION_ROWS.slice(0, durationRows);
+            <tfoot>
+              <tr>
+                <td colSpan={2} style={{ padding: 0 }}>
+                  {flyerFooter}
+                </td>
+              </tr>
+            </tfoot>
 
-              return (
-                <div key={item.id} className="item-card border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm flex flex-col">
+            <tbody>
+              {/* Top spacing row */}
+              <tr aria-hidden="true"><td colSpan={2} style={{ height: 16 }}></td></tr>
 
-                  {/* Item image */}
-                  {imgUrl ? (
-                    <div className="aspect-[16/9] w-full relative bg-slate-100">
-                      <img src={imgUrl} crossOrigin="anonymous" className="w-full h-full object-cover" alt={item.name} />
-                      {/* Category badge */}
-                      {item.category && (
-                        <span className="absolute top-2 left-2 bg-[#062c24]/80 text-white text-[8px] font-black uppercase px-2 py-0.5 rounded-full backdrop-blur-sm">
-                          {item.category}
-                        </span>
-                      )}
-                      {isPkg && (
-                        <span className="absolute top-2 right-2 bg-emerald-500 text-white text-[8px] font-black uppercase px-2 py-0.5 rounded-full">
-                          Package
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="aspect-[16/9] w-full bg-slate-100 flex items-center justify-center">
-                      <i className="fas fa-image text-slate-300 text-3xl"></i>
-                    </div>
-                  )}
+              {itemRows.map((pair, rowIdx) => (
+                <tr key={rowIdx} style={{ breakInside: "avoid", pageBreakInside: "avoid" }}>
+                  {pair.map((item, colIdx) => {
+                    const imgUrl = item.images?.[0] || item.img;
+                    const specs = resolveSpecs(item);
+                    const activeSpecs = SPEC_CHIPS.filter(({ key }) => {
+                      const v = specs[key];
+                      return v !== undefined && v !== null && v !== "";
+                    });
+                    const isPkg = item.type === "package" && item.linkedItems && item.linkedItems.length > 0;
+                    const pricing = getPrice(item);
+                    const hasInc = item.inc && item.inc.filter(Boolean).length > 0;
+                    const durations = DURATION_ROWS.slice(0, durationRows);
+                    return (
+                      <td key={item.id}
+                        style={{
+                          width: "50%",
+                          verticalAlign: "top",
+                          padding: colIdx === 0 ? "0 8px 16px 16px" : "0 16px 16px 8px",
+                        }}>
+                        {/* ── ITEM CARD ── */}
+                        <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden", background: "#fff", breakInside: "avoid" }}>
 
-                  <div className="p-3 flex flex-col gap-2 flex-1">
+                          {/* Image */}
+                          {imgUrl ? (
+                            <div style={{ position: "relative", paddingTop: "56.25%", background: "#f1f5f9" }}>
+                              <img src={imgUrl} crossOrigin="anonymous"
+                                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} alt={item.name} />
+                              {item.category && (
+                                <span style={{ position: "absolute", top: 6, left: 6, background: "rgba(6,44,36,0.8)", color: "#fff", fontSize: 7, fontWeight: 900, textTransform: "uppercase", padding: "2px 7px", borderRadius: 99 }}>
+                                  {item.category}
+                                </span>
+                              )}
+                              {isPkg && (
+                                <span style={{ position: "absolute", top: 6, right: 6, background: "#10b981", color: "#fff", fontSize: 7, fontWeight: 900, textTransform: "uppercase", padding: "2px 7px", borderRadius: 99 }}>
+                                  Package
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <div style={{ paddingTop: "56.25%", position: "relative", background: "#f1f5f9" }}>
+                              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <i className="fas fa-image" style={{ color: "#cbd5e1", fontSize: 24 }}></i>
+                              </div>
+                            </div>
+                          )}
 
-                    {/* Name */}
-                    <h3 className="font-black text-[13px] text-[#062c24] uppercase leading-tight">{item.name}</h3>
+                          <div style={{ padding: "10px 12px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
 
-                    {/* Description */}
-                    {showDesc && item.desc && (
-                      <p className="text-[9px] text-slate-500 leading-relaxed line-clamp-2">{item.desc}</p>
-                    )}
+                            {/* Name */}
+                            <div style={{ fontSize: 12, fontWeight: 900, color: "#062c24", textTransform: "uppercase", lineHeight: 1.2 }}>{item.name}</div>
 
-                    {/* Spec chips */}
-                    {activeSpecs.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {activeSpecs.map(({ key, icon, label }) => (
-                          <span key={key} className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 text-[8px] px-1.5 py-0.5 rounded font-semibold">
-                            <i className={`fas ${icon} text-emerald-600`} style={{ fontSize: "7px" }}></i>
-                            {label(specs[key]!)}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                            {/* Description */}
+                            {showDesc && item.desc && (
+                              <div style={{ fontSize: 8, color: "#64748b", lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                                {item.desc}
+                              </div>
+                            )}
 
-                    {/* Pricing table */}
-                    {showPrice && (
-                      <div className="border border-slate-200 rounded-lg overflow-hidden mt-1">
-                        <div className="bg-[#062c24] px-2.5 py-1">
-                          <p className="text-emerald-300 text-[8px] font-black uppercase tracking-wider">Rental Price</p>
-                        </div>
-                        <table className="w-full">
-                          <tbody>
-                            {durations.map((row, i) => {
-                              const total = pricing.base * row.nights;
-                              return (
-                                <tr key={row.label} className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
-                                  <td className="px-2.5 py-1 text-[9px] font-black text-[#062c24] w-16">{row.label}</td>
-                                  <td className="px-2 py-1 text-[8px] text-slate-400 font-medium">{row.suffix}</td>
-                                  <td className="px-2.5 py-1 text-right text-[9px] font-black text-emerald-600">
-                                    {pricing.isRange
-                                      ? `From RM ${pricing.min * row.nights}`
-                                      : `RM ${total}`}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                            {/* Spec chips */}
+                            {activeSpecs.length > 0 && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
+                                {activeSpecs.map(({ key, icon, label }) => (
+                                  <span key={key} style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "#f1f5f9", color: "#475569", fontSize: 7, padding: "2px 6px", borderRadius: 4, fontWeight: 700 }}>
+                                    <i className={`fas ${icon}`} style={{ color: "#059669", fontSize: 6 }}></i>
+                                    {label(specs[key]!)}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
 
-                    {/* Includes list (legacy text) */}
-                    {hasInc && (
-                      <div className="mt-1">
-                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-1">Includes</p>
-                        <div className="flex flex-wrap gap-1">
-                          {item.inc!.filter(Boolean).map((inc, i) => (
-                            <span key={i} className="text-[8px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-medium">
-                              <i className="fas fa-check text-[7px] mr-1"></i>{inc}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Package linked items */}
-                    {isPkg && (
-                      <div className="mt-1 border-t border-slate-100 pt-2">
-                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-1.5">
-                          Package Includes
-                        </p>
-                        <div className="space-y-1">
-                          {item.linkedItems!.map((li, idx) => {
-                            const linked = allGear.find(g => g.id === li.itemId);
-                            const linkedImg = linked?.images?.[0] || linked?.img;
-                            return (
-                              <div key={idx} className="flex items-center gap-1.5">
-                                {linkedImg ? (
-                                  <img src={linkedImg} crossOrigin="anonymous"
-                                    className="w-7 h-7 rounded object-cover border border-slate-200 bg-slate-50 shrink-0" alt="" />
-                                ) : (
-                                  <div className="w-7 h-7 rounded bg-slate-100 flex items-center justify-center shrink-0">
-                                    <i className="fas fa-box text-slate-300 text-[8px]"></i>
-                                  </div>
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-[9px] font-bold text-[#062c24] truncate">{linked?.name || "Item"}</p>
-                                  {linked?.specs && (() => {
-                                    const s = resolveSpecs(linked);
-                                    const chip = SPEC_CHIPS.find(c => s[c.key]);
-                                    return chip ? (
-                                      <p className="text-[7px] text-slate-400">
-                                        <i className={`fas ${chip.icon} mr-0.5`}></i>{chip.label(s[chip.key]!)}
-                                      </p>
-                                    ) : null;
-                                  })()}
+                            {/* Pricing table */}
+                            {showPrice && (
+                              <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+                                <div style={{ background: "#062c24", padding: "4px 10px" }}>
+                                  <span style={{ fontSize: 7, color: "#6ee7b7", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.1em" }}>Rental Price</span>
                                 </div>
-                                <span className="text-[8px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded shrink-0">
-                                  ×{li.qty}
+                                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                  <tbody>
+                                    {durations.map((row, i) => (
+                                      <tr key={row.label} style={{ background: i % 2 === 0 ? "#fff" : "#f8fafc" }}>
+                                        <td style={{ padding: "3px 10px", fontSize: 8, fontWeight: 900, color: "#062c24", width: 52 }}>{row.label}</td>
+                                        <td style={{ padding: "3px 4px", fontSize: 7, color: "#94a3b8" }}>{row.suffix}</td>
+                                        <td style={{ padding: "3px 10px", fontSize: 8, fontWeight: 900, color: "#059669", textAlign: "right" }}>
+                                          {pricing.isRange ? `From RM ${pricing.min * row.nights}` : `RM ${pricing.base * row.nights}`}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+
+                            {/* Includes list */}
+                            {hasInc && (
+                              <div>
+                                <div style={{ fontSize: 7, fontWeight: 900, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 3 }}>Includes</div>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
+                                  {item.inc!.filter(Boolean).map((inc, i) => (
+                                    <span key={i} style={{ fontSize: 7, background: "#ecfdf5", color: "#065f46", padding: "2px 6px", borderRadius: 4, fontWeight: 600 }}>
+                                      ✓ {inc}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Package linked items */}
+                            {isPkg && (
+                              <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 8 }}>
+                                <div style={{ fontSize: 7, fontWeight: 900, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>
+                                  Package Includes
+                                </div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                  {item.linkedItems!.map((li, idx) => {
+                                    const linked = allGear.find(g => g.id === li.itemId);
+                                    const linkedImg = linked?.images?.[0] || linked?.img;
+                                    return (
+                                      <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                        {linkedImg ? (
+                                          <img src={linkedImg} crossOrigin="anonymous"
+                                            style={{ width: 26, height: 26, borderRadius: 4, objectFit: "cover", border: "1px solid #e2e8f0", flexShrink: 0 }} alt="" />
+                                        ) : (
+                                          <div style={{ width: 26, height: 26, borderRadius: 4, background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                            <i className="fas fa-box" style={{ color: "#cbd5e1", fontSize: 7 }}></i>
+                                          </div>
+                                        )}
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <div style={{ fontSize: 8, fontWeight: 700, color: "#062c24", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                            {linked?.name || "Item"}
+                                          </div>
+                                          {linked && (() => {
+                                            const s = resolveSpecs(linked);
+                                            const chip = SPEC_CHIPS.find(c => s[c.key]);
+                                            return chip ? (
+                                              <div style={{ fontSize: 7, color: "#94a3b8" }}>
+                                                {chip.label(s[chip.key]!)}
+                                              </div>
+                                            ) : null;
+                                          })()}
+                                        </div>
+                                        <span style={{ fontSize: 7, fontWeight: 900, color: "#059669", background: "#ecfdf5", padding: "2px 5px", borderRadius: 4, flexShrink: 0 }}>
+                                          ×{li.qty}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Setup service */}
+                            {item.setup?.available && (
+                              <div style={{ marginTop: 4 }}>
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#fffbeb", color: "#92400e", fontSize: 7, padding: "3px 8px", borderRadius: 99, fontWeight: 600 }}>
+                                  <i className="fas fa-tools" style={{ fontSize: 6 }}></i>
+                                  Setup Service +RM{item.setup.fee}
                                 </span>
                               </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
+                            )}
 
-                    {/* Setup service */}
-                    {item.setup?.available && (
-                      <div className="mt-auto pt-1">
-                        <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-[8px] px-2 py-0.5 rounded-full font-semibold">
-                          <i className="fas fa-tools text-[7px]"></i>
-                          Setup Service Available (+RM{item.setup.fee})
-                        </span>
-                      </div>
-                    )}
+                            {/* CTA */}
+                            <a href={waLink} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 6, background: "#062c24", color: "#fff", padding: "6px", borderRadius: 8, fontSize: 8, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.1em", textDecoration: "none" }}>
+                              <i className="fab fa-whatsapp" style={{ color: "#34d399" }}></i> Order via WhatsApp
+                            </a>
 
-                    {/* CTA button */}
-                    <a href={waLink} className="mt-auto w-full bg-[#062c24] text-white py-1.5 rounded-lg text-center text-[9px] font-black tracking-widest uppercase flex items-center justify-center gap-1.5 no-underline">
-                      <i className="fab fa-whatsapp text-emerald-400"></i> Order via WhatsApp
-                    </a>
+                          </div>{/* end card body */}
+                        </div>{/* end item card */}
+                      </td>
+                    );
+                  })}
+                  {/* Fill empty cell when odd number of items */}
+                  {pair.length === 1 && <td style={{ width: "50%" }}></td>}
+                </tr>
+              ))}
 
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+              {/* Bottom spacing row */}
+              <tr aria-hidden="true"><td colSpan={2} style={{ height: 16 }}></td></tr>
+            </tbody>
 
-          {/* ── FOOTER ── */}
-          <div className="bg-[#062c24] px-8 py-6 flex items-center gap-6">
-            <img src={qrUrl} crossOrigin="anonymous"
-              className="w-[80px] h-[80px] rounded-xl bg-white p-1.5 shrink-0" alt="QR" />
-            <div className="flex-1">
-              <p className="text-emerald-300 text-[8px] font-black uppercase tracking-widest mb-1">
-                Imbas / Scan to Browse &amp; Order
-              </p>
-              <p className="text-white text-[13px] font-black mb-1">{vendor.name}</p>
-              <p className="text-emerald-100/60 text-[9px] font-mono tracking-tight">{shopUrl}</p>
-              {vendor.phone && (
-                <p className="text-emerald-100/80 text-[9px] mt-1 flex items-center gap-1.5">
-                  <i className="fab fa-whatsapp text-emerald-400"></i> WhatsApp: {vendor.phone}
-                </p>
-              )}
-            </div>
-            <div className="shrink-0 text-right self-end">
-              <p className="text-emerald-700 text-[7px] uppercase tracking-widest">Powered by</p>
-              <p className="text-emerald-500 text-[10px] font-black">Pacak Khemah</p>
-            </div>
-          </div>
-
-        </div>
+          </table>
+        </div>{/* end #flyer-wrap */}
       </div>
     );
   }
