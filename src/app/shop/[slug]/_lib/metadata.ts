@@ -160,7 +160,7 @@ export function buildItemMetadata({
     openGraph: {
       title,
       description,
-      images: [{ url: itemImg, width: 1200, height: 1200, alt: itemName, type: "image/jpeg" }],
+      images: [{ url: itemImg, width: 1200, height: 1200, alt: itemName }],
       type: "website",
       siteName: "Pacak Khemah",
     },
@@ -196,7 +196,7 @@ export function buildVendorMetadata(vendor: { id: string; doc: any } | null): Me
     openGraph: {
       title,
       description,
-      images: [{ url: vendorImage, width: 1200, height: 1200, alt: vendorName, type: "image/jpeg" }],
+      images: [{ url: vendorImage, width: 1200, height: 1200, alt: vendorName }],
       type: "website",
       siteName: "Pacak Khemah",
     },
