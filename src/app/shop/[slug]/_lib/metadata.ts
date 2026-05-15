@@ -1,7 +1,7 @@
 import { Metadata } from "next";
 
 const PROJECT_ID = "kuantan-unplugged";
-const FIREBASE_API_KEY = "AIzaSyAijpbwzFTDctk38Ktkcbt1Hd4y-1Cd1Xw";
+const FIREBASE_API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY!;
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 const SITE = "https://pacakkhemah.com";
 const DEFAULT_IMG = `${SITE}/pacak-khemah.png`;

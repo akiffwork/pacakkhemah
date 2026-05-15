@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
 import {
   doc, getDoc, collection, query, where, getDocs, getDocsFromServer,
-  runTransaction, serverTimestamp, addDoc, orderBy,
+  serverTimestamp, addDoc, orderBy,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import flatpickr from "flatpickr";
@@ -775,43 +775,33 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
       const hasVisitedBefore = !!localStorage.getItem(visitKey);
       localStorage.setItem(visitKey, "1");
 
-      // Always log analytics lead for every order
+      // Always log analytics lead for every order.
+      // Credit deduction is handled server-side by the onNewOrder Cloud Function
+      // (client cannot write to vendor.credits due to security rules).
       try {
-        await addDoc(collection(db, "analytics"), {
-          vendorId, vendorName: vendorData?.name, totalAmount: total,
-          timestamp: serverTimestamp(), type: "whatsapp_lead",
+        const analyticsPayload = JSON.parse(JSON.stringify({
+          vendorId,
+          vendorName: vendorData?.name || "",
+          totalAmount: total ?? 0,
+          timestamp: null,
+          type: "whatsapp_lead",
           visitorId,
           isRepeatVisitor: hasVisitedBefore,
-          fulfillmentType,
-          deliveryAddress: fulfillmentType === "delivery" ? deliveryAddress : null,
+          fulfillmentType: fulfillmentType || "pickup",
+          deliveryAddress: fulfillmentType === "delivery" ? (deliveryAddress || null) : null,
           deliveryZone: selectedZone?.name || null,
           timeSlot: selectedTimeSlot?.label || null,
-          bookingDates: { start: pickupDate, end: returnDate },
-          cartItems: cart.map(i => ({ 
-            id: i.id, name: i.name, qty: i.qty, price: i.price,
+          bookingDates: { start: pickupDate || "", end: returnDate || "" },
+          cartItems: cart.map(i => ({
+            id: i.id || "", name: i.name || "", qty: i.qty || 0, price: i.price || 0,
             addSetup: i.addSetup || false,
-            setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0
+            setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0,
           })),
-        });
-      } catch (e) { console.error("Analytics write error:", e); }
-
-      // Credit deduction - 1 per unique customer per 24hrs
-      const storageKey = `click_${vendorId}`;
-      const lastClick = localStorage.getItem(storageKey);
-      if (!lastClick || Date.now() - Number(lastClick) > 86400000) {
-        try {
-          let deducted = false;
-          await runTransaction(db, async (t) => {
-            const vRef = doc(db, "vendors", vendorId!);
-            const vDoc = await t.get(vRef);
-            const c = vDoc.data()?.credits || 0;
-            if (c > 0) {
-              t.update(vRef, { credits: c - 1 });
-              deducted = true;
-            }
-          });
-          if (deducted) localStorage.setItem(storageKey, String(Date.now()));
-        } catch (e) { console.error("Credit deduction error:", e); }
+        }));
+        analyticsPayload.timestamp = serverTimestamp();
+        await addDoc(collection(db, "analytics"), analyticsPayload);
+      } catch (e) {
+        console.warn("Analytics write error:", e);
       }
 
       // ═══ Create order in orders collection ═══
