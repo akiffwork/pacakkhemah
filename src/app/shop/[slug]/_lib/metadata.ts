@@ -79,15 +79,52 @@ export async function getVendorData(slugOrId: string) {
   return null;
 }
 
-export async function getGearItem(itemId: string) {
+export async function getGearItem(itemId: string, vendorId?: string) {
+  // Attempt 1: Direct doc fetch (works when itemId is the Firestore document ID)
   try {
     const res = await fetch(`${FIRESTORE_BASE}/gear/${encodeURIComponent(itemId)}?key=${FIREBASE_API_KEY}`, {
       next: { revalidate: 60 },
     });
-    if (res.ok) return await res.json();
+    if (res.ok) {
+      const doc = await res.json();
+      if (doc?.fields) return doc;
+    }
   } catch (e) {
     console.error("Gear fetch error:", e);
   }
+
+  // Attempt 2: Query by name + vendorId (handles items whose doc ID changed after recreate)
+  if (vendorId) {
+    try {
+      const queryRes = await fetch(`${FIRESTORE_BASE}:runQuery?key=${FIREBASE_API_KEY}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId: "gear" }],
+            where: {
+              compositeFilter: {
+                op: "AND",
+                filters: [
+                  { fieldFilter: { field: { fieldPath: "vendorId" }, op: "EQUAL", value: { stringValue: vendorId } } },
+                  { fieldFilter: { field: { fieldPath: "name" }, op: "EQUAL", value: { stringValue: itemId } } },
+                ],
+              },
+            },
+            limit: 1,
+          },
+        }),
+        next: { revalidate: 60 },
+      });
+      if (queryRes.ok) {
+        const qData = await queryRes.json();
+        if (qData?.[0]?.document?.fields) return qData[0].document;
+      }
+    } catch (e) {
+      console.error("Gear query error:", e);
+    }
+  }
+
   return null;
 }
 
