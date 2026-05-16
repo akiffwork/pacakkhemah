@@ -499,10 +499,16 @@ function ShopPageContent({
   async function shareItem(item: GearItem) {
     const url = getItemShareUrl(item);
     // Warm Vercel's global ISR cache from the user's browser before sharing.
-    // WhatsApp/Threads/Facebook strip ?params, so we need the path URL — but
-    // Vercel blocks cold path-page requests from scraper IPs. Fetching first
-    // populates the global ISR cache so all scrapers get the cached OG response.
-    try { await fetch(url, { credentials: "omit" }); } catch { /* ignore */ }
+    // Warm both the item page and the OG image in Vercel's global ISR cache.
+    // Scrapers (WhatsApp, Threads, Facebook) fetch both separately — if either
+    // is cold, Vercel blocks their IPs. Fetching from the user's browser first
+    // ensures both are cached before the scraper arrives.
+    const base = typeof window !== "undefined" ? window.location.origin : "";
+    const ogImageUrl = `${base}/api/gear-og/${encodeURIComponent(item.id)}`;
+    await Promise.all([
+      fetch(url, { credentials: "omit" }).catch(() => {}),
+      fetch(ogImageUrl, { credentials: "omit" }).catch(() => {}),
+    ]);
     const text = `${item.name} — ${getSharePriceText(item)} @ ${vendorData?.name || "Pacak Khemah"}`;
 
     if (navigator.share) {
