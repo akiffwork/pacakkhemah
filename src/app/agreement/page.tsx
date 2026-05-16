@@ -12,7 +12,7 @@ type BookingDiscount = { label: string; amount: number };
 type BookingData = {
   vendorId: string;
   orderId?: string;
-  items: { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string }[];
+  items: { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string; linkedItems?: { name: string; qty: number; variantLabel?: string }[] }[];
   dates: { start: string; end: string };
   subtotal?: number;
   discounts?: BookingDiscount[];
@@ -389,18 +389,34 @@ function AgreementContent() {
                 <div className="p-5 space-y-3 bg-white text-sm font-bold text-[#062c24]">
                   {booking?.items?.length ? (
                     booking.items.map((item, i) => (
-                      <div key={i} className="grid grid-cols-12 border-b border-slate-50 pb-2 last:border-0 items-center">
-                        <div className="col-span-6 flex items-center gap-1.5 min-w-0">
-                          {item.variantColor && <span className="w-3 h-3 rounded-full border border-slate-200 shrink-0" style={{ backgroundColor: item.variantColor }}></span>}
-                          <span className="truncate">
-                            {item.name}
-                            {item.variantLabel && <span className="text-[9px] text-teal-600 ml-1">({item.variantLabel})</span>}
+                      <div key={i}>
+                        <div className="grid grid-cols-12 border-b border-slate-50 pb-2 items-center">
+                          <div className="col-span-6 flex items-center gap-1.5 min-w-0">
+                            {item.variantColor && <span className="w-3 h-3 rounded-full border border-slate-200 shrink-0" style={{ backgroundColor: item.variantColor }}></span>}
+                            <span className="truncate font-bold">
+                              {item.name}
+                              {item.variantLabel && <span className="text-[9px] text-teal-600 ml-1">({item.variantLabel})</span>}
+                              {item.linkedItems?.length ? <span className="text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded ml-1">Package</span> : null}
+                            </span>
+                          </div>
+                          <span className="col-span-2 text-center text-emerald-600">x{item.qty}</span>
+                          <span className="col-span-4 text-right text-slate-500 text-xs">
+                            {item.price ? `RM ${item.price * item.qty}` : "—"}
                           </span>
                         </div>
-                        <span className="col-span-2 text-center text-emerald-600">x{item.qty}</span>
-                        <span className="col-span-4 text-right text-slate-500 text-xs">
-                          {item.price ? `RM ${item.price * item.qty}` : "—"}
-                        </span>
+                        {item.linkedItems?.map((li, j) => (
+                          <div key={j} className="grid grid-cols-12 border-b border-slate-50 pb-1 items-center bg-slate-50/50">
+                            <div className="col-span-6 flex items-center gap-1.5 pl-5 min-w-0">
+                              <span className="text-slate-300 text-xs shrink-0">↳</span>
+                              <span className="text-[10px] text-slate-500 truncate">
+                                {li.name}
+                                {li.variantLabel && <span className="text-teal-600 ml-1">({li.variantLabel})</span>}
+                              </span>
+                            </div>
+                            <span className="col-span-2 text-center text-[10px] text-slate-400">×{li.qty}</span>
+                            <span className="col-span-4 text-right text-[10px] text-slate-300">—</span>
+                          </div>
+                        ))}
                       </div>
                     ))
                   ) : (

@@ -14,7 +14,7 @@ type DocumentsTabProps = {
 type BookingDetails = {
   vendorId: string;
   orderId?: string;
-  items: { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string }[];
+  items: { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string; linkedItems?: { name: string; qty: number; variantLabel?: string }[] }[];
   dates: { start: string; end: string };
   subtotal?: number;
   discounts?: { label: string; amount: number }[];
@@ -40,7 +40,7 @@ type PendingOrder = {
   id: string;
   customerName?: string;
   customerPhone?: string;
-  items: { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string }[];
+  items: { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string; linkedItems?: { name: string; qty: number; variantLabel?: string }[] }[];
   totalAmount: number;
   rentalAmount?: number;
   depositAmount?: number;
@@ -113,6 +113,7 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
         items: order.items.map(i => ({
           name: i.name, qty: i.qty, price: i.price,
           ...(i.variantLabel ? { variantLabel: i.variantLabel, variantColor: i.variantColor } : {}),
+          ...(i.linkedItems?.length ? { linkedItems: i.linkedItems.map(li => ({ name: li.name, qty: li.qty, ...(li.variantLabel ? { variantLabel: li.variantLabel } : {}) })) } : {}),
         })),
         dates: order.bookingDates,
         ...(discounts.length ? { discounts } : {}),
@@ -154,31 +155,19 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
     return a.bookingDetails as BookingDetails;
   }
 
-  async function storageToDataUrl(path: string): Promise<string> {
-    const storage = getStorage();
-    const url = await getDownloadURL(ref(storage, path));
-    const res = await fetch(url);
-    const blob = await res.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
-
   async function downloadAgreementPDF(agreement: Agreement) {
     setPdfLoading(agreement.id);
     try {
-      let fDataUrl = "", bDataUrl = "";
+      let frontUrl = "", backUrl = "";
       if (agreement.icFrontPath && agreement.icBackPath) {
         try {
-          [fDataUrl, bDataUrl] = await Promise.all([
-            storageToDataUrl(agreement.icFrontPath),
-            storageToDataUrl(agreement.icBackPath),
+          const storage = getStorage();
+          [frontUrl, backUrl] = await Promise.all([
+            getDownloadURL(ref(storage, agreement.icFrontPath)),
+            getDownloadURL(ref(storage, agreement.icBackPath)),
           ]);
         } catch (e) {
-          console.warn("Could not load IC images for PDF:", e);
+          console.warn("Could not get IC image URLs for PDF:", e);
         }
       }
 
@@ -200,7 +189,7 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
           total: booking.total,
         } : null,
         vendorData.rules,
-        (fDataUrl && bDataUrl) ? { frontUrl: fDataUrl, backUrl: bDataUrl } : undefined,
+        (frontUrl && backUrl) ? { frontUrl, backUrl } : undefined,
       );
     } catch (e) {
       console.error(e);

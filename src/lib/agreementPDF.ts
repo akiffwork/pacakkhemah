@@ -12,8 +12,16 @@ type PDFVendor = {
 
 type PDFDiscount = { label: string; amount: number };
 
+type PDFItem = {
+  name: string;
+  qty: number;
+  price?: number;
+  variantLabel?: string;
+  linkedItems?: { name: string; qty: number; variantLabel?: string }[];
+};
+
 type PDFBooking = {
-  items?: { name: string; qty: number; price?: number; variantLabel?: string }[];
+  items?: PDFItem[];
   dates?: { start: string; end: string };
   subtotal?: number;
   discounts?: PDFDiscount[];
@@ -79,12 +87,22 @@ function buildStyles() {
 
 function buildPage1(vendor: PDFVendor, agreement: PDFAgreement, booking: PDFBooking | null, rules: string[]) {
   const itemsRows = booking?.items?.length
-    ? booking.items.map(i => `
+    ? booking.items.map(i => {
+        const subRows = i.linkedItems?.length ? i.linkedItems.map(li => `
+      <tr style="background:#f9fafb;">
+        <td style="padding:5px 12px 5px 28px;border:1px solid #eee;font-size:10px;color:#555;">
+          ↳ ${li.name}${li.variantLabel ? ` <span style="color:#0d9488;">(${li.variantLabel})</span>` : ""}
+        </td>
+        <td style="padding:5px 12px;border:1px solid #eee;text-align:center;font-size:10px;color:#555;">${li.qty}</td>
+        <td style="padding:5px 12px;border:1px solid #eee;text-align:right;font-size:10px;color:#999;">—</td>
+      </tr>`).join("") : "";
+        return `
       <tr>
-        <td style="padding:8px 12px;border:1px solid #ddd;font-size:11px;">${i.name}${i.variantLabel ? ` <span style="color:#0d9488;font-size:10px;">(${i.variantLabel})</span>` : ""}</td>
+        <td style="padding:8px 12px;border:1px solid #ddd;font-size:11px;font-weight:${i.linkedItems?.length ? "700" : "normal"};">${i.name}${i.variantLabel ? ` <span style="color:#0d9488;font-size:10px;">(${i.variantLabel})</span>` : ""}${i.linkedItems?.length ? ` <span style="font-size:9px;background:#e0f2fe;color:#0369a1;padding:1px 5px;border-radius:99px;margin-left:4px;font-weight:700;">PACKAGE</span>` : ""}</td>
         <td style="padding:8px 12px;border:1px solid #ddd;text-align:center;font-size:11px;">${i.qty}</td>
         <td style="padding:8px 12px;border:1px solid #ddd;text-align:right;font-size:11px;">${i.price ? `RM${i.price}/night` : ""}</td>
-      </tr>`).join("")
+      </tr>${subRows}`;
+      }).join("")
     : `<tr><td colspan="3" style="padding:12px;border:1px solid #ddd;color:#999;font-style:italic;font-size:11px;">Items as discussed via WhatsApp / Chat Record</td></tr>`;
 
   const hasBreakdown = booking && (booking.discounts?.length || booking.deposit != null || booking.rentalAmount != null);
@@ -276,7 +294,15 @@ ${buildStyles()}
 ${buildPage1(vendor, agreement, booking, finalRules)}
 ${buildPage2(vendor, agreement)}
 ${images ? buildICPage(vendor, images) : ""}
-<script>window.onload=()=>{window.print();}<\/script>
+<script>
+  window.onload = () => {
+    const imgs = Array.from(document.querySelectorAll('img'));
+    if (!imgs.length) { window.print(); return; }
+    let pending = imgs.length;
+    const done = () => { if (--pending === 0) window.print(); };
+    imgs.forEach(img => { if (img.complete) done(); else { img.onload = done; img.onerror = done; } });
+  };
+<\/script>
 </body></html>`;
 
   const w = window.open("", "_blank");
