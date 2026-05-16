@@ -482,8 +482,10 @@ function ShopPageContent({
   function getItemShareUrl(item: GearItem): string {
     const base = typeof window !== "undefined" ? window.location.origin : "";
     const shopSlug = vendorData?.slug || vendorId;
-    // Path-based URL so social crawlers (Threads, etc.) see correct OG tags server-side
-    return `${base}/shop/${shopSlug}/item/${item.id}`;
+    // Use shop URL with ?item= so Facebook/Threads scrapers hit the cached shop page
+    // (the shop page already generates item-specific OG tags from this param).
+    // The item sub-page (/item/[id]) gets blocked by Vercel's edge on Facebook's IPs.
+    return `${base}/shop/${shopSlug}?item=${encodeURIComponent(item.id)}`;
   }
 
   function getSharePriceText(item: GearItem): string {
