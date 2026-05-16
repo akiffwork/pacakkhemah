@@ -482,10 +482,7 @@ function ShopPageContent({
   function getItemShareUrl(item: GearItem): string {
     const base = typeof window !== "undefined" ? window.location.origin : "";
     const shopSlug = vendorData?.slug || vendorId;
-    // Use shop URL with ?item= so Facebook/Threads scrapers hit the cached shop page
-    // (the shop page already generates item-specific OG tags from this param).
-    // The item sub-page (/item/[id]) gets blocked by Vercel's edge on Facebook's IPs.
-    return `${base}/shop/${shopSlug}?item=${encodeURIComponent(item.id)}`;
+    return `${base}/shop/${shopSlug}/item/${encodeURIComponent(item.id)}`;
   }
 
   function getSharePriceText(item: GearItem): string {
@@ -501,6 +498,11 @@ function ShopPageContent({
 
   async function shareItem(item: GearItem) {
     const url = getItemShareUrl(item);
+    // Warm Vercel's global ISR cache from the user's browser before sharing.
+    // WhatsApp/Threads/Facebook strip ?params, so we need the path URL — but
+    // Vercel blocks cold path-page requests from scraper IPs. Fetching first
+    // populates the global ISR cache so all scrapers get the cached OG response.
+    try { await fetch(url, { credentials: "omit" }); } catch { /* ignore */ }
     const text = `${item.name} — ${getSharePriceText(item)} @ ${vendorData?.name || "Pacak Khemah"}`;
 
     if (navigator.share) {
