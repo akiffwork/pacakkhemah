@@ -175,14 +175,13 @@ export function buildItemMetadata({
   const itemDesc = (fsStr(gear, "desc") || fsStr(gear, "description") || "").trim();
   const { label: priceLabel } = getPriceLabel(gear);
 
-  const hasImg = !!(
+  // Use the Firebase Storage download URL directly — it's public, served from
+  // Google's global CDN, and not subject to Vercel edge blocking.
+  const rawImgUrl: string =
     gear?.fields?.images?.arrayValue?.values?.[0]?.stringValue ||
-    gear?.fields?.img?.stringValue
-  );
-  // Path-based proxy URL — no query params so no crawler stripping risk
-  const itemImg = hasImg
-    ? `${SITE}/api/gear-og/${encodeURIComponent(itemId)}`
-    : vendorImage;
+    gear?.fields?.img?.stringValue ||
+    "";
+  const itemImg = rawImgUrl || vendorImage;
 
   const title = `${itemName} — ${priceLabel} | ${vendorName}`;
   const briefDesc = itemDesc.length > 100 ? itemDesc.slice(0, 97) + "..." : itemDesc;
