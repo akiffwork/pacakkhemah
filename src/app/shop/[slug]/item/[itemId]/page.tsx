@@ -2,6 +2,10 @@ import { Metadata } from "next";
 import ShopClient from "../../ShopClient";
 import { buildItemMetadata, getGearItem, getVendorData, parseFirestoreDoc } from "../../_lib/metadata";
 
+// Cache at Vercel's edge for 5 min so social crawlers (Facebook, Threads) get
+// the pre-rendered version from the CDN instead of hitting the origin.
+export const revalidate = 300;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Metadata — item-specific OG tags served from a clean path URL (no ?item=)
 // Path-based so social crawlers (Threads, etc.) can't strip the item identity.
