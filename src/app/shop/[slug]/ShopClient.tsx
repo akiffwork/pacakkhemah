@@ -482,7 +482,7 @@ function ShopPageContent({
   function getItemShareUrl(item: GearItem): string {
     const base = typeof window !== "undefined" ? window.location.origin : "";
     const shopSlug = vendorData?.slug || vendorId;
-    return `${base}/shop/${shopSlug}/item/${encodeURIComponent(item.id)}`;
+    return `${base}/shop/${shopSlug}?item=${encodeURIComponent(item.id)}`;
   }
 
   function getSharePriceText(item: GearItem): string {
@@ -498,17 +498,6 @@ function ShopPageContent({
 
   async function shareItem(item: GearItem) {
     const url = getItemShareUrl(item);
-    // Warm Vercel's global ISR cache from the user's browser before sharing.
-    // Warm both the item page and the OG image in Vercel's global ISR cache.
-    // Scrapers (WhatsApp, Threads, Facebook) fetch both separately — if either
-    // is cold, Vercel blocks their IPs. Fetching from the user's browser first
-    // ensures both are cached before the scraper arrives.
-    const base = typeof window !== "undefined" ? window.location.origin : "";
-    const ogImageUrl = `${base}/api/gear-og/${encodeURIComponent(item.id)}`;
-    await Promise.all([
-      fetch(url, { credentials: "omit" }).catch(() => {}),
-      fetch(ogImageUrl, { credentials: "omit" }).catch(() => {}),
-    ]);
     const text = `${item.name} — ${getSharePriceText(item)} @ ${vendorData?.name || "Pacak Khemah"}`;
 
     if (navigator.share) {
