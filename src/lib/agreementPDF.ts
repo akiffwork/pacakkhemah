@@ -305,8 +305,13 @@ ${images ? buildICPage(vendor, images) : ""}
 <\/script>
 </body></html>`;
 
-  const w = window.open("", "_blank");
-  if (w) { w.document.write(html); w.document.close(); }
+  // Open via blob: URL so the print window has a real origin (pacakkhemah.com)
+  // instead of null (about:blank). Null-origin windows block external image loads,
+  // which prevents Firebase Storage IC photos from rendering in the PDF.
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const blobUrl = URL.createObjectURL(blob);
+  window.open(blobUrl, "_blank");
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
 }
 
 /** Helper to generate ref number and formatted dates from a Date */
