@@ -66,7 +66,7 @@ export async function generateMetadata({
     const match = videoUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
     if (match) ogImage = `https://img.youtube.com/vi/${match[1]}/hqdefault.jpg`;
   }
-  if (!ogImage) ogImage = `${SITE}/pacak-khemah.png`;
+  if (!ogImage) ogImage = `${SITE}/rent-camp.png`;
 
   const fullTitle = `${title} | Camping Guide | Pacak Khemah`;
 
