@@ -134,9 +134,27 @@ export default function GuideClient({ slug }: { slug: string }) {
 
         {/* Content */}
         <div className="bg-white rounded-2xl border border-slate-100 p-6">
-          <div className="prose prose-sm max-w-none text-slate-600 leading-relaxed whitespace-pre-wrap">
-            {article!.content}
-          </div>
+          <div
+            className="article-content"
+            dangerouslySetInnerHTML={{ __html: article!.content }}
+          />
+          <style jsx global>{`
+            .article-content h2 { font-size: 1.2rem; font-weight: 800; color: #062c24; margin: 1.5rem 0 0.5rem; line-height: 1.3; }
+            .article-content h3 { font-size: 1rem; font-weight: 700; color: #1a1a1a; margin: 1.25rem 0 0.4rem; line-height: 1.4; }
+            .article-content p { margin: 0.75rem 0; line-height: 1.8; color: #374151; font-size: 0.9rem; }
+            .article-content ul { padding-left: 1.4rem; margin: 0.75rem 0; list-style-type: disc; }
+            .article-content ol { padding-left: 1.4rem; margin: 0.75rem 0; list-style-type: decimal; }
+            .article-content li { margin: 0.35rem 0; line-height: 1.7; color: #374151; font-size: 0.9rem; }
+            .article-content strong { font-weight: 700; color: #111827; }
+            .article-content em { font-style: italic; }
+            .article-content u { text-decoration: underline; }
+            .article-content a { color: #059669; text-decoration: underline; }
+            .article-content blockquote { border-left: 3px solid #10b981; padding: 0.6rem 1rem; margin: 1rem 0; background: #f0fdf4; border-radius: 0 0.5rem 0.5rem 0; color: #065f46; font-style: italic; }
+            .article-content img { border-radius: 0.75rem; max-width: 100%; margin: 1.25rem auto; display: block; }
+            .article-content .text-left { text-align: left; }
+            .article-content .text-center { text-align: center; }
+            .article-content .text-right { text-align: right; }
+          `}</style>
         </div>
 
         {/* Vendor link */}

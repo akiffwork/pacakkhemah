@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
+const RichTextEditor = lazy(() => import("@/components/RichTextEditor"));
 import { db } from "@/lib/firebase";
 import {
   collection, query, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc,
@@ -542,10 +543,14 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
 
               <div>
                 <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Content *</label>
-                <textarea value={articleForm.content}
-                  onChange={e => setArticleForm(f => ({ ...f, content: e.target.value }))}
-                  rows={10} placeholder="Write your full guide here..."
-                  className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-400 resize-y" />
+                <Suspense fallback={<div className="h-40 border border-slate-200 rounded-xl animate-pulse bg-slate-50" />}>
+                  <RichTextEditor
+                    value={articleForm.content}
+                    onChange={html => setArticleForm(f => ({ ...f, content: html }))}
+                    placeholder="Write your full guide here..."
+                    vendorId={vendorId}
+                  />
+                </Suspense>
               </div>
 
               <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">

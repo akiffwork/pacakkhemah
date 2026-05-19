@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, lazy, Suspense } from "react";
+const RichTextEditor = lazy(() => import("@/components/RichTextEditor"));
 import { db } from "@/lib/firebase";
 import { doc, getDoc, setDoc, collection, getDocs, addDoc, deleteDoc, updateDoc, serverTimestamp, onSnapshot, orderBy, query } from "firebase/firestore";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -964,10 +965,13 @@ export default function ContentTab() {
 
               <div>
                 <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Content *</label>
-                <textarea value={articleForm.content}
-                  onChange={e => setArticleForm(f => ({ ...f, content: e.target.value }))}
-                  rows={12} placeholder="Write your full article here. Use blank lines to separate paragraphs."
-                  className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-400 resize-y font-mono" />
+                <Suspense fallback={<div className="h-40 border border-slate-200 rounded-xl animate-pulse bg-slate-50" />}>
+                  <RichTextEditor
+                    value={articleForm.content}
+                    onChange={html => setArticleForm(f => ({ ...f, content: html }))}
+                    placeholder="Write your full article here..."
+                  />
+                </Suspense>
               </div>
             </div>
 
