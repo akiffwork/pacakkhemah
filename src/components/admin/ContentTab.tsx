@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc, collection, getDocs, addDoc, deleteDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, getDocs, addDoc, deleteDoc, updateDoc, serverTimestamp, onSnapshot, orderBy, query } from "firebase/firestore";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
 type FAQItem = { question: string; answer: string };
@@ -10,6 +10,22 @@ type FAQSection = { title: string; icon: string; items: FAQItem[] };
 type Testimonial = { id?: string; name: string; location: string; text: string; rating: number };
 type Event = { id?: string; name: string; poster: string; link: string; organizer: string; location?: string; startDate?: string; endDate?: string; allYearLong?: boolean };
 type Announcement = { isActive: boolean; message: string; type: "info" | "warning" | "promo" };
+
+type Article = {
+  id: string;
+  title: string;
+  slug: string;
+  excerpt: string;
+  content: string;
+  coverImage?: string;
+  videoUrl?: string;
+  category: string;
+  authorType: "admin";
+  authorName: string;
+  status: "draft" | "published";
+  createdAt?: any;
+  updatedAt?: any;
+};
 
 type AboutContent = {
   story: string;
@@ -75,8 +91,27 @@ export default function ContentTab() {
   const [evtUploading, setEvtUploading] = useState(false);
   const evtFileRef = useRef<HTMLInputElement>(null);
 
+  // Article states
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [articleModal, setArticleModal] = useState(false);
+  const [editingArticle, setEditingArticle] = useState<Article | null>(null);
+  const [articleForm, setArticleForm] = useState({
+    title: "", slug: "", excerpt: "", content: "",
+    coverImage: "", videoUrl: "", category: "General", status: "draft" as "draft" | "published",
+  });
+  const [articleImageFile, setArticleImageFile] = useState<File | null>(null);
+  const [articleSaving, setArticleSaving] = useState(false);
+
   useEffect(() => {
     loadContent();
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, "articles"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, snap => {
+      setArticles(snap.docs.map(d => ({ id: d.id, ...d.data() } as Article)));
+    });
+    return () => unsub();
   }, []);
 
   async function loadContent() {
@@ -223,6 +258,73 @@ export default function ContentTab() {
     const updated = [...faq];
     updated[sectionIdx].items[itemIdx] = { ...updated[sectionIdx].items[itemIdx], [field]: value };
     setFaq(updated);
+  }
+
+  // Article helpers
+  function toSlug(title: string): string {
+    return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  }
+
+  async function saveArticle() {
+    if (!articleForm.title.trim() || !articleForm.excerpt.trim()) return;
+    setArticleSaving(true);
+    try {
+      let coverImage = articleForm.coverImage;
+      if (articleImageFile) {
+        const storage = getStorage();
+        const snap = await uploadBytes(
+          storageRef(storage, `articles/${Date.now()}_${articleImageFile.name}`),
+          articleImageFile
+        );
+        coverImage = await getDownloadURL(snap.ref);
+      }
+      const payload = {
+        ...articleForm,
+        coverImage: coverImage || null,
+        videoUrl: articleForm.videoUrl || null,
+        authorType: "admin" as const,
+        authorName: "Pacak Khemah",
+        updatedAt: serverTimestamp(),
+      };
+      if (editingArticle) {
+        await updateDoc(doc(db, "articles", editingArticle.id), payload);
+      } else {
+        await addDoc(collection(db, "articles"), { ...payload, createdAt: serverTimestamp() });
+      }
+      setArticleModal(false);
+      setEditingArticle(null);
+      setArticleForm({ title: "", slug: "", excerpt: "", content: "", coverImage: "", videoUrl: "", category: "General", status: "draft" });
+      setArticleImageFile(null);
+    } catch (e) { console.error(e); alert("Failed to save article"); }
+    finally { setArticleSaving(false); }
+  }
+
+  async function deleteArticle(id: string) {
+    if (!confirm("Delete this article?")) return;
+    await deleteDoc(doc(db, "articles", id));
+  }
+
+  async function toggleArticleStatus(article: Article) {
+    const newStatus = article.status === "published" ? "draft" : "published";
+    await updateDoc(doc(db, "articles", article.id), { status: newStatus, updatedAt: serverTimestamp() });
+  }
+
+  function openNewArticle() {
+    setEditingArticle(null);
+    setArticleForm({ title: "", slug: "", excerpt: "", content: "", coverImage: "", videoUrl: "", category: "General", status: "draft" });
+    setArticleImageFile(null);
+    setArticleModal(true);
+  }
+
+  function openEditArticle(a: Article) {
+    setEditingArticle(a);
+    setArticleForm({
+      title: a.title, slug: a.slug, excerpt: a.excerpt, content: a.content,
+      coverImage: a.coverImage || "", videoUrl: a.videoUrl || "",
+      category: a.category, status: a.status,
+    });
+    setArticleImageFile(null);
+    setArticleModal(true);
   }
 
   if (loading) {
@@ -569,6 +671,70 @@ export default function ContentTab() {
         </div>
       )}
 
+      {/* ── ARTICLES ── */}
+      <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+        <div className="bg-gradient-to-r from-[#062c24] to-emerald-800 p-5 text-white flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
+              <i className="fas fa-book-open"></i>
+            </div>
+            <div>
+              <h3 className="font-black uppercase text-sm">Camping Guide Articles</h3>
+              <p className="text-[10px] text-white/70">{articles.length} articles</p>
+            </div>
+          </div>
+          <button onClick={openNewArticle}
+            className="flex items-center gap-2 bg-white/20 hover:bg-white hover:text-[#062c24] transition-colors px-3 py-2 rounded-xl text-[10px] font-black uppercase">
+            <i className="fas fa-plus"></i> New Article
+          </button>
+        </div>
+
+        <div className="divide-y divide-slate-50">
+          {articles.length === 0 ? (
+            <div className="p-8 text-center text-slate-400 text-sm">No articles yet — create the first one!</div>
+          ) : articles.map(a => (
+            <div key={a.id} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
+              <div className="flex items-center gap-3 min-w-0">
+                {a.coverImage ? (
+                  <img src={a.coverImage} className="w-12 h-12 rounded-xl object-cover shrink-0" alt="" />
+                ) : (
+                  <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+                    <i className="fas fa-book-open text-slate-300"></i>
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="font-bold text-[#062c24] text-sm truncate">{a.title}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[9px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{a.category}</span>
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${a.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                      {a.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button onClick={() => toggleArticleStatus(a)}
+                  className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-colors ${
+                    a.status === "published"
+                      ? "bg-amber-50 text-amber-600 hover:bg-amber-100"
+                      : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+                  }`}>
+                  {a.status === "published" ? "Unpublish" : "Publish"}
+                </button>
+                <button onClick={() => openEditArticle(a)}
+                  className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors">
+                  <i className="fas fa-pen text-xs"></i>
+                </button>
+                <button onClick={() => deleteArticle(a.id)}
+                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                  <i className="fas fa-trash text-xs"></i>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Floating Save Button */}
       <div className="fixed bottom-0 right-0 left-0 sm:left-64 p-4 lg:p-8 bg-gradient-to-t from-slate-50 via-slate-50 to-transparent pointer-events-none flex justify-end">
         <button
@@ -698,6 +864,117 @@ export default function ContentTab() {
               <button onClick={() => saveEvent(editingEvent)} disabled={evtUploading}
                 className="flex-1 py-4 rounded-xl text-xs font-black uppercase tracking-widest text-white bg-emerald-500 hover:bg-emerald-600 transition-all disabled:opacity-50">
                 {evtUploading ? <><i className="fas fa-spinner fa-spin mr-2"></i>Uploading…</> : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Article Modal */}
+      {articleModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl my-4">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <h3 className="font-black text-[#062c24] uppercase text-base">
+                {editingArticle ? "Edit Article" : "New Article"}
+              </h3>
+              <button onClick={() => setArticleModal(false)}
+                className="w-9 h-9 rounded-full bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center">
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div>
+                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Title *</label>
+                <input value={articleForm.title}
+                  onChange={e => setArticleForm(f => ({ ...f, title: e.target.value, slug: toSlug(e.target.value) }))}
+                  placeholder="How to Set Up a Dome Tent in 5 Minutes"
+                  className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-400" />
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">URL Slug</label>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 bg-slate-50 border border-slate-200 px-2 py-2.5 rounded-l-xl shrink-0">/guide/</span>
+                  <input value={articleForm.slug}
+                    onChange={e => setArticleForm(f => ({ ...f, slug: e.target.value }))}
+                    className="flex-1 border border-slate-200 rounded-r-xl p-2.5 text-sm outline-none focus:border-emerald-400 font-mono" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Category</label>
+                  <select value={articleForm.category}
+                    onChange={e => setArticleForm(f => ({ ...f, category: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl p-2.5 text-sm outline-none focus:border-emerald-400">
+                    {["General", "Tent Setup", "Camping Tips", "Gear Guide"].map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Status</label>
+                  <select value={articleForm.status}
+                    onChange={e => setArticleForm(f => ({ ...f, status: e.target.value as "draft" | "published" }))}
+                    className="w-full border border-slate-200 rounded-xl p-2.5 text-sm outline-none focus:border-emerald-400">
+                    <option value="draft">Draft</option>
+                    <option value="published">Published</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">YouTube URL (optional)</label>
+                <input value={articleForm.videoUrl}
+                  onChange={e => setArticleForm(f => ({ ...f, videoUrl: e.target.value }))}
+                  placeholder="https://youtube.com/watch?v=..."
+                  className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-400" />
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Cover Image (optional)</label>
+                {(articleForm.coverImage || articleImageFile) ? (
+                  <div className="relative inline-block">
+                    <img
+                      src={articleImageFile ? URL.createObjectURL(articleImageFile) : articleForm.coverImage}
+                      className="h-32 rounded-xl object-cover" alt="Cover" />
+                    <button onClick={() => { setArticleImageFile(null); setArticleForm(f => ({ ...f, coverImage: "" })); }}
+                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center">
+                      <i className="fas fa-times"></i>
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex items-center gap-2 p-4 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-emerald-300 hover:bg-emerald-50/30 transition-colors">
+                    <i className="fas fa-image text-slate-300 text-xl"></i>
+                    <span className="text-xs font-bold text-slate-400">Click to upload cover image</span>
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={e => e.target.files?.[0] && setArticleImageFile(e.target.files[0])} />
+                  </label>
+                )}
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Excerpt * <span className="text-slate-300 normal-case font-normal">(1-2 sentences for preview cards)</span></label>
+                <textarea value={articleForm.excerpt}
+                  onChange={e => setArticleForm(f => ({ ...f, excerpt: e.target.value }))}
+                  rows={2} placeholder="A quick summary of what this article covers..."
+                  className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-400 resize-none" />
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Content *</label>
+                <textarea value={articleForm.content}
+                  onChange={e => setArticleForm(f => ({ ...f, content: e.target.value }))}
+                  rows={12} placeholder="Write your full article here. Use blank lines to separate paragraphs."
+                  className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-400 resize-y font-mono" />
+              </div>
+            </div>
+
+            <div className="p-5 border-t border-slate-100">
+              <button onClick={saveArticle} disabled={!articleForm.title.trim() || !articleForm.excerpt.trim() || articleSaving}
+                className="w-full bg-[#062c24] text-white py-3.5 rounded-xl text-xs font-black uppercase disabled:opacity-50 hover:bg-emerald-800 transition-colors">
+                {articleSaving ? <><i className="fas fa-spinner fa-spin mr-2"></i>Saving...</> : editingArticle ? "Update Article" : "Create Article"}
               </button>
             </div>
           </div>
