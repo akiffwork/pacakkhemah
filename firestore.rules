@@ -140,5 +140,12 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+
+    // --- 13. ARTICLES (Camping Guide) ---
+    match /articles/{articleId} {
+      allow read: if true;
+      allow create: if isAdmin() || request.auth != null;
+      allow update, delete: if isAdmin() || isVendorOwner(resource.data.authorId);
+    }
   }
 }
