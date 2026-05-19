@@ -416,7 +416,7 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
         {activeTab === "orders" && <OrdersTab vendorId={vendorId} vendorName={vendorData.name} />}
         {activeTab === "reviews" && <ReviewsTab vendorId={vendorId} />}
         {activeTab === "insights" && <InsightsTab vendorId={vendorId} />}
-        {activeTab === "updates" && <UpdatesTab vendorId={vendorId} />}
+        {activeTab === "updates" && <UpdatesTab vendorId={vendorId} vendorName={vendorData.name} vendorSlug={vendorData.slug} />}
         {activeTab === "documents" && <DocumentsTab vendorId={vendorId} vendorData={vendorData} />}
         {activeTab === "inventory" && <InventoryTab vendorId={vendorId} />}
         {activeTab === "storefront" && <StorefrontTab vendorId={vendorId} vendorData={vendorData} />}
