@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
 import {
   doc, getDoc, collection, query, where, getDocs, getDocsFromServer,
-  serverTimestamp, addDoc, orderBy, updateDoc, arrayUnion, increment,
+  serverTimestamp, addDoc, orderBy, updateDoc, arrayUnion, increment, limit,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import "flatpickr/dist/flatpickr.min.css";
@@ -136,6 +136,16 @@ type AvailRule = { itemId?: string; variantId?: string; type?: string; start: st
 type Discount = { id?: string; type: string; trigger_nights?: number; discount_percent: number; discount_fixed?: number; code?: string; deleted?: boolean; is_public?: boolean; appliesTo?: { type: "all" | "specific"; itemIds?: string[] }; maxUses?: number | null; usedCount?: number; validFrom?: string | null; validUntil?: string | null; min_spend?: number; min_qty?: number; bundle_category?: string; freeItemId?: string; freeItemQty?: number; free_trigger?: string; free_trigger_nights?: number; free_trigger_spend?: number; free_trigger_qty?: number; free_trigger_category?: string; };
 type VendorPost = { id: string; content: string; image?: string; pinned?: boolean; createdAt: any };
 type Review = { id: string; customerName: string; rating: number; comment?: string | null; photos?: string[] | null; createdAt: any; isVerified?: boolean; vendorReply?: string | null; vendorRepliedAt?: any };
+type VendorArticle = {
+  id: string;
+  title: string;
+  slug: string;
+  excerpt: string;
+  coverImage?: string;
+  videoUrl?: string;
+  category: string;
+  createdAt: any;
+};
 
 type FulfillmentType = "pickup" | "delivery";
 
@@ -204,6 +214,7 @@ function ShopPageContent({
   const [weeklyOff, setWeeklyOff] = useState<Record<number, boolean>>({});
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [posts, setPosts] = useState<VendorPost[]>([]);
+  const [vendorArticles, setVendorArticles] = useState<VendorArticle[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewLightbox, setReviewLightbox] = useState<string | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -404,6 +415,19 @@ function ShopPageContent({
         return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
       }));
       setReviews(reviewsSnap.docs.map(d => ({ ...d.data(), id: d.id } as Review)));
+
+      // Load vendor's published articles for Updates tab
+      if (vendorId) {
+        getDocs(query(
+          collection(db, "articles"),
+          where("authorId", "==", vendorId),
+          where("status", "==", "published"),
+          orderBy("createdAt", "desc"),
+          limit(10)
+        )).then(snap => {
+          setVendorArticles(snap.docs.map(d => ({ id: d.id, ...d.data() } as VendorArticle)));
+        }).catch(() => {});
+      }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
@@ -1872,6 +1896,47 @@ function ShopPageContent({
         {/* UPDATES TAB */}
         {mainTab === "updates" && (
           <div className="space-y-3">
+            {/* Vendor Articles */}
+            {vendorArticles.length > 0 && (
+              <div className="space-y-3 mb-6">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">
+                  <i className="fas fa-book-open mr-1.5 text-emerald-500"></i>Guides & Tips
+                </p>
+                {vendorArticles.map(a => {
+                  const thumb = a.coverImage || (a.videoUrl
+                    ? (() => {
+                        const m = a.videoUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+                        return m ? `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg` : null;
+                      })()
+                    : null);
+                  return (
+                    <a key={a.id} href={`/guide/${a.slug}`} target="_blank" rel="noreferrer"
+                      className="flex items-center gap-3 bg-white rounded-2xl border border-slate-100 hover:border-emerald-300 hover:shadow-md transition-all p-3 group">
+                      <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-100 shrink-0 relative">
+                        {thumb ? (
+                          <img src={thumb} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <i className="fas fa-book-open text-slate-200 text-xl"></i>
+                          </div>
+                        )}
+                        {a.videoUrl && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                            <i className="fas fa-play text-white text-xs"></i>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[8px] font-black text-emerald-600 uppercase">{a.category}</span>
+                        <p className="font-bold text-[#062c24] text-xs leading-tight line-clamp-2">{a.title}</p>
+                        <p className="text-[9px] text-slate-400 line-clamp-1 mt-0.5">{a.excerpt}</p>
+                      </div>
+                      <i className="fas fa-arrow-right text-slate-300 group-hover:text-emerald-500 transition-colors shrink-0 text-xs"></i>
+                    </a>
+                  );
+                })}
+              </div>
+            )}
             {posts.length === 0 ? (
               <div className="bg-white rounded-2xl p-8 text-center border border-slate-100">
                 <i className="fas fa-bullhorn text-slate-200 text-4xl mb-3"></i>
