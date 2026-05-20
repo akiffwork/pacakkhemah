@@ -180,8 +180,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
       <>
         <div style={{ background: "#062c24", padding: "20px 28px", display: "flex", alignItems: "center", gap: "16px" }}>
           {vendor.image && (
-            <img src={vendor.image} crossOrigin="anonymous"
-              style={{ width: 64, height: 64, borderRadius: 14, objectFit: "cover", border: "2px solid rgba(255,255,255,0.2)", flexShrink: 0 }} alt="Logo" />
+            <img src={vendor.image}              style={{ width: 64, height: 64, borderRadius: 14, objectFit: "cover", border: "2px solid rgba(255,255,255,0.2)", flexShrink: 0 }} alt="Logo" />
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 24, fontWeight: 900, color: "#fff", textTransform: "uppercase", letterSpacing: "-0.5px", lineHeight: 1 }}>{vendor.name}</div>
@@ -222,8 +221,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
 
     const flyerFooter = (
       <div style={{ background: "#062c24", padding: "20px 28px", display: "flex", alignItems: "center", gap: "20px" }}>
-        <img src={qrUrl} crossOrigin="anonymous"
-          style={{ width: 72, height: 72, borderRadius: 12, background: "#fff", padding: 5, flexShrink: 0 }} alt="QR" />
+        <img src={qrUrl}          style={{ width: 72, height: 72, borderRadius: 12, background: "#fff", padding: 5, flexShrink: 0 }} alt="QR" />
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 8, color: "#34d399", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.2em", marginBottom: 3 }}>
             Imbas / Scan to Browse &amp; Order
@@ -320,8 +318,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
                           {/* Square image */}
                           {imgUrl ? (
                             <div style={{ position: "relative", paddingTop: "100%", background: "#f1f5f9" }}>
-                              <img src={imgUrl} crossOrigin="anonymous"
-                                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} alt={item.name} />
+                              <img src={imgUrl}                                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} alt={item.name} />
                               {item.category && (
                                 <span style={{ position: "absolute", top: 5, left: 5, background: "rgba(6,44,36,0.85)", color: "#fff", fontSize: 6, fontWeight: 900, textTransform: "uppercase", padding: "2px 6px", borderRadius: 99 }}>
                                   {item.category}
@@ -438,8 +435,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
                           {/* Image 16:9 */}
                           {imgUrl ? (
                             <div style={{ position: "relative", paddingTop: "56.25%", background: "#f1f5f9" }}>
-                              <img src={imgUrl} crossOrigin="anonymous"
-                                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} alt={item.name} />
+                              <img src={imgUrl}                                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} alt={item.name} />
                               {item.category && (
                                 <span style={{ position: "absolute", top: 6, left: 6, background: "rgba(6,44,36,0.8)", color: "#fff", fontSize: 7, fontWeight: 900, textTransform: "uppercase", padding: "2px 7px", borderRadius: 99 }}>{item.category}</span>
                               )}
@@ -515,7 +511,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
                                     return (
                                       <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                         {linkedImg ? (
-                                          <img src={linkedImg} crossOrigin="anonymous" style={{ width: 26, height: 26, borderRadius: 4, objectFit: "cover", border: "1px solid #e2e8f0", flexShrink: 0 }} alt="" />
+                                          <img src={linkedImg} style={{ width: 26, height: 26, borderRadius: 4, objectFit: "cover", border: "1px solid #e2e8f0", flexShrink: 0 }} alt="" />
                                         ) : (
                                           <div style={{ width: 26, height: 26, borderRadius: 4, background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                                             <i className="fas fa-box" style={{ color: "#cbd5e1", fontSize: 7 }}></i>
