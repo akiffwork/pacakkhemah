@@ -160,18 +160,28 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
   // PRINT PREVIEW
   // ==========================================
   if (showPreview && vendor) {
-    // Group items into rows of 2 for the table layout
-    const itemRows: GearItem[][] = [];
-    for (let i = 0; i < selectedItems.length; i += 2) {
-      itemRows.push(selectedItems.slice(i, i + 2));
-    }
+    // Split items: packages keep 2-col layout, singles get 3-col compact layout
+    const packageItems = selectedItems.filter(item => item.type === "package" && item.linkedItems && item.linkedItems.length > 0);
+    const singleItems  = selectedItems.filter(item => !(item.type === "package" && item.linkedItems && item.linkedItems.length > 0));
+
+    const singleRows: GearItem[][] = [];
+    for (let i = 0; i < singleItems.length; i += 3) singleRows.push(singleItems.slice(i, i + 3));
+
+    const packageRows: GearItem[][] = [];
+    for (let i = 0; i < packageItems.length; i += 2) packageRows.push(packageItems.slice(i, i + 2));
+
+    // Table uses 6 columns (LCM of 2 and 3):
+    //   singles → each td colSpan=2  (3 per row = 6 cols)
+    //   packages → each td colSpan=3 (2 per row = 6 cols)
+    //   header/footer → colSpan=6
 
     // Shared header markup (used in both thead and repeated on every page)
     const flyerHeader = (
       <>
         <div style={{ background: "#062c24", padding: "20px 28px", display: "flex", alignItems: "center", gap: "16px" }}>
           {vendor.image && (
-            <img src={vendor.image}              style={{ width: 64, height: 64, borderRadius: 14, objectFit: "cover", border: "2px solid rgba(255,255,255,0.2)", flexShrink: 0 }} alt="Logo" />
+            <img src={vendor.image} crossOrigin="anonymous"
+              style={{ width: 64, height: 64, borderRadius: 14, objectFit: "cover", border: "2px solid rgba(255,255,255,0.2)", flexShrink: 0 }} alt="Logo" />
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 24, fontWeight: 900, color: "#fff", textTransform: "uppercase", letterSpacing: "-0.5px", lineHeight: 1 }}>{vendor.name}</div>
@@ -212,7 +222,8 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
 
     const flyerFooter = (
       <div style={{ background: "#062c24", padding: "20px 28px", display: "flex", alignItems: "center", gap: "20px" }}>
-        <img src={qrUrl}          style={{ width: 72, height: 72, borderRadius: 12, background: "#fff", padding: 5, flexShrink: 0 }} alt="QR" />
+        <img src={qrUrl} crossOrigin="anonymous"
+          style={{ width: 72, height: 72, borderRadius: 12, background: "#fff", padding: 5, flexShrink: 0 }} alt="QR" />
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 8, color: "#34d399", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.2em", marginBottom: 3 }}>
             Imbas / Scan to Browse &amp; Order
@@ -273,7 +284,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
 
             <thead>
               <tr>
-                <td colSpan={2} style={{ padding: 0 }}>
+                <td colSpan={6} style={{ padding: 0 }}>
                   {flyerHeader}
                 </td>
               </tr>
@@ -281,53 +292,158 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
 
             <tfoot>
               <tr>
-                <td colSpan={2} style={{ padding: 0 }}>
+                <td colSpan={6} style={{ padding: 0 }}>
                   {flyerFooter}
                 </td>
               </tr>
             </tfoot>
 
             <tbody>
-              {/* Top spacing row */}
-              <tr aria-hidden="true"><td colSpan={2} style={{ height: 16 }}></td></tr>
+              <tr aria-hidden="true"><td colSpan={6} style={{ height: 14 }}></td></tr>
 
-              {itemRows.map((pair, rowIdx) => (
-                <tr key={rowIdx} style={{ breakInside: "avoid", pageBreakInside: "avoid" }}>
-                  {pair.map((item, colIdx) => {
+              {/* ── SINGLE ITEMS — 3 per row, compact square cards ── */}
+              {singleRows.map((trio, rowIdx) => (
+                <tr key={`s-${rowIdx}`} style={{ breakInside: "avoid", pageBreakInside: "avoid" }}>
+                  {trio.map((item, colIdx) => {
                     const imgUrl = item.images?.[0] || item.img;
                     const specs = resolveSpecs(item);
-                    const activeSpecs = SPEC_CHIPS.filter(({ key }) => {
-                      const v = specs[key];
-                      return v !== undefined && v !== null && v !== "";
-                    });
-                    const isPkg = item.type === "package" && item.linkedItems && item.linkedItems.length > 0;
+                    const activeSpecs = SPEC_CHIPS.filter(({ key }) => { const v = specs[key]; return v !== undefined && v !== null && v !== ""; });
                     const pricing = getPrice(item);
                     const hasInc = item.inc && item.inc.filter(Boolean).length > 0;
                     const durations = DURATION_ROWS.slice(0, durationRows);
+                    const validDesc = item.desc && item.desc !== "undefined" && item.desc.trim();
+                    const pad = colIdx === 0 ? "0 5px 12px 14px" : colIdx === 1 ? "0 5px 12px 5px" : "0 14px 12px 5px";
                     return (
-                      <td key={item.id}
-                        style={{
-                          width: "50%",
-                          verticalAlign: "top",
-                          padding: colIdx === 0 ? "0 8px 16px 16px" : "0 16px 16px 8px",
-                        }}>
-                        {/* ── ITEM CARD ── */}
-                        <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden", background: "#fff", breakInside: "avoid" }}>
+                      <td key={item.id} colSpan={2} style={{ width: "33.33%", verticalAlign: "top", padding: pad }}>
+                        <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", background: "#fff", breakInside: "avoid" }}>
 
-                          {/* Image */}
+                          {/* Square image */}
                           {imgUrl ? (
-                            <div style={{ position: "relative", paddingTop: "56.25%", background: "#f1f5f9" }}>
-                              <img src={imgUrl}                                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} alt={item.name} />
+                            <div style={{ position: "relative", paddingTop: "100%", background: "#f1f5f9" }}>
+                              <img src={imgUrl} crossOrigin="anonymous"
+                                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} alt={item.name} />
                               {item.category && (
-                                <span style={{ position: "absolute", top: 6, left: 6, background: "rgba(6,44,36,0.8)", color: "#fff", fontSize: 7, fontWeight: 900, textTransform: "uppercase", padding: "2px 7px", borderRadius: 99 }}>
+                                <span style={{ position: "absolute", top: 5, left: 5, background: "rgba(6,44,36,0.85)", color: "#fff", fontSize: 6, fontWeight: 900, textTransform: "uppercase", padding: "2px 6px", borderRadius: 99 }}>
                                   {item.category}
                                 </span>
                               )}
-                              {isPkg && (
-                                <span style={{ position: "absolute", top: 6, right: 6, background: "#10b981", color: "#fff", fontSize: 7, fontWeight: 900, textTransform: "uppercase", padding: "2px 7px", borderRadius: 99 }}>
-                                  Package
-                                </span>
+                            </div>
+                          ) : (
+                            <div style={{ paddingTop: "100%", position: "relative", background: "#f1f5f9" }}>
+                              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <i className="fas fa-image" style={{ color: "#cbd5e1", fontSize: 20 }}></i>
+                              </div>
+                            </div>
+                          )}
+
+                          <div style={{ padding: "8px 9px 9px", display: "flex", flexDirection: "column", gap: 6 }}>
+
+                            {/* Name */}
+                            <div style={{ fontSize: 10, fontWeight: 900, color: "#062c24", textTransform: "uppercase", lineHeight: 1.2 }}>{item.name}</div>
+
+                            {/* Description */}
+                            {showDesc && validDesc && (
+                              <div style={{ fontSize: 7, color: "#64748b", lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                                {validDesc}
+                              </div>
+                            )}
+
+                            {/* Spec chips */}
+                            {activeSpecs.length > 0 && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+                                {activeSpecs.slice(0, 3).map(({ key, icon, label }) => (
+                                  <span key={key} style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "#f1f5f9", color: "#475569", fontSize: 6.5, padding: "2px 5px", borderRadius: 4, fontWeight: 700 }}>
+                                    <i className={`fas ${icon}`} style={{ color: "#059669", fontSize: 5.5 }}></i>
+                                    {label(specs[key]!)}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Pricing table */}
+                            {showPrice && (
+                              <div style={{ border: "1px solid #e2e8f0", borderRadius: 6, overflow: "hidden" }}>
+                                <div style={{ background: "#062c24", padding: "3px 8px" }}>
+                                  <span style={{ fontSize: 6.5, color: "#6ee7b7", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.08em" }}>Rental Price</span>
+                                </div>
+                                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                  <tbody>
+                                    {durations.map((row, i) => (
+                                      <tr key={row.label} style={{ background: i % 2 === 0 ? "#fff" : "#f8fafc" }}>
+                                        <td style={{ padding: "2.5px 7px", fontSize: 7, fontWeight: 900, color: "#062c24", width: 40 }}>{row.label}</td>
+                                        <td style={{ padding: "2.5px 3px", fontSize: 6, color: "#94a3b8" }}>{row.suffix}</td>
+                                        <td style={{ padding: "2.5px 7px", fontSize: 7, fontWeight: 900, color: "#059669", textAlign: "right" }}>
+                                          {pricing.isRange ? `From RM${pricing.min * row.nights}` : `RM${pricing.base * row.nights}`}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+
+                            {/* Includes */}
+                            {hasInc && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+                                {item.inc!.filter(Boolean).map((inc, i) => (
+                                  <span key={i} style={{ fontSize: 6.5, background: "#ecfdf5", color: "#065f46", padding: "2px 5px", borderRadius: 3, fontWeight: 600 }}>✓ {inc}</span>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Setup badge */}
+                            {item.setup?.available && (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "#fffbeb", color: "#92400e", fontSize: 6.5, padding: "2px 7px", borderRadius: 99, fontWeight: 600 }}>
+                                <i className="fas fa-tools" style={{ fontSize: 5.5 }}></i> Setup +RM{item.setup.fee}
+                              </span>
+                            )}
+
+                            {/* CTA */}
+                            <a href={waLink} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginTop: 2, background: "#062c24", color: "#fff", padding: "5px", borderRadius: 6, fontSize: 7, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.08em", textDecoration: "none" }}>
+                              <i className="fab fa-whatsapp" style={{ color: "#34d399" }}></i> Order via WhatsApp
+                            </a>
+
+                          </div>
+                        </div>
+                      </td>
+                    );
+                  })}
+                  {/* Fill remaining cells in last row */}
+                  {trio.length < 3 && Array.from({ length: 3 - trio.length }).map((_, i) => (
+                    <td key={`empty-s-${i}`} colSpan={2} style={{ width: "33.33%" }}></td>
+                  ))}
+                </tr>
+              ))}
+
+              {/* Spacing between sections */}
+              {singleItems.length > 0 && packageItems.length > 0 && (
+                <tr aria-hidden="true"><td colSpan={6} style={{ height: 8 }}></td></tr>
+              )}
+
+              {/* ── PACKAGE ITEMS — 2 per row, full-width cards (unchanged layout) ── */}
+              {packageRows.map((pair, rowIdx) => (
+                <tr key={`p-${rowIdx}`} style={{ breakInside: "avoid", pageBreakInside: "avoid" }}>
+                  {pair.map((item, colIdx) => {
+                    const imgUrl = item.images?.[0] || item.img;
+                    const specs = resolveSpecs(item);
+                    const activeSpecs = SPEC_CHIPS.filter(({ key }) => { const v = specs[key]; return v !== undefined && v !== null && v !== ""; });
+                    const pricing = getPrice(item);
+                    const hasInc = item.inc && item.inc.filter(Boolean).length > 0;
+                    const durations = DURATION_ROWS.slice(0, durationRows);
+                    const validDesc = item.desc && item.desc !== "undefined" && item.desc.trim();
+                    return (
+                      <td key={item.id} colSpan={3} style={{ width: "50%", verticalAlign: "top", padding: colIdx === 0 ? "0 8px 16px 16px" : "0 16px 16px 8px" }}>
+                        <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden", background: "#fff", breakInside: "avoid" }}>
+
+                          {/* Image 16:9 */}
+                          {imgUrl ? (
+                            <div style={{ position: "relative", paddingTop: "56.25%", background: "#f1f5f9" }}>
+                              <img src={imgUrl} crossOrigin="anonymous"
+                                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} alt={item.name} />
+                              {item.category && (
+                                <span style={{ position: "absolute", top: 6, left: 6, background: "rgba(6,44,36,0.8)", color: "#fff", fontSize: 7, fontWeight: 900, textTransform: "uppercase", padding: "2px 7px", borderRadius: 99 }}>{item.category}</span>
                               )}
+                              <span style={{ position: "absolute", top: 6, right: 6, background: "#10b981", color: "#fff", fontSize: 7, fontWeight: 900, textTransform: "uppercase", padding: "2px 7px", borderRadius: 99 }}>Package</span>
                             </div>
                           ) : (
                             <div style={{ paddingTop: "56.25%", position: "relative", background: "#f1f5f9" }}>
@@ -339,17 +455,12 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
 
                           <div style={{ padding: "10px 12px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
 
-                            {/* Name */}
                             <div style={{ fontSize: 12, fontWeight: 900, color: "#062c24", textTransform: "uppercase", lineHeight: 1.2 }}>{item.name}</div>
 
-                            {/* Description */}
-                            {showDesc && item.desc && (
-                              <div style={{ fontSize: 8, color: "#64748b", lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                                {item.desc}
-                              </div>
+                            {showDesc && validDesc && (
+                              <div style={{ fontSize: 8, color: "#64748b", lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{validDesc}</div>
                             )}
 
-                            {/* Spec chips */}
                             {activeSpecs.length > 0 && (
                               <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
                                 {activeSpecs.map(({ key, icon, label }) => (
@@ -361,7 +472,6 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
                               </div>
                             )}
 
-                            {/* Pricing table */}
                             {showPrice && (
                               <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
                                 <div style={{ background: "#062c24", padding: "4px 10px" }}>
@@ -383,56 +493,39 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
                               </div>
                             )}
 
-                            {/* Includes list */}
                             {hasInc && (
                               <div>
                                 <div style={{ fontSize: 7, fontWeight: 900, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 3 }}>Includes</div>
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
                                   {item.inc!.filter(Boolean).map((inc, i) => (
-                                    <span key={i} style={{ fontSize: 7, background: "#ecfdf5", color: "#065f46", padding: "2px 6px", borderRadius: 4, fontWeight: 600 }}>
-                                      ✓ {inc}
-                                    </span>
+                                    <span key={i} style={{ fontSize: 7, background: "#ecfdf5", color: "#065f46", padding: "2px 6px", borderRadius: 4, fontWeight: 600 }}>✓ {inc}</span>
                                   ))}
                                 </div>
                               </div>
                             )}
 
                             {/* Package linked items */}
-                            {isPkg && (
+                            {item.linkedItems && item.linkedItems.length > 0 && (
                               <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 8 }}>
-                                <div style={{ fontSize: 7, fontWeight: 900, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>
-                                  Package Includes
-                                </div>
+                                <div style={{ fontSize: 7, fontWeight: 900, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Package Includes</div>
                                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                  {item.linkedItems!.map((li, idx) => {
+                                  {item.linkedItems.map((li, idx) => {
                                     const linked = allGear.find(g => g.id === li.itemId);
                                     const linkedImg = linked?.images?.[0] || linked?.img;
                                     return (
                                       <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                         {linkedImg ? (
-                                          <img src={linkedImg}                                            style={{ width: 26, height: 26, borderRadius: 4, objectFit: "cover", border: "1px solid #e2e8f0", flexShrink: 0 }} alt="" />
+                                          <img src={linkedImg} crossOrigin="anonymous" style={{ width: 26, height: 26, borderRadius: 4, objectFit: "cover", border: "1px solid #e2e8f0", flexShrink: 0 }} alt="" />
                                         ) : (
                                           <div style={{ width: 26, height: 26, borderRadius: 4, background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                                             <i className="fas fa-box" style={{ color: "#cbd5e1", fontSize: 7 }}></i>
                                           </div>
                                         )}
                                         <div style={{ flex: 1, minWidth: 0 }}>
-                                          <div style={{ fontSize: 8, fontWeight: 700, color: "#062c24", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                            {linked?.name || "Item"}
-                                          </div>
-                                          {linked && (() => {
-                                            const s = resolveSpecs(linked);
-                                            const chip = SPEC_CHIPS.find(c => s[c.key]);
-                                            return chip ? (
-                                              <div style={{ fontSize: 7, color: "#94a3b8" }}>
-                                                {chip.label(s[chip.key]!)}
-                                              </div>
-                                            ) : null;
-                                          })()}
+                                          <div style={{ fontSize: 8, fontWeight: 700, color: "#062c24", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{linked?.name || "Item"}</div>
+                                          {linked && (() => { const s = resolveSpecs(linked); const chip = SPEC_CHIPS.find(c => s[c.key]); return chip ? <div style={{ fontSize: 7, color: "#94a3b8" }}>{chip.label(s[chip.key]!)}</div> : null; })()}
                                         </div>
-                                        <span style={{ fontSize: 7, fontWeight: 900, color: "#059669", background: "#ecfdf5", padding: "2px 5px", borderRadius: 4, flexShrink: 0 }}>
-                                          ×{li.qty}
-                                        </span>
+                                        <span style={{ fontSize: 7, fontWeight: 900, color: "#059669", background: "#ecfdf5", padding: "2px 5px", borderRadius: 4, flexShrink: 0 }}>×{li.qty}</span>
                                       </div>
                                     );
                                   })}
@@ -440,33 +533,28 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
                               </div>
                             )}
 
-                            {/* Setup service */}
                             {item.setup?.available && (
                               <div style={{ marginTop: 4 }}>
                                 <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#fffbeb", color: "#92400e", fontSize: 7, padding: "3px 8px", borderRadius: 99, fontWeight: 600 }}>
-                                  <i className="fas fa-tools" style={{ fontSize: 6 }}></i>
-                                  Setup Service +RM{item.setup.fee}
+                                  <i className="fas fa-tools" style={{ fontSize: 6 }}></i> Setup Service +RM{item.setup.fee}
                                 </span>
                               </div>
                             )}
 
-                            {/* CTA */}
                             <a href={waLink} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 6, background: "#062c24", color: "#fff", padding: "6px", borderRadius: 8, fontSize: 8, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.1em", textDecoration: "none" }}>
                               <i className="fab fa-whatsapp" style={{ color: "#34d399" }}></i> Order via WhatsApp
                             </a>
 
-                          </div>{/* end card body */}
-                        </div>{/* end item card */}
+                          </div>
+                        </div>
                       </td>
                     );
                   })}
-                  {/* Fill empty cell when odd number of items */}
-                  {pair.length === 1 && <td style={{ width: "50%" }}></td>}
+                  {pair.length === 1 && <td colSpan={3} style={{ width: "50%" }}></td>}
                 </tr>
               ))}
 
-              {/* Bottom spacing row */}
-              <tr aria-hidden="true"><td colSpan={2} style={{ height: 16 }}></td></tr>
+              <tr aria-hidden="true"><td colSpan={6} style={{ height: 16 }}></td></tr>
             </tbody>
 
           </table>
