@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import {
   collection, query, where, onSnapshot, doc, updateDoc,
-  orderBy, serverTimestamp, getDocs, deleteDoc,
+  orderBy, serverTimestamp, getDocs, deleteDoc, getDoc,
 } from "firebase/firestore";
+import { generateInvoicePDF, type InvoiceData, type InvoiceVendor } from "@/lib/invoicePDF";
 
 type Order = {
   id: string;
@@ -97,6 +98,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
   const [showParentPicker, setShowParentPicker] = useState(false);
   const [parentSearch, setParentSearch] = useState("");
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [generatingInvoice, setGeneratingInvoice] = useState(false);
   function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
 
   // Real-time orders listener
@@ -356,6 +358,53 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
     // Open WhatsApp
     window.open(`https://wa.me/${order.customerPhone}?text=${message}`, "_blank");
     setSendingReviewLink(false);
+  }
+
+  async function handleGenerateInvoice(order: Order) {
+    setGeneratingInvoice(true);
+    try {
+      const vendorSnap = await getDoc(doc(db, "vendors", vendorId));
+      const vd = vendorSnap.data() || {};
+
+      const vendor: InvoiceVendor = {
+        name: vendorName,
+        phone: vd.phone,
+        city: vd.city,
+        taxProfile: vd.taxProfile,
+      };
+
+      const invoiceData: InvoiceData = {
+        orderId: order.id,
+        vendor,
+        customerName: order.customerName || "General Public",
+        customerPhone: order.customerPhone,
+        bookingDates: order.bookingDates,
+        pickupLocation: order.pickupLocation || "",
+        items: order.items.map(i => ({
+          name: i.name,
+          qty: i.qty,
+          price: i.price,
+          variantLabel: i.variantLabel,
+        })),
+        rentalAmount: order.rentalAmount ?? (order.depositAmount != null ? order.totalAmount - order.depositAmount : order.totalAmount),
+        depositAmount: order.depositAmount,
+        serviceFee: order.serviceFee,
+        autoDiscount: order.autoDiscount,
+        promoCode: order.promoCode,
+        promoDiscount: order.promoDiscount,
+        promoType: order.promoType,
+        totalAmount: order.totalAmount,
+        paymentStatus: order.paymentStatus,
+        createdAt: order.createdAt?.toDate?.() || new Date(),
+      };
+
+      generateInvoicePDF(invoiceData);
+    } catch (e) {
+      console.error("Invoice generation error:", e);
+      showToast("Failed to generate invoice", "error");
+    } finally {
+      setGeneratingInvoice(false);
+    }
   }
 
   // Format date
@@ -1232,6 +1281,32 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                   </div>
                 );
               })()}
+            </div>
+
+            {/* Invoice / Receipt */}
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <p className="text-[9px] font-black text-slate-400 uppercase mb-3">
+                <i className="fas fa-file-invoice text-emerald-500 mr-1"></i>Invoice / Receipt
+              </p>
+              {selectedOrder.status !== "cancelled" ? (
+                <div className="space-y-2">
+                  <p className="text-[10px] text-slate-400">
+                    Generates a print-ready LHDN-compliant invoice/receipt PDF for this order.
+                    Ensure your <strong>TIN</strong> is set in Settings → Tax &amp; Invoice Profile.
+                  </p>
+                  <button
+                    onClick={() => handleGenerateInvoice(selectedOrder)}
+                    disabled={generatingInvoice}
+                    className="w-full py-3 rounded-xl font-black uppercase text-xs bg-emerald-600 text-white hover:bg-emerald-700 flex items-center justify-center gap-2 transition-all disabled:opacity-60"
+                  >
+                    {generatingInvoice
+                      ? <><i className="fas fa-spinner fa-spin"></i> Generating…</>
+                      : <><i className="fas fa-file-invoice"></i> Generate Invoice / Receipt</>}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-[10px] text-slate-400 italic">Invoice not available for cancelled orders.</p>
+              )}
             </div>
 
             {/* WhatsApp Quick Messages */}
