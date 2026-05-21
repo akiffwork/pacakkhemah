@@ -36,6 +36,7 @@ type ServicesConfig = {
 
 type TaxProfile = {
   tin?: string;
+  legalName?: string;
   brn?: string;
   address?: string;
   msicCode?: string;
@@ -113,6 +114,7 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
   // Tax & Invoice Profile fields
   const tp = vendorData.taxProfile || {};
   const [tin, setTin] = useState(tp.tin || "");
+  const [legalName, setLegalName] = useState(tp.legalName || "");
   const [brn, setBrn] = useState(tp.brn || "");
   const [taxAddress, setTaxAddress] = useState(tp.address || "");
   const [msicCode, setMsicCode] = useState(tp.msicCode || "7721");
@@ -214,6 +216,7 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
       }
       payload.taxProfile = {
         tin: tin.trim(),
+        legalName: legalName.trim(),
         brn: brn.trim(),
         address: taxAddress.trim(),
         msicCode: msicCode.trim(),
@@ -497,6 +500,16 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
                     className={inputCls}
                   />
                   <p className="text-[9px] text-slate-400 mt-1">Your 11-digit TIN from LHDN (mandatory for invoice)</p>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">Registered Business Name (SSM)</label>
+                  <input
+                    value={legalName}
+                    onChange={e => setLegalName(e.target.value)}
+                    placeholder="e.g. KEMAH GEARS ENTERPRISE"
+                    className={inputCls}
+                  />
+                  <p className="text-[9px] text-slate-400 mt-1">Leave blank if same as your shop name. Used on invoice header.</p>
                 </div>
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">BRN (SSM Reg. No.)</label>

@@ -4,6 +4,7 @@ export type InvoiceVendor = {
   city?: string;
   taxProfile?: {
     tin?: string;
+    legalName?: string;
     brn?: string;
     address?: string;
     msicCode?: string;
@@ -80,11 +81,14 @@ function styles(): string {
 function supplierBlock(vendor: InvoiceVendor): string {
   const tp = vendor.taxProfile || {};
   const address = tp.address || vendor.city || "";
+  const displayName = tp.legalName?.trim() || vendor.name;
+  const tradeName = tp.legalName?.trim() && tp.legalName.trim() !== vendor.name ? vendor.name : "";
   return `
     <div style="flex:1;min-width:0;">
       <p style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px;">Supplier</p>
-      <p style="font-size:13px;font-weight:900;color:#062c24;">${vendor.name}</p>
-      ${address ? `<p style="font-size:10px;color:#475569;white-space:pre-line;">${address}</p>` : ""}
+      <p style="font-size:13px;font-weight:900;color:#062c24;">${displayName}</p>
+      ${tradeName ? `<p style="font-size:10px;color:#64748b;font-style:italic;">t/a ${tradeName}</p>` : ""}
+      ${address ? `<p style="font-size:10px;color:#475569;white-space:pre-line;margin-top:2px;">${address}</p>` : ""}
       ${vendor.phone ? `<p style="font-size:10px;color:#475569;">Tel: ${vendor.phone}</p>` : ""}
       <p style="font-size:10px;color:#475569;margin-top:4px;">TIN: <strong>${tp.tin || "NOT PROVIDED"}</strong></p>
       ${tp.brn ? `<p style="font-size:10px;color:#475569;">BRN (SSM): ${tp.brn}</p>` : ""}
@@ -225,6 +229,75 @@ function itemsTable(data: InvoiceData): string {
   </table>`;
 }
 
+function paymentStampBlock(data: InvoiceData): string {
+  const ps = data.paymentStatus || "unpaid";
+  const rental = data.rentalAmount;
+  const deposit = data.depositAmount || 0;
+  const total = data.totalAmount;
+
+  if (ps === "full_paid" || ps === "deposit_burnt") {
+    const label = ps === "deposit_burnt" ? "Paid — Deposit Forfeited" : "Paid in Full";
+    const sub = ps === "deposit_burnt"
+      ? `Rental (RM ${formatMYR(rental)}) collected. Security deposit (RM ${formatMYR(deposit)}) retained due to dispute.`
+      : `All charges settled. Thank you for your business!`;
+    return `
+<div style="border:3px solid #16a34a;border-radius:8px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;background:#f0fdf4;page-break-inside:avoid;">
+  <div style="display:flex;align-items:center;gap:12px;">
+    <div style="width:42px;height:42px;background:#16a34a;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:900;flex-shrink:0;">✓</div>
+    <div>
+      <div style="font-size:16px;font-weight:900;color:#15803d;letter-spacing:1px;text-transform:uppercase;">${label}</div>
+      <div style="font-size:10px;color:#166534;margin-top:3px;">${sub}</div>
+    </div>
+  </div>
+  <div style="font-size:24px;font-weight:900;color:#15803d;white-space:nowrap;margin-left:16px;">RM ${formatMYR(total)}</div>
+</div>`;
+  }
+
+  if (ps === "refunded") {
+    return `
+<div style="border:3px solid #16a34a;border-radius:8px;padding:16px 20px;margin-bottom:20px;background:#f0fdf4;page-break-inside:avoid;">
+  <div style="display:flex;align-items:center;justify-content:space-between;">
+    <div>
+      <div style="font-size:16px;font-weight:900;color:#15803d;letter-spacing:1px;text-transform:uppercase;">Rental Paid — Deposit Refunded</div>
+      <div style="font-size:10px;color:#166534;margin-top:3px;">Rental (RM ${formatMYR(rental)}) collected. Deposit (RM ${formatMYR(deposit)}) refunded to customer upon gear return.</div>
+    </div>
+    <div style="text-align:right;margin-left:16px;">
+      <div style="font-size:10px;font-weight:700;color:#166534;text-transform:uppercase;">Net Revenue</div>
+      <div style="font-size:22px;font-weight:900;color:#15803d;white-space:nowrap;">RM ${formatMYR(rental)}</div>
+    </div>
+  </div>
+</div>`;
+  }
+
+  if (ps === "deposit_paid") {
+    const balance = rental;
+    return `
+<div style="border:3px solid #d97706;border-radius:8px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;background:#fffbeb;page-break-inside:avoid;">
+  <div>
+    <div style="font-size:16px;font-weight:900;color:#b45309;letter-spacing:1px;text-transform:uppercase;">Deposit Paid — Balance Due</div>
+    <div style="font-size:10px;color:#92400e;margin-top:3px;">Deposit (RM ${formatMYR(deposit)}) received. Remaining rental amount to be collected before or at pickup.</div>
+  </div>
+  <div style="text-align:right;margin-left:16px;">
+    <div style="font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;">Balance Due</div>
+    <div style="font-size:24px;font-weight:900;color:#b45309;white-space:nowrap;">RM ${formatMYR(balance)}</div>
+  </div>
+</div>`;
+  }
+
+  // unpaid (default)
+  return `
+<div style="border:3px solid #dc2626;border-radius:8px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;background:#fef2f2;page-break-inside:avoid;">
+  <div>
+    <div style="font-size:16px;font-weight:900;color:#dc2626;letter-spacing:1px;text-transform:uppercase;">Payment Pending</div>
+    <div style="font-size:10px;color:#991b1b;margin-top:3px;">Full amount due upon confirmation or at pickup.</div>
+  </div>
+  <div style="text-align:right;margin-left:16px;">
+    <div style="font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;">Amount Due</div>
+    <div style="font-size:24px;font-weight:900;color:#dc2626;white-space:nowrap;">RM ${formatMYR(total)}</div>
+  </div>
+</div>`;
+}
+
 function buildHTML(data: InvoiceData): string {
   const meta = buildInvoiceMeta(data.createdAt, data.orderId);
   return `<!DOCTYPE html>
@@ -259,6 +332,8 @@ ${styles()}
   <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:6px;">Items &amp; Charges</div>
   ${itemsTable(data)}
 </div>
+
+${paymentStampBlock(data)}
 
 <div class="footer">
   <p><strong>Note:</strong> Security deposit (if any) is refundable upon return of all equipment in the same condition as collected.</p>
