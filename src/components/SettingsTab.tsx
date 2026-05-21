@@ -34,6 +34,15 @@ type ServicesConfig = {
   };
 };
 
+type TaxProfile = {
+  tin?: string;
+  brn?: string;
+  address?: string;
+  msicCode?: string;
+  msicActivity?: string;
+  sstNo?: string;
+};
+
 type SettingsTabProps = {
   vendorId: string;
   vendorData: {
@@ -48,6 +57,7 @@ type SettingsTabProps = {
       tiers: { id: string; minBookings: number; discount: number; label: string }[];
       appliesTo?: { type: "all" | "specific"; itemIds?: string[] };
     };
+    taxProfile?: TaxProfile;
   };
   onRestartTour?: () => void;
 };
@@ -99,6 +109,15 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
   const [isVacation, setIsVacation] = useState(vendorData.is_vacation || false);
   const [allowStacking, setAllowStacking] = useState(vendorData.allow_stacking || false);
   const [rules, setRules] = useState<string[]>(vendorData.rules || []);
+
+  // Tax & Invoice Profile fields
+  const tp = vendorData.taxProfile || {};
+  const [tin, setTin] = useState(tp.tin || "");
+  const [brn, setBrn] = useState(tp.brn || "");
+  const [taxAddress, setTaxAddress] = useState(tp.address || "");
+  const [msicCode, setMsicCode] = useState(tp.msicCode || "7721");
+  const [msicActivity, setMsicActivity] = useState(tp.msicActivity || "Rental and leasing of recreational and sports goods");
+  const [sstNo, setSstNo] = useState(tp.sstNo || "");
   const [locationUrl, setLocationUrl] = useState(vendorData.locationUrl || "");
 
   // Services fields
@@ -193,6 +212,14 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
         payload.nearbyCampsiteIds = nearby.map(c => c.id);
         payload.nearbyCampsites = nearby; // {id, km}[] — used by ShopClient to show distance
       }
+      payload.taxProfile = {
+        tin: tin.trim(),
+        brn: brn.trim(),
+        address: taxAddress.trim(),
+        msicCode: msicCode.trim(),
+        msicActivity: msicActivity.trim(),
+        sstNo: sstNo.trim(),
+      };
       await updateDoc(doc(db, "vendors", vendorId), payload);
       setSavedLogistics(true);
       showToast("Logistics saved!");
@@ -447,6 +474,80 @@ export default function SettingsTab({ vendorId, vendorData, onRestartTour }: Set
                 ))}
               </div>
               <button onClick={() => setRules(prev => [...prev, ""])} className="mt-2 text-[9px] font-bold text-emerald-600 hover:underline">+ Add Rule</button>
+            </div>
+
+            {/* Tax & Invoice Profile */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-6 space-y-4">
+              <div>
+                <h3 className="font-black text-[#062c24] uppercase text-sm tracking-wide flex items-center gap-2">
+                  <i className="fas fa-file-invoice text-emerald-500"></i> Tax & Invoice Profile
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Required for LHDN-compliant invoices. Your TIN is issued by LHDN (starts with &quot;D&quot; or &quot;C&quot;).
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">TIN (Tax Identification No.) *</label>
+                  <input
+                    value={tin}
+                    onChange={e => setTin(e.target.value)}
+                    placeholder="e.g. D1234567890"
+                    className={inputCls}
+                  />
+                  <p className="text-[9px] text-slate-400 mt-1">Your 11-digit TIN from LHDN (mandatory for invoice)</p>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">BRN (SSM Reg. No.)</label>
+                  <input
+                    value={brn}
+                    onChange={e => setBrn(e.target.value)}
+                    placeholder="e.g. SA0123456-X"
+                    className={inputCls}
+                  />
+                  <p className="text-[9px] text-slate-400 mt-1">SSM registration number (if registered)</p>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">MSIC Code</label>
+                  <input
+                    value={msicCode}
+                    onChange={e => setMsicCode(e.target.value)}
+                    placeholder="7721"
+                    className={inputCls}
+                  />
+                  <p className="text-[9px] text-slate-400 mt-1">Default 7721 = Recreational goods rental</p>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">Business Activity</label>
+                  <input
+                    value={msicActivity}
+                    onChange={e => setMsicActivity(e.target.value)}
+                    placeholder="Rental and leasing of recreational goods"
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">SST Registration No.</label>
+                  <input
+                    value={sstNo}
+                    onChange={e => setSstNo(e.target.value)}
+                    placeholder="Leave blank if not SST-registered"
+                    className={inputCls}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">Business Address (for invoice header)</label>
+                <textarea
+                  value={taxAddress}
+                  onChange={e => setTaxAddress(e.target.value)}
+                  rows={3}
+                  placeholder="No. 1, Jalan Contoh, 25000 Kuantan, Pahang"
+                  className={inputCls + " resize-none"}
+                />
+              </div>
             </div>
 
             <button onClick={saveLogistics}
