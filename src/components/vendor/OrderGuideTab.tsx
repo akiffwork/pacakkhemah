@@ -185,28 +185,28 @@ export default function OrderGuideTab({
 
   useEffect(() => {
     async function load() {
-      try {
-        const [configSnap, gearSnap] = await Promise.all([
-          getDoc(doc(db, "vendors", vendorId, "wizard", "config")),
-          getDocs(query(collection(db, "gear"), where("vendorId", "==", vendorId))),
-        ]);
-        if (configSnap.exists()) {
-          const data = configSnap.data();
-          setConfig({
-            enabled: data.enabled ?? false,
-            title: data.title ?? "Plan Your Perfect Camp",
-            questions: data.questions ?? [],
-            rules: data.rules ?? [],
-          });
-        }
+      // Run independently so a config permission error never blocks gear from loading
+      const [configResult, gearResult] = await Promise.allSettled([
+        getDoc(doc(db, "vendors", vendorId, "wizard", "config")),
+        getDocs(query(collection(db, "gear"), where("vendorId", "==", vendorId))),
+      ]);
+      if (configResult.status === "fulfilled" && configResult.value.exists()) {
+        const data = configResult.value.data();
+        setConfig({
+          enabled: data.enabled ?? false,
+          title: data.title ?? "Plan Your Perfect Camp",
+          questions: data.questions ?? [],
+          rules: data.rules ?? [],
+        });
+      }
+      if (gearResult.status === "fulfilled") {
         setGearList(
-          gearSnap.docs
+          gearResult.value.docs
             .filter((d) => !d.data().deleted)
             .map((d) => ({ id: d.id, name: d.data().name, price: d.data().price } as GearItem))
         );
-      } finally {
-        setLoading(false);
       }
+      setLoading(false);
     }
     load();
   }, [vendorId]);
