@@ -50,7 +50,7 @@ export default function WizardClient({ slug }: { slug: string }) {
   const [config, setConfig] = useState<WizardConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<Answers>({ choices: {} });
+  const [answers, setAnswers] = useState<Answers>({ pax: 1, choices: {} });
   const [completing, setCompleting] = useState(false);
 
   useEffect(() => {
