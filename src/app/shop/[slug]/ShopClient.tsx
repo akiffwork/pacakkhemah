@@ -208,7 +208,8 @@ function ShopPageContent({
 
   const recParam = searchParams.get("rec") || "";
   const addonParam = searchParams.get("addon") || "";
-  const paxParam = searchParams.get("pax") ? parseInt(searchParams.get("pax")!, 10) : null;
+  const paxRaw = parseInt(searchParams.get("pax") ?? "", 10);
+  const paxParam = !isNaN(paxRaw) && paxRaw > 0 ? paxRaw : null;
   const fromParam = searchParams.get("from") || "";
   const toParam = searchParams.get("to") || "";
   const wizParam = searchParams.get("wiz") || "";
@@ -230,8 +231,9 @@ function ShopPageContent({
   const [reviewLightbox, setReviewLightbox] = useState<string | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedDates, setSelectedDates] = useState<[Date | null, Date | null]>(() => {
-    if (fromParam && toParam) return [new Date(fromParam), new Date(toParam)];
-    if (fromParam) return [new Date(fromParam), null];
+    const safeDate = (s: string): Date | null => { const d = new Date(s); return isNaN(d.getTime()) ? null : d; };
+    if (fromParam && toParam) return [safeDate(fromParam), safeDate(toParam)];
+    if (fromParam) return [safeDate(fromParam), null];
     return [null, null];
   });
   const [searchTerm, setSearchTerm] = useState("");
@@ -474,7 +476,7 @@ function ShopPageContent({
       });
     });
     return () => { cancelled = true; cpRef.current?.destroy(); opRef.current?.destroy(); };
-  }, [vendorData, availRules, weeklyOff]);
+  }, [vendorData, availRules, weeklyOff, fromParam, toParam]);
 
   // Cart modal date pickers
   useEffect(() => {
@@ -1430,7 +1432,7 @@ function ShopPageContent({
 
   const filteredGear = (cat: string) => allGear.filter(g => (g.category || (g.type === "package" ? "Packages" : "Add-ons")) === cat && g.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
-  const displayGear = filteredGear(activeCategory || categories[0] || "").sort((a, b) => {
+  const displayGear = filteredGear(activeCategory || categories[0] || "").slice().sort((a, b) => {
     const aRec = recSet.has(a.id) ? 1 : 0;
     const bRec = recSet.has(b.id) ? 1 : 0;
     return bRec - aRec;
