@@ -246,6 +246,16 @@ export default function OrderGuideTab({
     setExpandedQ(q.id);
   }
 
+  function moveQuestion(qId: string, direction: -1 | 1) {
+    const idx = config.questions.findIndex((q) => q.id === qId);
+    if (idx === -1) return;
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= config.questions.length) return;
+    const next = [...config.questions];
+    [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
+    update({ ...config, questions: next });
+  }
+
   function removeQuestion(qId: string) {
     update({
       ...config,
@@ -434,7 +444,23 @@ export default function OrderGuideTab({
                   </p>
                   <p className="text-[9px] text-slate-400">{TYPE_LABELS[q.type]}</p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); moveQuestion(q.id, -1); }}
+                    disabled={qi === 0}
+                    className="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-[#062c24] disabled:opacity-20 transition-colors"
+                    title="Move up"
+                  >
+                    <i className="fas fa-chevron-up text-[10px]" />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); moveQuestion(q.id, 1); }}
+                    disabled={qi === config.questions.length - 1}
+                    className="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-[#062c24] disabled:opacity-20 transition-colors"
+                    title="Move down"
+                  >
+                    <i className="fas fa-chevron-down text-[10px]" />
+                  </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
