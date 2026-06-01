@@ -21,6 +21,7 @@ import InsightsTab from "@/components/InsightsTab";
 import UpdatesTab from "@/components/UpdatesTab";
 import ReferralsTab from "@/components/ReferralsTab";
 import FoodPartnersTab from "@/components/FoodPartnersTab";
+import OrderGuideTab from "@/components/vendor/OrderGuideTab";
 import WelcomeTour from "@/components/vendor/WelcomeTour";
 import FirstItemTour from "@/components/vendor/FirstItemTour";
 import FirstOrderTour from "@/components/vendor/FirstOrderTour";
@@ -65,7 +66,7 @@ type VendorData = {
   [key: string]: any; // pass-through for SettingsTab
 };
 
-type Tab = "home" | "calendar" | "orders" | "reviews" | "insights" | "analytics" | "updates" | "documents" | "inventory" | "storefront" | "referrals" | "settings" | "food_partners";
+type Tab = "home" | "calendar" | "orders" | "reviews" | "insights" | "analytics" | "updates" | "documents" | "inventory" | "storefront" | "referrals" | "settings" | "food_partners" | "order_guide";
 
 // --- LOGIN SCREEN ---
 function LoginScreen() {
@@ -334,6 +335,7 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
               <MenuItem icon="fa-file-contract" label="Documents" onClick={() => { handleTabChange("documents"); setMenuOpen(false); }} />
               <MenuItem icon="fa-gift" label="Referrals" onClick={() => { handleTabChange("referrals"); setMenuOpen(false); }} />
               <MenuItem icon="fa-utensils" label="Food Partners" onClick={() => { handleTabChange("food_partners"); setMenuOpen(false); }} />
+              <MenuItem icon="fa-magic" label="Order Guide" onClick={() => { handleTabChange("order_guide"); setMenuOpen(false); }} />
               <MenuItem icon="fa-cog" label="Settings" onClick={() => { handleTabChange("settings"); setMenuOpen(false); }} />
               <div className="border-t border-slate-100 my-3"></div>
               <a href={shopUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 transition-colors">
@@ -423,6 +425,7 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
         {activeTab === "referrals" && <ReferralsTab vendorId={vendorId} vendorName={vendorData.name} />}
         {activeTab === "settings" && <SettingsTab vendorId={vendorId} vendorData={vendorData} onRestartTour={handleRestartWelcomeTour} />}
         {activeTab === "food_partners" && <FoodPartnersTab vendorId={vendorId} />}
+        {activeTab === "order_guide" && <OrderGuideTab vendorId={vendorId} vendorSlug={vendorData.slug} />}
       </div>
     </div>
   );
