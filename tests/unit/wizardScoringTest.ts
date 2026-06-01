@@ -61,12 +61,17 @@ describe("scoreWizard", () => {
   });
 
   it("does not boost a tent with insufficient maxPax", () => {
+    // tent-b maxPax=2 < pax=4, so no boost; score stays at 1
+    // tent-a is not suggested by rule r3, so it won't appear
     const { rankedItemIds } = scoreWizard(
       { choices: { q1: ["kl"] }, pax: 4 },
       rules,
       gear
     );
     expect(rankedItemIds).toContain("tent-b");
+    expect(rankedItemIds).not.toContain("tent-a"); // not suggested by kl rule
+    // tent-b should be the only item — score 1, no pax boost
+    expect(rankedItemIds).toHaveLength(1);
   });
 
   it("collects addon ids from fired rules", () => {

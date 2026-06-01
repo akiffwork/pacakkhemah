@@ -42,7 +42,7 @@ export function scoreWizard(
     }
   }
 
-  if (answers.pax) {
+  if (answers.pax != null) {
     const pax = answers.pax;
     for (const item of gear) {
       if (itemScores[item.id] !== undefined && (item.specs?.maxPax ?? 0) >= pax) {
