@@ -173,6 +173,7 @@ export default function OrderGuideTab({
   const [gearList, setGearList] = useState<GearItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const [expandedQ, setExpandedQ] = useState<string | null>(null);
   const [expandedO, setExpandedO] = useState<string | null>(null);
@@ -233,6 +234,18 @@ export default function OrderGuideTab({
   function update(next: WizardConfig) {
     setConfig(next);
     scheduleSave(next);
+  }
+
+  async function saveNow() {
+    clearTimeout(saveTimer.current);
+    setSaving(true);
+    try {
+      await setDoc(doc(db, "vendors", vendorId, "wizard", "config"), config);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally {
+      setSaving(false);
+    }
   }
 
   function addQuestion() {
@@ -355,9 +368,19 @@ export default function OrderGuideTab({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {saving && (
-              <span className="text-[9px] text-slate-400 font-semibold">Saving…</span>
-            )}
+            <button
+              onClick={saveNow}
+              disabled={saving}
+              className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all ${
+                saved
+                  ? "bg-emerald-100 text-emerald-700"
+                  : saving
+                  ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                  : "bg-[#062c24] text-white hover:bg-emerald-800"
+              }`}
+            >
+              {saved ? "✓ Saved" : saving ? "Saving…" : "Save"}
+            </button>
             <button
               onClick={async () => {
                 const next = { ...config, enabled: !config.enabled };
