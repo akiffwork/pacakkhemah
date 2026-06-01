@@ -190,7 +190,15 @@ export default function OrderGuideTab({
           getDoc(doc(db, "vendors", vendorId, "wizard", "config")),
           getDocs(query(collection(db, "gear"), where("vendorId", "==", vendorId))),
         ]);
-        if (configSnap.exists()) setConfig(configSnap.data() as WizardConfig);
+        if (configSnap.exists()) {
+          const data = configSnap.data();
+          setConfig({
+            enabled: data.enabled ?? false,
+            title: data.title ?? "Plan Your Perfect Camp",
+            questions: data.questions ?? [],
+            rules: data.rules ?? [],
+          });
+        }
         setGearList(
           gearSnap.docs
             .filter((d) => !d.data().deleted)
@@ -202,6 +210,10 @@ export default function OrderGuideTab({
     }
     load();
   }, [vendorId]);
+
+  useEffect(() => {
+    return () => clearTimeout(saveTimer.current);
+  }, []);
 
   const scheduleSave = useCallback(
     (next: WizardConfig) => {
@@ -238,7 +250,7 @@ export default function OrderGuideTab({
     update({
       ...config,
       questions: config.questions.filter((q) => q.id !== qId),
-      rules: config.rules.filter((r) => r.conditions[0]?.questionId !== qId),
+      rules: config.rules.filter((r) => !r.conditions.some((c) => c.questionId === qId)),
     });
     if (expandedQ === qId) setExpandedQ(null);
   }
