@@ -91,6 +91,7 @@ type VendorData = {
   total_orders?: number;
   nearbyCampsiteIds?: string[];
   nearbyCampsites?: { id: string; km: number }[];
+  wizardEnabled?: boolean;
 };
 
 type FoodItem = { image: string; menuName: string; price?: number };
@@ -1787,7 +1788,7 @@ function ShopPageContent({
               </div>
 
               {/* Wizard entry banner — shown when no rec params are active */}
-              {recItemIds.length === 0 && vendorData?.slug && (
+              {recItemIds.length === 0 && vendorData?.slug && vendorData?.wizardEnabled && (
                 <a
                   href={`/shop/${vendorData.slug}/wizard`}
                   className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-4 hover:bg-emerald-100 transition-colors"

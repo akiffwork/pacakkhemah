@@ -52,6 +52,7 @@ export default function WizardClient({ slug }: { slug: string }) {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Answers>({ pax: 1, choices: {} });
   const [completing, setCompleting] = useState(false);
+  const [gear, setGear] = useState<{ id: string; specs?: { maxPax?: number } }[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -66,9 +67,17 @@ export default function WizardClient({ slug }: { slug: string }) {
         const vId = snap.docs[0].id;
         setVendorId(vId);
 
-        const configSnap = await getDoc(
-          doc(db, "vendors", vId, "wizard", "config")
+        const [configSnap, gearSnap] = await Promise.all([
+          getDoc(doc(db, "vendors", vId, "wizard", "config")),
+          getDocs(query(collection(db, "gear"), where("vendorId", "==", vId))),
+        ]);
+
+        setGear(
+          gearSnap.docs
+            .filter(d => !d.data().deleted)
+            .map(d => ({ id: d.id, specs: d.data().specs }))
         );
+
         if (!configSnap.exists() || !configSnap.data()?.enabled) {
           window.location.href = `/shop/${slug}`;
           return;
@@ -93,6 +102,11 @@ export default function WizardClient({ slug }: { slug: string }) {
         <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
       </div>
     );
+  }
+
+  if (!loading && config && config.questions.length === 0) {
+    window.location.href = `/shop/${slug}`;
+    return null;
   }
 
   const questions = config.questions;
@@ -135,7 +149,7 @@ export default function WizardClient({ slug }: { slug: string }) {
     if (!config || !vendorId || completing) return;
     setCompleting(true);
 
-    const result = scoreWizard(answers, config.rules, []);
+    const result = scoreWizard(answers, config.rules, gear);
     const sessionId = crypto.randomUUID();
 
     setDoc(doc(db, "wizardSessions", sessionId), {

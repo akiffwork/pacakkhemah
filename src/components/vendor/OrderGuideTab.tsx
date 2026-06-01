@@ -349,7 +349,13 @@ export default function OrderGuideTab({
               <span className="text-[9px] text-slate-400 font-semibold">Saving…</span>
             )}
             <button
-              onClick={() => update({ ...config, enabled: !config.enabled })}
+              onClick={async () => {
+                const next = { ...config, enabled: !config.enabled };
+                update(next);
+                // Mirror enabled flag on vendor doc for shop-side banner gating
+                const { doc: fsDoc, updateDoc } = await import("firebase/firestore");
+                updateDoc(fsDoc(db, "vendors", vendorId), { wizardEnabled: next.enabled }).catch(() => {});
+              }}
               className={`relative w-11 h-6 rounded-full transition-colors ${
                 config.enabled ? "bg-emerald-500" : "bg-slate-200"
               }`}
