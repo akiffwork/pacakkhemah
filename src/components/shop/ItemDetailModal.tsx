@@ -430,7 +430,7 @@ export default function ItemDetailModal({
                       <p className="text-[9px] text-slate-400 font-semibold">RM{addon.price}/night</p>
                     </div>
                     <button
-                      onClick={() => addToCart(addon as unknown as Parameters<typeof addToCart>[0], undefined, true)}
+                      onClick={() => addToCart(addon, undefined, true)}
                       className="shrink-0 bg-[#062c24] text-white text-[9px] font-black uppercase px-3 py-1.5 rounded-xl hover:bg-emerald-800 transition-colors"
                     >
                       Add
