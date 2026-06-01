@@ -403,6 +403,43 @@ export default function ItemDetailModal({
               </button>
             );
           })()}
+          {addonItems.length > 0 && (
+            <div className="mt-6 pt-5 border-t border-slate-100">
+              <p className="text-[10px] font-black uppercase text-slate-400 mb-3">
+                Complete your setup
+              </p>
+              <div className="space-y-2">
+                {addonItems.slice(0, 3).map((addon) => (
+                  <div
+                    key={addon.id}
+                    className="flex items-center gap-3 bg-slate-50 rounded-2xl p-3"
+                  >
+                    {addon.img ? (
+                      <img
+                        src={addon.img}
+                        alt={addon.name}
+                        className="w-10 h-10 rounded-xl object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-xl bg-slate-200 shrink-0 flex items-center justify-center">
+                        <i className="fas fa-box text-slate-400 text-xs" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-black text-[#062c24] truncate">{addon.name}</p>
+                      <p className="text-[9px] text-slate-400 font-semibold">RM{addon.price}/night</p>
+                    </div>
+                    <button
+                      onClick={() => addToCart(addon as unknown as Parameters<typeof addToCart>[0], undefined, true)}
+                      className="shrink-0 bg-[#062c24] text-white text-[9px] font-black uppercase px-3 py-1.5 rounded-xl hover:bg-emerald-800 transition-colors"
+                    >
+                      Add
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
       {!atBottom && (
