@@ -36,6 +36,7 @@ type ItemDetailModalProps = {
     keepOpen?: boolean,
     linkedVars?: LinkedVariantSelection[]
   ) => void;
+  addonItems?: GearItem[];
 };
 
 export default function ItemDetailModal({
@@ -53,6 +54,7 @@ export default function ItemDetailModal({
   getCartKey,
   updateCartQty,
   addToCart,
+  addonItems = [],
   nights = 1,
 }: ItemDetailModalProps) {
   const scrollRef = useRef<HTMLDivElement>(null);

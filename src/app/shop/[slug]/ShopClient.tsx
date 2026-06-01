@@ -205,7 +205,18 @@ function ShopPageContent({
   const searchParams = useSearchParams();
   const resolvedParams = use(params);
   const slug = resolvedParams.slug;
-  
+
+  const recParam = searchParams.get("rec") || "";
+  const addonParam = searchParams.get("addon") || "";
+  const paxParam = searchParams.get("pax") ? parseInt(searchParams.get("pax")!, 10) : null;
+  const fromParam = searchParams.get("from") || "";
+  const toParam = searchParams.get("to") || "";
+  const wizParam = searchParams.get("wiz") || "";
+
+  const recItemIds: string[] = recParam ? recParam.split(",").filter(Boolean) : [];
+  const addonItemIds: string[] = addonParam ? addonParam.split(",").filter(Boolean) : [];
+  const recSet = new Set(recItemIds);
+
   // Core state — seed from server if available
   const [vendorId, setVendorId] = useState<string | null>(initialVendorId ?? null);
   const [vendorData, setVendorData] = useState<VendorData | null>(initialVendor ?? null);
@@ -218,7 +229,11 @@ function ShopPageContent({
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewLightbox, setReviewLightbox] = useState<string | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedDates, setSelectedDates] = useState<[Date | null, Date | null]>([null, null]);
+  const [selectedDates, setSelectedDates] = useState<[Date | null, Date | null]>(() => {
+    if (fromParam && toParam) return [new Date(fromParam), new Date(toParam)];
+    if (fromParam) return [new Date(fromParam), null];
+    return [null, null];
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [appliedPromo, setAppliedPromo] = useState<Discount | null>(null);
   const [promoInput, setPromoInput] = useState("");
@@ -338,6 +353,13 @@ function ShopPageContent({
     return () => unsub();
   }, [vendorData?.owner_uid]);
 
+  useEffect(() => {
+    if (!wizParam || !vendorId) return;
+    import("firebase/firestore").then(({ doc: fsDoc, updateDoc }) => {
+      updateDoc(fsDoc(db, "wizardSessions", wizParam), { visited: true }).catch(() => {});
+    });
+  }, [wizParam, vendorId]);
+
   async function loadShop() {
     if (!vendorId) return;
     try {
@@ -442,10 +464,12 @@ function ShopPageContent({
       if (cancelled) return;
       cpRef.current = flatpickr("#checkin-date", {
         minDate: "today", dateFormat: "Y-m-d", disable: blocked,
+        defaultDate: fromParam || undefined,
         onChange: ([d]) => { setSelectedDates(prev => [d, prev[1]]); opRef.current?.set("minDate", d); },
       });
       opRef.current = flatpickr("#checkout-date", {
-        minDate: "today", dateFormat: "Y-m-d", disable: blocked,
+        minDate: fromParam || "today", dateFormat: "Y-m-d", disable: blocked,
+        defaultDate: toParam || undefined,
         onChange: ([d]) => setSelectedDates(prev => [prev[0], d]),
       });
     });
@@ -1405,6 +1429,13 @@ function ShopPageContent({
   }, [activeCategory]);
 
   const filteredGear = (cat: string) => allGear.filter(g => (g.category || (g.type === "package" ? "Packages" : "Add-ons")) === cat && g.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  const displayGear = filteredGear(activeCategory || categories[0] || "").sort((a, b) => {
+    const aRec = recSet.has(a.id) ? 1 : 0;
+    const bRec = recSet.has(b.id) ? 1 : 0;
+    return bRec - aRec;
+  });
+
   const cartCount = cart.reduce((a, i) => a + i.qty, 0);
   
   // Can order validation
@@ -1753,9 +1784,47 @@ function ShopPageContent({
                 )}
               </div>
 
+              {/* Wizard entry banner — shown when no rec params are active */}
+              {recItemIds.length === 0 && vendorData?.slug && (
+                <a
+                  href={`/shop/${vendorData.slug}/wizard`}
+                  className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-4 hover:bg-emerald-100 transition-colors"
+                >
+                  <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shrink-0">
+                    <i className="fas fa-magic text-white text-sm" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-black text-[#062c24] uppercase">Not sure what to bring?</p>
+                    <p className="text-[10px] text-emerald-700 font-semibold mt-0.5">
+                      Get personalised gear recommendations →
+                    </p>
+                  </div>
+                </a>
+              )}
+
+              {/* Active recommendation banner — shown when rec params are present */}
+              {recItemIds.length > 0 && (
+                <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-3 mb-4">
+                  <i className="fas fa-magic text-emerald-500 text-sm" />
+                  <p className="text-[10px] font-black text-emerald-700 flex-1">
+                    Showing recommendations for your trip
+                  </p>
+                  <button
+                    onClick={() => {
+                      const url = new URL(window.location.href);
+                      ["rec", "addon", "pax", "from", "to", "wiz"].forEach(p => url.searchParams.delete(p));
+                      window.location.href = url.toString();
+                    }}
+                    className="text-[9px] font-black text-slate-400 hover:text-red-400 uppercase"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+
               {/* Gear grid */}
               <div id="demo-gear" className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {filteredGear(activeCategory || categories[0] || "").map((item, idx) => {
+                {displayGear.map((item, idx) => {
                   const avail = getAvailableStock(item.id);
                   const inCart = getEffectiveInCart(item.id);
                   const canAdd = avail > inCart;
@@ -1769,7 +1838,21 @@ function ShopPageContent({
                     : null;
                   
                   return (
-                    <div key={item.id} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm stagger-in relative" style={{ animationDelay: `${idx * 50}ms` }}>
+                    <div key={item.id} className={`bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm stagger-in relative ${recSet.has(item.id) ? "ring-2 ring-emerald-400 ring-offset-1" : ""}`} style={{ animationDelay: `${idx * 50}ms` }}>
+                      {recSet.has(item.id) && (
+                        <span className="absolute top-2 left-2 bg-emerald-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase z-10 animate-pulse">
+                          For You
+                        </span>
+                      )}
+                      {paxParam && item.specs?.maxPax !== undefined && recSet.has(item.id) && (
+                        <span className={`absolute top-2 right-2 text-[8px] font-black px-2 py-0.5 rounded-full uppercase z-10 ${
+                          item.specs.maxPax >= paxParam
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}>
+                          {item.specs.maxPax >= paxParam ? `Fits ${paxParam}` : `Max ${item.specs.maxPax} pax`}
+                        </span>
+                      )}
                       <div className="aspect-square relative cursor-pointer" onClick={() => { setSelectedItem(item); setSelectedVariant(null); setLinkedVarSelections({}); setShowItemModal(true); }}>
                         <img src={item.images?.[0] || item.img || "/placeholder.jpg"} className="w-full h-full object-cover" alt={item.name} loading="lazy" />
                         {hasMultipleImages && (
@@ -2079,6 +2162,13 @@ function ShopPageContent({
           getCartKey={getCartKey}
           updateCartQty={updateCartQty}
           addToCart={addToCart}
+          addonItems={
+            recSet.has(selectedItem?.id ?? "")
+              ? addonItemIds
+                  .map(id => allGear.find(g => g.id === id))
+                  .filter((g): g is GearItem => g !== undefined)
+              : []
+          }
         />
       )}
 
