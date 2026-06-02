@@ -19,7 +19,8 @@ export type ScoringGearItem = {
 };
 
 export type ScoringResult = {
-  rankedItemIds: string[];
+  rankedItemIds: string[];   // all scored items, sorted — used for sorting & ring
+  strongMatchIds: string[];  // only high-confidence matches — used for "For You" badge
   addonItemIds: string[];
 };
 
@@ -60,13 +61,19 @@ export function scoreWizard(
     for (const id of packageIds) delete itemScores[id];
   }
 
-  const rankedItemIds = Object.entries(itemScores)
-    .filter(([, s]) => s > 0)
+  const scoredEntries = Object.entries(itemScores).filter(([, s]) => s > 0);
+  const rankedItemIds = scoredEntries
     .sort(([, a], [, b]) => b - a)
+    .map(([id]) => id);
+
+  const maxScore = scoredEntries.reduce((m, [, s]) => Math.max(m, s), 0);
+  const threshold = Math.max(1.5, maxScore * 0.6);
+  const strongMatchIds = scoredEntries
+    .filter(([, s]) => s >= threshold)
     .map(([id]) => id);
 
   const recSet = new Set(rankedItemIds);
   const addonItemIds = [...addonSet].filter((id) => !recSet.has(id));
 
-  return { rankedItemIds, addonItemIds };
+  return { rankedItemIds, strongMatchIds, addonItemIds };
 }

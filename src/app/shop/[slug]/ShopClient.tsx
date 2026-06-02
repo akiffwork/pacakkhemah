@@ -215,9 +215,12 @@ function ShopPageContent({
   const toParam = searchParams.get("to") || "";
   const wizParam = searchParams.get("wiz") || "";
 
+  const strongParam = searchParams.get("strong") || "";
   const recItemIds: string[] = recParam ? recParam.split(",").filter(Boolean) : [];
   const addonItemIds: string[] = addonParam ? addonParam.split(",").filter(Boolean) : [];
   const recSet = new Set(recItemIds);
+  // strongSet: only high-confidence matches — used for "For You" badge & pax badge
+  const strongSet = new Set(strongParam ? strongParam.split(",").filter(Boolean) : []);
 
   // Core state — seed from server if available
   const [vendorId, setVendorId] = useState<string | null>(initialVendorId ?? null);
@@ -1846,7 +1849,7 @@ function ShopPageContent({
                   <button
                     onClick={() => {
                       const url = new URL(window.location.href);
-                      ["rec", "addon", "pax", "from", "to", "wiz"].forEach(p => url.searchParams.delete(p));
+                      ["rec", "strong", "addon", "pax", "from", "to", "wiz"].forEach(p => url.searchParams.delete(p));
                       window.location.href = url.toString();
                     }}
                     className="text-[9px] font-black text-slate-400 hover:text-red-400 uppercase"
@@ -1874,12 +1877,12 @@ function ShopPageContent({
                   return (
                     <div key={item.id} className={`bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm stagger-in relative ${recSet.has(item.id) ? "ring-2 ring-emerald-400 ring-offset-1" : ""}`} style={{ animationDelay: `${idx * 50}ms` }}>
                       <div className="absolute top-2 left-2 flex flex-col items-start gap-1 z-10">
-                        {recSet.has(item.id) && (
+                        {strongSet.has(item.id) && (
                           <span className="bg-emerald-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase animate-pulse">
                             For You
                           </span>
                         )}
-                        {paxParam && item.specs?.maxPax !== undefined && recSet.has(item.id) && (
+                        {paxParam && item.specs?.maxPax !== undefined && strongSet.has(item.id) && (
                           <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${
                             item.specs.maxPax >= paxParam
                               ? "bg-blue-100 text-blue-700"
@@ -2199,7 +2202,7 @@ function ShopPageContent({
           updateCartQty={updateCartQty}
           addToCart={addToCart}
           addonItems={
-            recSet.has(selectedItem?.id ?? "")
+            strongSet.has(selectedItem?.id ?? "")
               ? addonItemIds
                   .map(id => allGear.find(g => g.id === id))
                   .filter((g): g is GearItem => g !== undefined)

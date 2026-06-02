@@ -242,6 +242,7 @@ export default function WizardClient({ slug }: { slug: string }) {
 
     const params = new URLSearchParams();
     if (result.rankedItemIds.length) params.set("rec", result.rankedItemIds.join(","));
+    if (result.strongMatchIds.length) params.set("strong", result.strongMatchIds.join(","));
     if (result.addonItemIds.length) params.set("addon", result.addonItemIds.join(","));
     if (answers.pax != null) params.set("pax", String(answers.pax));
     if (answers.dates?.from) params.set("from", answers.dates.from);
