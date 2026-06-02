@@ -1420,7 +1420,18 @@ function ShopPageContent({
   const categories = sortCategories(Array.from(new Set(allGear.map(g => g.category || (g.type === "package" ? "Packages" : "Add-ons")))));
   
   useEffect(() => {
-    if (categories.length > 0 && !activeCategory) setActiveCategory(categories[0]);
+    if (categories.length === 0 || activeCategory) return;
+    if (recItemIds.length === 0) { setActiveCategory(categories[0]); return; }
+    // Jump to the category with the most recommended items
+    let bestCat = categories[0];
+    let bestCount = 0;
+    for (const cat of categories) {
+      const count = allGear.filter(
+        g => (g.category || (g.type === "package" ? "Packages" : "Add-ons")) === cat && recSet.has(g.id)
+      ).length;
+      if (count > bestCount) { bestCount = count; bestCat = cat; }
+    }
+    setActiveCategory(bestCat);
   }, [categories.length]);
 
   useEffect(() => {
@@ -1775,13 +1786,25 @@ function ShopPageContent({
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setShowCatMenu(false)} />
                     <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 overflow-hidden">
-                    {categories.map((cat, i) => (
-                      <button key={cat} onClick={() => { setActiveCategory(cat); setShowCatMenu(false); }}
-                        className={`w-full flex items-center justify-between px-4 py-3 text-[10px] font-black uppercase tracking-wide transition-colors ${i !== 0 ? "border-t border-slate-50" : ""} ${activeCategory === cat ? "bg-emerald-50 text-[#062c24]" : "text-slate-500 hover:bg-slate-50 hover:text-[#062c24]"}`}>
-                        <span>{cat}</span>
-                        <span className="text-[9px] font-bold text-slate-300">{filteredGear(cat).length} item{filteredGear(cat).length !== 1 ? "s" : ""}</span>
-                      </button>
-                    ))}
+                    {categories.map((cat, i) => {
+                      const recCount = recItemIds.length > 0
+                        ? filteredGear(cat).filter(g => recSet.has(g.id)).length
+                        : 0;
+                      return (
+                        <button key={cat} onClick={() => { setActiveCategory(cat); setShowCatMenu(false); }}
+                          className={`w-full flex items-center justify-between px-4 py-3 text-[10px] font-black uppercase tracking-wide transition-colors ${i !== 0 ? "border-t border-slate-50" : ""} ${activeCategory === cat ? "bg-emerald-50 text-[#062c24]" : "text-slate-500 hover:bg-slate-50 hover:text-[#062c24]"}`}>
+                          <span className="flex items-center gap-2">
+                            {cat}
+                            {recCount > 0 && (
+                              <span className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full normal-case">
+                                {recCount} for you
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-[9px] font-bold text-slate-300">{filteredGear(cat).length} item{filteredGear(cat).length !== 1 ? "s" : ""}</span>
+                        </button>
+                      );
+                    })}
                     </div>
                   </>
                 )}

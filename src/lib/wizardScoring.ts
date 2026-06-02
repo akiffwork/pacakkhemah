@@ -9,10 +9,12 @@ export type WizardRule = {
   conditions: { questionId: string; optionId: string }[];
   suggestedItemIds: string[];
   addonItemIds: string[];
+  excludePackages?: boolean; // when true, packages are removed from ALL scored items if this rule fires
 };
 
 export type ScoringGearItem = {
   id: string;
+  type?: string;
   specs?: { maxPax?: number };
 };
 
@@ -28,12 +30,14 @@ export function scoreWizard(
 ): ScoringResult {
   const itemScores: Record<string, number> = {};
   const addonSet = new Set<string>();
+  let excludePackages = false;
 
   for (const rule of rules) {
     const fired = rule.conditions.every((c) =>
       answers.choices[c.questionId]?.includes(c.optionId)
     );
     if (!fired) continue;
+    if (rule.excludePackages) excludePackages = true;
     for (const id of rule.suggestedItemIds) {
       itemScores[id] = (itemScores[id] ?? 0) + 1;
     }
@@ -49,6 +53,11 @@ export function scoreWizard(
         itemScores[item.id] += 1.5;
       }
     }
+  }
+
+  if (excludePackages) {
+    const packageIds = new Set(gear.filter(g => g.type === "package").map(g => g.id));
+    for (const id of packageIds) delete itemScores[id];
   }
 
   const rankedItemIds = Object.entries(itemScores)

@@ -20,6 +20,14 @@ type Rule = {
   conditions: { questionId: string; optionId: string }[];
   suggestedItemIds: string[];
   addonItemIds: string[];
+  excludePackages?: boolean;
+};
+
+type ProTip = {
+  id: string;
+  conditions: { questionId: string; optionId: string }[];
+  title: string;
+  message: string;
 };
 
 type WizardConfig = {
@@ -27,6 +35,7 @@ type WizardConfig = {
   title: string;
   questions: Question[];
   rules: Rule[];
+  proTips: ProTip[];
 };
 
 type GearItem = { id: string; name: string; price: number };
@@ -68,7 +77,7 @@ function upsertRule(
   rules: Rule[],
   qId: string,
   oId: string,
-  patch: Partial<Pick<Rule, "suggestedItemIds" | "addonItemIds">>
+  patch: Partial<Pick<Rule, "suggestedItemIds" | "addonItemIds" | "excludePackages">>
 ): Rule[] {
   const existing = getRule(rules, qId, oId);
   if (existing) {
@@ -174,6 +183,7 @@ export default function OrderGuideTab({
     title: "Plan Your Perfect Camp",
     questions: [],
     rules: [],
+    proTips: [],
   });
   const [gearList, setGearList] = useState<GearItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -205,6 +215,7 @@ export default function OrderGuideTab({
           title: data.title ?? "Plan Your Perfect Camp",
           questions: data.questions ?? [],
           rules: data.rules ?? [],
+          proTips: data.proTips ?? [],
         };
         configRef.current = loaded;
         setConfig(loaded);
@@ -349,6 +360,10 @@ export default function OrderGuideTab({
     });
   }
 
+  function setRuleExcludePackages(qId: string, oId: string, exclude: boolean) {
+    update({ ...config, rules: upsertRule(config.rules, qId, oId, { excludePackages: exclude }) });
+  }
+
   function setRuleItems(
     qId: string,
     oId: string,
@@ -364,6 +379,48 @@ export default function OrderGuideTab({
   function getOptionsFor(q: Question): QuestionOption[] {
     if (q.type === "yes_no") return YES_NO_OPTIONS;
     return q.options || [];
+  }
+
+  function addProTip() {
+    const tip: ProTip = { id: uid(), conditions: [], title: "", message: "" };
+    update({ ...config, proTips: [...config.proTips, tip] });
+  }
+
+  function removeProTip(tipId: string) {
+    update({ ...config, proTips: config.proTips.filter(t => t.id !== tipId) });
+  }
+
+  function updateProTip(tipId: string, patch: Partial<Pick<ProTip, "title" | "message">>) {
+    update({ ...config, proTips: config.proTips.map(t => t.id === tipId ? { ...t, ...patch } : t) });
+  }
+
+  function addTipCondition(tipId: string) {
+    update({
+      ...config,
+      proTips: config.proTips.map(t =>
+        t.id === tipId ? { ...t, conditions: [...t.conditions, { questionId: "", optionId: "" }] } : t
+      ),
+    });
+  }
+
+  function removeTipCondition(tipId: string, ci: number) {
+    update({
+      ...config,
+      proTips: config.proTips.map(t =>
+        t.id === tipId ? { ...t, conditions: t.conditions.filter((_, i) => i !== ci) } : t
+      ),
+    });
+  }
+
+  function updateTipCondition(tipId: string, ci: number, patch: { questionId?: string; optionId?: string }) {
+    update({
+      ...config,
+      proTips: config.proTips.map(t =>
+        t.id === tipId
+          ? { ...t, conditions: t.conditions.map((c, i) => i === ci ? { ...c, ...patch } : c) }
+          : t
+      ),
+    });
   }
 
   if (loading) {
@@ -664,6 +721,17 @@ export default function OrderGuideTab({
                                       setRuleItems(q.id, o.id, "addonItemIds", ids)
                                     }
                                   />
+                                  <label className="flex items-center gap-2 cursor-pointer pt-2 border-t border-slate-100 mt-1">
+                                    <input
+                                      type="checkbox"
+                                      checked={rule?.excludePackages || false}
+                                      onChange={(e) => setRuleExcludePackages(q.id, o.id, e.target.checked)}
+                                      className="accent-amber-500 shrink-0"
+                                    />
+                                    <span className="text-[9px] font-semibold text-slate-500 leading-tight">
+                                      Exclude packages from recommendations when this answer is chosen
+                                    </span>
+                                  </label>
                                 </div>
                               )}
                             </div>
@@ -692,6 +760,111 @@ export default function OrderGuideTab({
         >
           <i className="fas fa-plus" /> Add Question
         </button>
+      </div>
+
+      {/* Pro Tips */}
+      <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-black text-[#062c24] uppercase">Pro Tips</h3>
+            <p className="text-[10px] text-slate-400 mt-0.5">
+              Advice shown on the summary screen for specific answer combos
+            </p>
+          </div>
+          <button
+            onClick={addProTip}
+            className="text-[9px] font-black text-emerald-600 hover:text-emerald-800 uppercase flex items-center gap-1"
+          >
+            <i className="fas fa-plus text-[8px]" /> Add Tip
+          </button>
+        </div>
+
+        {config.proTips.length === 0 && (
+          <p className="text-[10px] text-slate-300 text-center py-2">No tips yet</p>
+        )}
+
+        {config.proTips.map((tip) => (
+          <div key={tip.id} className="border border-amber-200 bg-amber-50/40 rounded-xl p-4 space-y-3">
+            {/* Conditions */}
+            <div>
+              <p className="text-[9px] font-black uppercase text-slate-400 mb-2">Show when all match:</p>
+              <div className="space-y-1.5">
+                {tip.conditions.map((cond, ci) => {
+                  const q = config.questions.find(q => q.id === cond.questionId);
+                  const opts = q ? getOptionsFor(q) : [];
+                  return (
+                    <div key={ci} className="flex items-center gap-2">
+                      <select
+                        value={cond.questionId}
+                        onChange={e => updateTipCondition(tip.id, ci, { questionId: e.target.value, optionId: "" })}
+                        className="flex-1 text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-amber-400 bg-white"
+                      >
+                        <option value="">Question…</option>
+                        {config.questions.filter(q => q.text?.trim()).map(q => (
+                          <option key={q.id} value={q.id}>{q.text}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={cond.optionId}
+                        onChange={e => updateTipCondition(tip.id, ci, { optionId: e.target.value })}
+                        disabled={!cond.questionId}
+                        className="flex-1 text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-amber-400 bg-white disabled:opacity-40"
+                      >
+                        <option value="">Answer…</option>
+                        {opts.map(o => (
+                          <option key={o.id} value={o.id}>{o.label}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => removeTipCondition(tip.id, ci)}
+                        className="w-5 h-5 flex items-center justify-center text-slate-300 hover:text-red-400 shrink-0"
+                      >
+                        <i className="fas fa-times text-[8px]" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <button
+                onClick={() => addTipCondition(tip.id)}
+                className="mt-2 text-[9px] font-black text-amber-600 hover:text-amber-800 uppercase flex items-center gap-1"
+              >
+                <i className="fas fa-plus text-[8px]" /> And…
+              </button>
+            </div>
+
+            {/* Title */}
+            <div>
+              <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Tip Title</label>
+              <input
+                type="text"
+                value={tip.title}
+                onChange={e => updateProTip(tip.id, { title: e.target.value })}
+                placeholder="e.g. Gear checklist for first-timers"
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-semibold text-[#062c24] outline-none focus:border-amber-400 bg-white"
+              />
+            </div>
+
+            {/* Message */}
+            <div>
+              <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Message</label>
+              <textarea
+                value={tip.message}
+                onChange={e => updateProTip(tip.id, { message: e.target.value })}
+                placeholder="e.g. Since you're going without a package, make sure you have a tent, sleeping bag, mat, and lighting. Comfort is key on your first trip!"
+                rows={3}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-semibold text-[#062c24] outline-none focus:border-amber-400 resize-none bg-white"
+              />
+            </div>
+
+            <button
+              onClick={() => removeProTip(tip.id)}
+              className="text-[9px] font-black text-red-400 hover:text-red-600 uppercase flex items-center gap-1"
+            >
+              <i className="fas fa-trash text-[8px]" /> Delete tip
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );

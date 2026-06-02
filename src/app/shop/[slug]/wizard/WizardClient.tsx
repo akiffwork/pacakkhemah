@@ -28,11 +28,19 @@ type Rule = {
   suggestedItemIds: string[];
   addonItemIds: string[];
 };
+type ProTip = {
+  id: string;
+  conditions: { questionId: string; optionId: string }[];
+  title: string;
+  message: string;
+};
+
 type WizardConfig = {
   enabled: boolean;
   title: string;
   questions: Question[];
   rules: Rule[];
+  proTips: ProTip[];
 };
 type Answers = {
   dates?: { from: string; to: string };
@@ -117,7 +125,7 @@ export default function WizardClient({ slug }: { slug: string }) {
   const [answers, setAnswers] = useState<Answers>({ pax: 1, choices: {} });
   const [completing, setCompleting] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
-  const [gear, setGear] = useState<{ id: string; specs?: { maxPax?: number } }[]>([]);
+  const [gear, setGear] = useState<{ id: string; type?: string; specs?: { maxPax?: number } }[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -139,7 +147,7 @@ export default function WizardClient({ slug }: { slug: string }) {
         setGear(
           gearSnap.docs
             .filter(d => !d.data().deleted)
-            .map(d => ({ id: d.id, specs: d.data().specs }))
+            .map(d => ({ id: d.id, type: d.data().type, specs: d.data().specs }))
         );
 
         if (!configSnap.exists() || !configSnap.data()?.enabled) {
@@ -151,6 +159,7 @@ export default function WizardClient({ slug }: { slug: string }) {
           title: data.title ?? "Plan Your Perfect Camp",
           questions: data.questions ?? [],
           rules: data.rules ?? [],
+          proTips: data.proTips ?? [],
         });
       } finally {
         setLoading(false);
@@ -298,6 +307,38 @@ export default function WizardClient({ slug }: { slug: string }) {
             </div>
           </div>
         </main>
+
+        {/* Pro Tips */}
+        {(() => {
+          const firedTips = config.proTips.filter(
+            tip =>
+              tip.conditions.length > 0 &&
+              tip.title.trim() &&
+              tip.message.trim() &&
+              tip.conditions.every(
+                c => c.questionId && c.optionId && answers.choices[c.questionId]?.includes(c.optionId)
+              )
+          );
+          if (firedTips.length === 0) return null;
+          return (
+            <div className="px-5 pb-2 space-y-3">
+              {firedTips.map(tip => (
+                <div key={tip.id} className="bg-amber-400/10 border border-amber-400/30 backdrop-blur-sm rounded-2xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-6 h-6 rounded-lg bg-amber-400/20 flex items-center justify-center shrink-0">
+                      <i className="fas fa-lightbulb text-amber-400 text-[10px]" />
+                    </span>
+                    <p className="text-[10px] font-black uppercase text-amber-300 tracking-widest">
+                      Pro Tip
+                    </p>
+                  </div>
+                  <p className="text-[11px] font-black text-white/90 mb-1">{tip.title}</p>
+                  <p className="text-[11px] text-white/70 font-medium leading-relaxed">{tip.message}</p>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
 
         {/* CTA */}
         <div className="px-5 pb-10 pt-4">
