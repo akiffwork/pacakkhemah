@@ -50,6 +50,11 @@ function uid() {
   return Math.random().toString(36).slice(2, 9);
 }
 
+// Firestore rejects undefined values — strip them via JSON round-trip
+function sanitize<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v));
+}
+
 function getRule(rules: Rule[], qId: string, oId: string): Rule | undefined {
   return rules.find(
     (r) =>
@@ -227,7 +232,7 @@ export default function OrderGuideTab({
         setSaving(true);
         setSaveError(null);
         try {
-          await setDoc(doc(db, "vendors", vendorId, "wizard", "config"), next);
+          await setDoc(doc(db, "vendors", vendorId, "wizard", "config"), sanitize(next));
           setSaved(true);
           setTimeout(() => setSaved(false), 2000);
         } catch (err) {
@@ -251,7 +256,7 @@ export default function OrderGuideTab({
     setSaving(true);
     setSaveError(null);
     try {
-      await setDoc(doc(db, "vendors", vendorId, "wizard", "config"), configRef.current);
+      await setDoc(doc(db, "vendors", vendorId, "wizard", "config"), sanitize(configRef.current));
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
