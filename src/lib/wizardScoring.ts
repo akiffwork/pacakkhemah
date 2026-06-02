@@ -22,6 +22,7 @@ export type ScoringResult = {
   rankedItemIds: string[];   // all scored items, sorted — used for sorting & ring
   strongMatchIds: string[];  // only high-confidence matches — used for "For You" badge
   addonItemIds: string[];
+  tentsNeeded: number;       // >1 when pax exceeds single-tent capacity
 };
 
 export function scoreWizard(
@@ -50,8 +51,16 @@ export function scoreWizard(
   if (answers.pax != null) {
     const pax = answers.pax;
     for (const item of gear) {
-      if (itemScores[item.id] !== undefined && (item.specs?.maxPax ?? 0) >= pax) {
+      if (itemScores[item.id] === undefined) continue;
+      const maxPax = item.specs?.maxPax ?? 0;
+      if (maxPax <= 0) continue;
+      if (maxPax >= pax) {
+        // Single tent fits — full boost
         itemScores[item.id] += 1.5;
+      } else {
+        // Pax exceeds this tent's capacity — proportional boost so larger
+        // tents rank higher (fewer of them needed to cover the group)
+        itemScores[item.id] += 1.5 * (maxPax / pax);
       }
     }
   }
@@ -67,17 +76,27 @@ export function scoreWizard(
     .map(([id]) => id);
 
   const maxScore = scoredEntries.reduce((m, [, s]) => Math.max(m, s), 0);
-  // Items need to score ≥85% of the top score AND at least 2.5 (= 1 rule + pax boost).
-  // The 85% multiplier keeps a clear gap between items that matched ALL fired rules
-  // (the real preference) and items that matched only a subset (incidental boost).
-  // e.g. 3-rule winner=4.5 → threshold=3.825; 2-rule items=3.5 → no badge.
+  // Items need ≥85% of top score AND at least 2.5 (= 1 rule + pax boost).
   const threshold = Math.max(2.5, maxScore * 0.85);
   const strongMatchIds = scoredEntries
     .filter(([, s]) => s >= threshold)
     .map(([id]) => id);
 
+  // How many tents the group needs — based on the best tent's maxPax
+  let tentsNeeded = 1;
+  if (answers.pax != null && answers.pax > 1) {
+    const pax = answers.pax;
+    const bestMaxPax = rankedItemIds.reduce((best, id) => {
+      const mp = gear.find(g => g.id === id)?.specs?.maxPax ?? 0;
+      return Math.max(best, mp);
+    }, 0);
+    if (bestMaxPax > 0 && pax > bestMaxPax) {
+      tentsNeeded = Math.ceil(pax / bestMaxPax);
+    }
+  }
+
   const recSet = new Set(rankedItemIds);
   const addonItemIds = [...addonSet].filter((id) => !recSet.has(id));
 
-  return { rankedItemIds, strongMatchIds, addonItemIds };
+  return { rankedItemIds, strongMatchIds, addonItemIds, tentsNeeded };
 }

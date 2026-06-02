@@ -216,6 +216,7 @@ function ShopPageContent({
   const wizParam = searchParams.get("wiz") || "";
 
   const strongParam = searchParams.get("strong") || "";
+  const tentsNeeded = parseInt(searchParams.get("tents") ?? "1", 10) || 1;
   const recItemIds: string[] = recParam ? recParam.split(",").filter(Boolean) : [];
   const addonItemIds: string[] = addonParam ? addonParam.split(",").filter(Boolean) : [];
   const recSet = new Set(recItemIds);
@@ -1790,19 +1791,13 @@ function ShopPageContent({
                     <div className="fixed inset-0 z-40" onClick={() => setShowCatMenu(false)} />
                     <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 overflow-hidden">
                     {categories.map((cat, i) => {
-                      const recCount = recItemIds.length > 0
-                        ? filteredGear(cat).filter(g => recSet.has(g.id)).length
-                        : 0;
+                      const hasStrong = strongSet.size > 0 && filteredGear(cat).some(g => strongSet.has(g.id));
                       return (
                         <button key={cat} onClick={() => { setActiveCategory(cat); setShowCatMenu(false); }}
                           className={`w-full flex items-center justify-between px-4 py-3 text-[10px] font-black uppercase tracking-wide transition-colors ${i !== 0 ? "border-t border-slate-50" : ""} ${activeCategory === cat ? "bg-emerald-50 text-[#062c24]" : "text-slate-500 hover:bg-slate-50 hover:text-[#062c24]"}`}>
                           <span className="flex items-center gap-2">
                             {cat}
-                            {recCount > 0 && (
-                              <span className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full normal-case">
-                                {recCount} for you
-                              </span>
-                            )}
+                            {hasStrong && <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />}
                           </span>
                           <span className="text-[9px] font-bold text-slate-300">{filteredGear(cat).length} item{filteredGear(cat).length !== 1 ? "s" : ""}</span>
                         </button>
@@ -1849,7 +1844,7 @@ function ShopPageContent({
                   <button
                     onClick={() => {
                       const url = new URL(window.location.href);
-                      ["rec", "strong", "addon", "pax", "from", "to", "wiz"].forEach(p => url.searchParams.delete(p));
+                      ["rec", "strong", "addon", "pax", "from", "to", "wiz", "tents"].forEach(p => url.searchParams.delete(p));
                       window.location.href = url.toString();
                     }}
                     className="text-[9px] font-black text-slate-400 hover:text-red-400 uppercase"
@@ -1880,6 +1875,11 @@ function ShopPageContent({
                         {strongSet.has(item.id) && (
                           <span className="bg-emerald-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase animate-pulse">
                             For You
+                          </span>
+                        )}
+                        {strongSet.has(item.id) && tentsNeeded > 1 && (
+                          <span className="bg-[#062c24] text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase">
+                            Need {tentsNeeded}×
                           </span>
                         )}
                         {paxParam && item.specs?.maxPax !== undefined && strongSet.has(item.id) && (
