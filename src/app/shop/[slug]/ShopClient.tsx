@@ -1850,20 +1850,22 @@ function ShopPageContent({
                   
                   return (
                     <div key={item.id} className={`bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm stagger-in relative ${recSet.has(item.id) ? "ring-2 ring-emerald-400 ring-offset-1" : ""}`} style={{ animationDelay: `${idx * 50}ms` }}>
-                      {recSet.has(item.id) && (
-                        <span className="absolute top-2 left-2 bg-emerald-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase z-10 animate-pulse">
-                          For You
-                        </span>
-                      )}
-                      {paxParam && item.specs?.maxPax !== undefined && recSet.has(item.id) && (
-                        <span className={`absolute top-2 right-2 text-[8px] font-black px-2 py-0.5 rounded-full uppercase z-10 ${
-                          item.specs.maxPax >= paxParam
-                            ? "bg-blue-100 text-blue-700"
-                            : "bg-amber-100 text-amber-700"
-                        }`}>
-                          {item.specs.maxPax >= paxParam ? `Fits ${paxParam}` : `Max ${item.specs.maxPax} pax`}
-                        </span>
-                      )}
+                      <div className="absolute top-2 left-2 flex flex-col items-start gap-1 z-10">
+                        {recSet.has(item.id) && (
+                          <span className="bg-emerald-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase animate-pulse">
+                            For You
+                          </span>
+                        )}
+                        {paxParam && item.specs?.maxPax !== undefined && recSet.has(item.id) && (
+                          <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${
+                            item.specs.maxPax >= paxParam
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-amber-100 text-amber-700"
+                          }`}>
+                            {item.specs.maxPax >= paxParam ? `Fits ${paxParam}` : `Max ${item.specs.maxPax}`}
+                          </span>
+                        )}
+                      </div>
                       <div className="aspect-square relative cursor-pointer" onClick={() => { setSelectedItem(item); setSelectedVariant(null); setLinkedVarSelections({}); setShowItemModal(true); }}>
                         <img src={item.images?.[0] || item.img || "/placeholder.jpg"} className="w-full h-full object-cover" alt={item.name} loading="lazy" />
                         {hasMultipleImages && (
