@@ -1874,17 +1874,17 @@ function ShopPageContent({
                           </div>
                         )}
                         <div className="absolute top-2 left-2 flex flex-col gap-1">
-                          {item.type === "package" && <span className="bg-purple-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase"><i className="fas fa-box mr-0.5"></i>Package</span>}
                           {hasSetupOption && <span className="bg-blue-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase"><i className="fas fa-tools mr-0.5"></i>Setup</span>}
                           {linkedItems.length > 0 && <span className="bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase"><i className="fas fa-link mr-0.5"></i>{linkedItems.length} items</span>}
                         </div>
+                        {item.type === "package" && (
+                          <span className="absolute bottom-2 right-2 w-6 h-6 bg-purple-500/90 backdrop-blur-sm rounded-lg flex items-center justify-center shadow-md z-10">
+                            <i className="fas fa-box text-white text-[9px]" />
+                          </span>
+                        )}
                         <div className="absolute top-2 right-2 flex flex-col items-end gap-1 z-10">
                           {inCart > 0 && (
                             <span className="bg-emerald-500 text-white text-[9px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-lg">{inCart}</span>
-                          )}
-                          {/* Available stock indicator for packages */}
-                          {item.type === "package" && avail > 0 && avail <= 3 && !inCart && (
-                            <span className="bg-amber-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full shadow-lg">{avail} left</span>
                           )}
                           {item.type === "package" && avail === 0 && !inCart && (
                             <span className="bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full shadow-lg">Sold Out</span>

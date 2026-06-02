@@ -409,7 +409,7 @@ export default function ItemDetailModal({
                 Complete your setup
               </p>
               <div className="space-y-2">
-                {addonItems.slice(0, 3).map((addon) => (
+                {addonItems.map((addon) => (
                   <div
                     key={addon.id}
                     className="flex items-center gap-3 bg-slate-50 rounded-2xl p-3"
