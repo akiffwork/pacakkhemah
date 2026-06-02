@@ -67,7 +67,10 @@ export function scoreWizard(
     .map(([id]) => id);
 
   const maxScore = scoredEntries.reduce((m, [, s]) => Math.max(m, s), 0);
-  const threshold = Math.max(1.5, maxScore * 0.6);
+  // Items need to score ≥75% of the top score AND at least 2.5 (= 1 rule + pax boost)
+  // This ensures single-rule-only items (1.0) never badge, and items only
+  // incidentally boosted by a secondary rule don't outrank the real preference.
+  const threshold = Math.max(2.5, maxScore * 0.75);
   const strongMatchIds = scoredEntries
     .filter(([, s]) => s >= threshold)
     .map(([id]) => id);
