@@ -1812,6 +1812,14 @@ function ShopPageContent({
                   <p className="text-[10px] font-black text-emerald-700 flex-1">
                     Showing recommendations for your trip
                   </p>
+                  {vendorData?.slug && vendorData?.wizardEnabled && (
+                    <a
+                      href={`/shop/${vendorData.slug}/wizard`}
+                      className="text-[9px] font-black text-emerald-600 hover:text-emerald-800 uppercase"
+                    >
+                      Redo Quiz
+                    </a>
+                  )}
                   <button
                     onClick={() => {
                       const url = new URL(window.location.href);

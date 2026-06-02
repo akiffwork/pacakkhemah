@@ -174,10 +174,12 @@ export default function OrderGuideTab({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [expandedQ, setExpandedQ] = useState<string | null>(null);
   const [expandedO, setExpandedO] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const configRef = useRef(config);
 
   const wizardUrl =
     typeof window !== "undefined"
@@ -193,12 +195,14 @@ export default function OrderGuideTab({
       ]);
       if (configResult.status === "fulfilled" && configResult.value.exists()) {
         const data = configResult.value.data();
-        setConfig({
+        const loaded: WizardConfig = {
           enabled: data.enabled ?? false,
           title: data.title ?? "Plan Your Perfect Camp",
           questions: data.questions ?? [],
           rules: data.rules ?? [],
-        });
+        };
+        configRef.current = loaded;
+        setConfig(loaded);
       }
       if (gearResult.status === "fulfilled") {
         setGearList(
@@ -221,8 +225,13 @@ export default function OrderGuideTab({
       clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(async () => {
         setSaving(true);
+        setSaveError(null);
         try {
           await setDoc(doc(db, "vendors", vendorId, "wizard", "config"), next);
+          setSaved(true);
+          setTimeout(() => setSaved(false), 2000);
+        } catch (err) {
+          setSaveError(err instanceof Error ? err.message : "Save failed");
         } finally {
           setSaving(false);
         }
@@ -232,6 +241,7 @@ export default function OrderGuideTab({
   );
 
   function update(next: WizardConfig) {
+    configRef.current = next;
     setConfig(next);
     scheduleSave(next);
   }
@@ -239,10 +249,13 @@ export default function OrderGuideTab({
   async function saveNow() {
     clearTimeout(saveTimer.current);
     setSaving(true);
+    setSaveError(null);
     try {
-      await setDoc(doc(db, "vendors", vendorId, "wizard", "config"), config);
+      await setDoc(doc(db, "vendors", vendorId, "wizard", "config"), configRef.current);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Save failed");
     } finally {
       setSaving(false);
     }
@@ -401,6 +414,12 @@ export default function OrderGuideTab({
             </button>
           </div>
         </div>
+
+        {saveError && (
+          <p className="text-[10px] font-semibold text-red-500 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+            Save failed: {saveError}
+          </p>
+        )}
 
         {/* Title */}
         <div>
