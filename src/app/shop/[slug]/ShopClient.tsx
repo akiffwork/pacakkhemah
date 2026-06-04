@@ -1094,7 +1094,7 @@ function ShopPageContent({
       const variantLabel = i.selectedVariant
         ? ` [${[i.selectedVariant.color?.label, i.selectedVariant.size].filter(Boolean).join(", ")}]`
         : "";
-      let line = `• ${i.name}${variantLabel} (x${i.qty}) - RM${i.price * i.qty}`;
+      let line = `• ${i.name}${variantLabel} (x${i.qty}) - RM${itemStayPrice(i, nights) * i.qty}`;
       // Show package included items
       if (i.linkedItems && i.linkedItems.length > 0) {
         const includedNames = i.linkedItems.map(li => {
