@@ -660,14 +660,19 @@ function ShopPageContent({
 
     // Package: check all linked child items (with variant awareness)
     if (item.linkedItems && item.linkedItems.length > 0) {
+      // Sum all qty of this package already in cart (across all variant combos)
+      const pkgInCart = cart.reduce((s, ci) => ci.id === itemId ? s + ci.qty : s, 0);
+
       let minPackages = Infinity;
       for (const li of item.linkedItems) {
         if (li.qty <= 0) continue;
-        // FIX 1: Use locked variantId for stock check
         const childStock = getItemStock(li.itemId, li.variantId || undefined);
-        // FIX 2: Subtract child items already consumed by cart (addons + other packages)
-        const childInCart = getEffectiveInCart(li.itemId, li.variantId || undefined);
-        const childAvailable = Math.max(0, childStock - childInCart);
+        // Only subtract child items consumed by OTHER cart entries (addons / other packages),
+        // not by this package itself — otherwise canAdd check compares remaining vs. remaining.
+        const totalChildInCart = getEffectiveInCart(li.itemId, li.variantId || undefined);
+        const ownChildUsage = (li.qty || 1) * pkgInCart;
+        const externalChildUsage = Math.max(0, totalChildInCart - ownChildUsage);
+        const childAvailable = Math.max(0, childStock - externalChildUsage);
         const canFulfill = Math.floor(childAvailable / li.qty);
         minPackages = Math.min(minPackages, canFulfill);
       }
