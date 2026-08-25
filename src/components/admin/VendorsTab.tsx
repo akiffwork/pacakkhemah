@@ -138,6 +138,23 @@ export default function VendorsTab({ allVendors, onNavigate }: { allVendors: Ven
   }
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [topupModalVendor, setTopupModalVendor] = useState<Vendor | null>(null);
+  const [topupAmount, setTopupAmount] = useState("");
+  const [toppingUp, setToppingUp] = useState(false);
+
+  async function handleTopUp() {
+    if (!topupModalVendor) return;
+    const amount = parseInt(topupAmount, 10);
+    if (!amount || amount <= 0) return showToast("Enter a valid amount", "error");
+    setToppingUp(true);
+    try {
+      await updateDoc(doc(db, "vendors", topupModalVendor.id), { credits: increment(amount) });
+      showToast(`+${amount} credits added to ${topupModalVendor.name}`);
+      setTopupModalVendor(null);
+      setTopupAmount("");
+    } catch { showToast("Failed to top up credits", "error"); }
+    finally { setToppingUp(false); }
+  }
 
   async function deleteVendor(vendorId: string, vendorName: string) {
     const confirmed = prompt(`Type "${vendorName}" to permanently delete this vendor and ALL their data:`);
@@ -364,9 +381,8 @@ export default function VendorsTab({ allVendors, onNavigate }: { allVendors: Ven
                           <i className="fas fa-key text-[10px]"></i>
                         </a>
                         
-                        {/* REPLACED MANUAL TOP UP WITH NAVIGATE TO FINANCE */}
-                        <button onClick={() => onNavigate?.("finance")}
-                          className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center hover:bg-emerald-500 hover:text-white transition-all" title="Top Up in Finance">
+                        <button onClick={() => { setTopupModalVendor(v); setTopupAmount(""); }}
+                          className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center hover:bg-emerald-500 hover:text-white transition-all" title="Top Up Credits">
                           <i className="fas fa-wallet text-[10px]"></i>
                         </button>
                         
@@ -396,6 +412,71 @@ export default function VendorsTab({ allVendors, onNavigate }: { allVendors: Ven
           </table>
         </div>
       </div>
+
+      {topupModalVendor && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-6 text-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center font-black text-xl">
+                    {topupModalVendor.name?.[0]?.toUpperCase()}
+                  </div>
+                  <div>
+                    <h3 className="font-black uppercase text-lg">{topupModalVendor.name}</h3>
+                    <p className="text-white/70 text-[10px] font-medium">
+                      Current balance: <span className="font-black text-white">{topupModalVendor.credits || 0} credits</span>
+                    </p>
+                  </div>
+                </div>
+                <button onClick={() => setTopupModalVendor(null)} className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors">
+                  <i className="fas fa-times"></i>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                <i className="fas fa-plus-circle mr-1"></i> Add Credits
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                {[5, 10, 20, 50].map(preset => (
+                  <button key={preset} onClick={() => setTopupAmount(String(preset))}
+                    className={`px-4 py-2 rounded-xl text-xs font-black uppercase transition-all border ${topupAmount === String(preset) ? "bg-emerald-500 text-white border-emerald-500" : "bg-slate-50 text-slate-500 border-slate-200 hover:border-emerald-300"}`}>
+                    +{preset}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                min="1"
+                value={topupAmount}
+                onChange={e => setTopupAmount(e.target.value)}
+                placeholder="Or enter custom amount"
+                className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold outline-none focus:border-emerald-500 transition-all"
+              />
+              {topupAmount && parseInt(topupAmount) > 0 && (
+                <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl text-center">
+                  <p className="text-xs font-black text-emerald-700">
+                    New balance: {(topupModalVendor.credits || 0) + parseInt(topupAmount)} credits
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-slate-100 p-4 flex gap-3">
+              <button onClick={() => setTopupModalVendor(null)}
+                className="flex-1 py-3 rounded-xl font-black uppercase text-xs border border-slate-200 text-slate-500 hover:bg-slate-50 transition-all">
+                Cancel
+              </button>
+              <button onClick={handleTopUp} disabled={toppingUp || !topupAmount || parseInt(topupAmount) <= 0}
+                className="flex-1 py-3 rounded-xl font-black uppercase text-xs bg-emerald-500 text-white hover:bg-emerald-600 transition-all disabled:opacity-50 shadow-sm">
+                {toppingUp ? <><i className="fas fa-spinner fa-spin mr-1"></i>Adding...</> : "Add Credits"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {badgeModalVendor && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
