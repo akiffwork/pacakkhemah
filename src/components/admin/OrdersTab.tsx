@@ -26,6 +26,8 @@ export default function OrdersTab() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | Order["status"]>("all");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
 
   useEffect(() => {
     loadOrders();
@@ -55,9 +57,10 @@ export default function OrdersTab() {
       if (selectedOrder?.id === orderId) {
         setSelectedOrder(prev => prev ? { ...prev, status: newStatus } : null);
       }
+      showToast(`Order marked as ${newStatus}`);
     } catch (e) {
       console.error("Error updating order status:", e);
-      alert("Failed to update status.");
+      showToast("Failed to update status", "error");
     }
   }
 
@@ -86,6 +89,8 @@ export default function OrdersTab() {
     cancelled: { label: "Cancelled", bg: "bg-red-100", text: "text-red-700", icon: "fa-times-circle" },
     conflict: { label: "Conflict", bg: "bg-red-100", text: "text-red-700", icon: "fa-exclamation-triangle" },
   };
+  const FALLBACK_STATUS = STATUS_CONFIG["pending"];
+  function getStatusConf(status?: string) { return STATUS_CONFIG[status ?? ""] ?? FALLBACK_STATUS; }
 
   return (
     <div className="space-y-6">
@@ -172,7 +177,7 @@ export default function OrdersTab() {
               </thead>
               <tbody className="divide-y divide-slate-50 text-xs">
                 {filteredOrders.map(order => {
-                  const conf = STATUS_CONFIG[order.status || "pending"];
+                  const conf = getStatusConf(order.status);
                   return (
                     <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="p-5 pl-8">
@@ -213,6 +218,16 @@ export default function OrdersTab() {
         )}
       </div>
 
+      {toast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[500] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[10px] font-black uppercase tracking-widest ${
+          toast.type === "success" ? "bg-emerald-600" : "bg-red-500"
+        }`} style={{ animation: "toastIn 0.3s ease-out" }}>
+          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`}></i>
+          {toast.msg}
+        </div>
+      )}
+      <style>{`@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
+
       {/* Order Details Modal */}
       {selectedOrder && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
@@ -223,8 +238,8 @@ export default function OrdersTab() {
               <div>
                 <h3 className="font-black text-xl text-[#062c24] uppercase flex items-center gap-3">
                   Order #{selectedOrder.id.slice(-6)}
-                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-black ${STATUS_CONFIG[selectedOrder.status || "pending"].bg} ${STATUS_CONFIG[selectedOrder.status || "pending"].text}`}>
-                    {STATUS_CONFIG[selectedOrder.status || "pending"].label}
+                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-black ${getStatusConf(selectedOrder.status).bg} ${getStatusConf(selectedOrder.status).text}`}>
+                    {getStatusConf(selectedOrder.status).label}
                   </span>
                 </h3>
                 <p className="text-[10px] font-bold text-slate-400 mt-1">
