@@ -12,6 +12,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import flatpickr from "flatpickr";
 import "flatpickr/dist/flatpickr.min.css";
 import AdBanner from "@/components/AdBanner";
+import VacationScreen from "@/components/shop/VacationScreen";
 import DemoShopGuide from "@/components/DemoShopGuide";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -946,7 +947,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   // ═══════════════════════════════════════════════════════════════════════════
 
   if (blockState === "unapproved") return <BlockScreen message="Hub Building" icon="fa-hard-hat" iconBg="bg-slate-200 text-slate-400" />;
-  if (blockState === "vacation") return <BlockScreen message="On Vacation" icon="fa-umbrella-beach" iconBg="bg-blue-400 text-white" />;
+  if (blockState === "vacation") return <VacationScreen vendorName={vendorData?.name} vendorImage={vendorData?.image} vendorPhone={vendorData?.phone} />;
   if (blockState === "nocredits") return <BlockScreen message="Hub Unavailable" icon="fa-store-slash" iconBg="bg-red-500 text-white" />;
 
   return (
