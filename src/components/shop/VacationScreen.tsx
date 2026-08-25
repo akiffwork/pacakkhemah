@@ -133,30 +133,30 @@ export default function VacationScreen({ vendorName, vendorImage, vendorPhone }:
         <h1 className="text-white font-black text-2xl uppercase tracking-tight leading-tight mb-1">
           {vendorName || "We're away"}
         </h1>
-        <p className="text-emerald-400 font-bold text-sm mb-1">Out in the wild</p>
+        <p className="text-emerald-400 font-bold text-sm mb-1">Shop is resting. Owner is healing.</p>
         <p className="text-white/40 text-xs mb-8">
           Back at camp soon. Thanks for your patience!
         </p>
 
         <div className="flex flex-col gap-3">
-          {waNumber && (
-            <a
-              href={`https://wa.me/${waNumber}?text=Hi%2C%20I%20saw%20your%20shop%20is%20on%20vacation.%20Just%20wanted%20to%20reach%20out!`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center justify-center gap-2.5 bg-emerald-500 hover:bg-emerald-400 text-white px-6 py-3.5 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg transition-all"
-            >
-              <i className="fab fa-whatsapp text-base"></i>
-              Message Us on WhatsApp
-            </a>
-          )}
           <Link
             href="/directory"
-            className="flex items-center justify-center gap-2.5 bg-white/10 border border-white/20 hover:bg-white/20 text-white px-6 py-3.5 rounded-2xl font-black uppercase text-xs tracking-widest transition-all"
+            className="flex items-center justify-center gap-2.5 bg-emerald-500 hover:bg-emerald-400 text-white px-6 py-3.5 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg transition-all"
           >
             <i className="fas fa-compass text-base"></i>
             Browse Other Shops
           </Link>
+          {waNumber && (
+            <a
+              href={`https://wa.me/${waNumber}?text=Hi%2C%20I%20saw%20your%20shop%20is%20on%20a%20break.%20I%20have%20an%20urgent%20inquiry!`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-center gap-2.5 bg-transparent border border-white/20 hover:border-white/40 text-white/50 hover:text-white/80 px-6 py-3 rounded-2xl font-bold text-xs tracking-widest transition-all"
+            >
+              <i className="fab fa-whatsapp text-sm"></i>
+              Urgent? Drop us a WhatsApp
+            </a>
+          )}
         </div>
       </div>
     </div>
