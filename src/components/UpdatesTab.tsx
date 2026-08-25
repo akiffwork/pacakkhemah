@@ -82,6 +82,9 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
       });
       setPosts(allPosts);
       setLoading(false);
+    }, (error) => {
+      console.error("Posts listener error:", error);
+      setLoading(false);
     });
 
     const unsubArticles = onSnapshot(
@@ -90,7 +93,8 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
         where("authorId", "==", vendorId),
         orderBy("createdAt", "desc")
       ),
-      snap => setArticles(snap.docs.map(d => ({ id: d.id, ...d.data() } as Article)))
+      snap => setArticles(snap.docs.map(d => ({ id: d.id, ...d.data() } as Article))),
+      (error) => console.error("Articles listener error:", error)
     );
 
     return () => { unsub(); unsubArticles(); };

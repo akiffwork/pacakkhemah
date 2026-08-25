@@ -45,7 +45,8 @@ export default function ReviewsTab({ vendorId }: { vendorId: string }) {
   useEffect(() => {
     const unsub = onSnapshot(
       query(collection(db, "reviews"), where("vendorId", "==", vendorId), orderBy("createdAt", "desc")),
-      (snap) => setReviews(snap.docs.map(d => ({ id: d.id, ...d.data() } as Review)))
+      (snap) => setReviews(snap.docs.map(d => ({ id: d.id, ...d.data() } as Review))),
+      (error) => console.error("Reviews listener error:", error)
     );
     return () => unsub();
   }, [vendorId]);

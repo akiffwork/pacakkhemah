@@ -55,6 +55,9 @@ export default function HomeTab({ vendorId, vendorData, onNavigate }: HomeTabPro
     const unsub = onSnapshot(q, snap => {
       setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order)).filter(o => !(o as any).deleted));
       setLoading(false);
+    }, (error) => {
+      console.error("Orders listener error:", error);
+      setLoading(false);
     });
     return () => unsub();
   }, [vendorId]);

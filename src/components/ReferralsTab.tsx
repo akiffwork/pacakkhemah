@@ -88,6 +88,9 @@ export default function ReferralsTab({ vendorId, vendorName }: ReferralsTabProps
     const unsub = onSnapshot(q, (snap) => {
       setReferrals(snap.docs.map(d => ({ id: d.id, ...d.data() } as CustomerReferral)));
       setLoading(false);
+    }, (error) => {
+      console.error("Referrals listener error:", error);
+      setLoading(false);
     });
 
     return () => unsub();
@@ -127,6 +130,10 @@ export default function ReferralsTab({ vendorId, vendorName }: ReferralsTabProps
             .filter(d => !d.deleted)
             .sort((a, b) => (a.type === "promo_code" ? -1 : 1) - (b.type === "promo_code" ? -1 : 1))
         );
+        setDiscountsLoading(false);
+      },
+      (error) => {
+        console.error("Discounts listener error:", error);
         setDiscountsLoading(false);
       }
     );

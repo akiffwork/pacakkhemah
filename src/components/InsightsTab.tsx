@@ -137,9 +137,14 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
     const unsub1 = onSnapshot(q1, snap => {
       setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order)).filter(o => !(o as any).deleted));
       setLoading(false);
+    }, (error) => {
+      console.error("Orders listener error:", error);
+      setLoading(false);
     });
     const unsub2 = onSnapshot(q2, snap => {
       setReviews(snap.docs.map(d => ({ id: d.id, ...d.data() } as Review)));
+    }, (error) => {
+      console.error("Reviews listener error:", error);
     });
 
     // Load existing loyalty codes from referrals
@@ -152,6 +157,8 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
         }
       });
       setExistingLoyaltyCodes(codes);
+    }, (error) => {
+      console.error("Referrals listener error:", error);
     });
 
     return () => { unsub1(); unsub2(); unsub3(); };

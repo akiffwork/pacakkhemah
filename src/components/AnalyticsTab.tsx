@@ -76,6 +76,9 @@ export default function AnalyticsTab({ vendorId, vendorData }: AnalyticsTabProps
     const unsub = onSnapshot(q, (snap) => {
       setLeads(snap.docs.map(d => ({ id: d.id, ...d.data() } as Lead)));
       setLoading(false);
+    }, (error) => {
+      console.error("Analytics listener error:", error);
+      setLoading(false);
     });
     return () => unsub();
   }, [vendorId]);
@@ -84,6 +87,8 @@ export default function AnalyticsTab({ vendorId, vendorData }: AnalyticsTabProps
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "vendors", vendorId), (snap) => {
       if (snap.exists()) setCredits(snap.data().credits ?? 0);
+    }, (error) => {
+      console.error("Vendor credit listener error:", error);
     });
     return () => unsub();
   }, [vendorId]);
@@ -97,6 +102,8 @@ export default function AnalyticsTab({ vendorId, vendorData }: AnalyticsTabProps
     );
     const unsub = onSnapshot(q, (snap) => {
       setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as OrderData)).filter(o => !(o as any).deleted));
+    }, (error) => {
+      console.error("Orders listener error:", error);
     });
     return () => unsub();
   }, [vendorId]);

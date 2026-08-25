@@ -166,11 +166,13 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
   useEffect(() => {
     const gearUnsub = onSnapshot(
       query(collection(db, "gear"), where("vendorId", "==", vendorId)),
-      snap => setAllGear(snap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted))
+      snap => setAllGear(snap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted)),
+      (error) => console.error("Gear listener error:", error)
     );
     const discUnsub = onSnapshot(
       collection(db, "vendors", vendorId, "discounts"),
-      snap => setAllDiscounts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Discount)).filter(d => !d.deleted))
+      snap => setAllDiscounts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Discount)).filter(d => !d.deleted)),
+      (error) => console.error("Discounts listener error:", error)
     );
     return () => { gearUnsub(); discUnsub(); };
   }, [vendorId]);

@@ -52,6 +52,9 @@ export default function FoodPartnersTab({ vendorId }: { vendorId: string }) {
           .filter(p => !p.deleted)
       );
       setLoading(false);
+    }, (error) => {
+      console.error("Food partners listener error:", error);
+      setLoading(false);
     });
     return () => unsub();
   }, [vendorId]);

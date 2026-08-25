@@ -73,6 +73,10 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
       (snap) => {
         setAgreements(snap.docs.map(d => ({ id: d.id, ...d.data() } as Agreement)));
         setLoading(false);
+      },
+      (error) => {
+        console.error("Agreements listener error:", error);
+        setLoading(false);
       }
     );
 
@@ -83,6 +87,9 @@ export default function DocumentsTab({ vendorId, vendorData }: DocumentsTabProps
           .map(d => ({ id: d.id, ...d.data() } as PendingOrder))
           .filter(o => !o.deleted && !o.agreementSigned);
         setPendingOrders(orders);
+      },
+      (error) => {
+        console.error("Orders listener error:", error);
       }
     );
 
