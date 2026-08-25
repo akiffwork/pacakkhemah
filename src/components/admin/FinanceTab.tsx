@@ -31,6 +31,8 @@ export default function FinanceTab() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newTx, setNewTx] = useState<{ vendorId: string; amount: number; credits: number; type: "purchase" | "bonus" | "refund"; note: string }>({ vendorId: "", amount: 0, credits: 0, type: "purchase", note: "" });
   const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
 
   useEffect(() => {
     loadData();
@@ -52,17 +54,15 @@ export default function FinanceTab() {
   }
 
   async function addTransaction() {
-    if (!newTx.vendorId || newTx.amount <= 0) return alert("Please fill all fields");
+    if (!newTx.vendorId || newTx.amount <= 0) return showToast("Please select a vendor and enter an amount", "error");
     setSaving(true);
     try {
       const vendor = vendors.find(v => v.id === newTx.vendorId);
-      // Record transaction log
       await addDoc(collection(db, "transactions"), {
         ...newTx,
         vendorName: vendor?.name || "Unknown",
         createdAt: serverTimestamp(),
       });
-      // Update vendor credit balance — refunds subtract, purchases/bonus add
       const creditDelta = newTx.type === "refund" ? -newTx.credits : newTx.credits;
       if (creditDelta !== 0) {
         await updateDoc(doc(db, "vendors", newTx.vendorId), {
@@ -71,10 +71,11 @@ export default function FinanceTab() {
       }
       setShowAddModal(false);
       setNewTx({ vendorId: "", amount: 0, credits: 0, type: "purchase", note: "" });
+      showToast(`Transaction added for ${vendor?.name || "vendor"}`);
       loadData();
     } catch (e) {
       console.error(e);
-      alert("Failed to add transaction");
+      showToast("Failed to add transaction", "error");
     } finally {
       setSaving(false);
     }
@@ -210,7 +211,7 @@ export default function FinanceTab() {
                     <p className="text-[9px] text-amber-600 font-bold">{v.credits || 0} credits left</p>
                   </div>
                   <button
-                    onClick={() => { setNewTx(t => ({ ...t, vendorId: v.id })); setShowAddModal(true); }}
+                    onClick={() => { setNewTx({ vendorId: v.id, amount: 0, credits: 0, type: "purchase", note: "" }); setShowAddModal(true); }}
                     className="text-[9px] font-bold text-emerald-600 bg-white px-3 py-1.5 rounded-lg hover:bg-emerald-50 border border-emerald-200"
                   >
                     Add Credits
@@ -294,6 +295,16 @@ export default function FinanceTab() {
           </div>
         )}
       </div>
+
+      {toast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[500] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[10px] font-black uppercase tracking-widest ${
+          toast.type === "success" ? "bg-emerald-600" : "bg-red-500"
+        }`} style={{ animation: "toastIn 0.3s ease-out" }}>
+          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`}></i>
+          {toast.msg}
+        </div>
+      )}
+      <style>{`@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
 
       {/* Add Transaction Modal */}
       {showAddModal && (
