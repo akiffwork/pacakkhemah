@@ -13,7 +13,7 @@ type Order = {
   customerEmail?: string;
   customerPhone?: string;
   totalAmount: number;
-  status: "pending" | "confirmed" | "completed" | "cancelled";
+  status: "pending" | "confirmed" | "completed" | "cancelled" | "conflict";
   createdAt: any;
   startDate?: string;
   endDate?: string;
@@ -79,11 +79,12 @@ export default function OrdersTab() {
   const completedRevenue = orders.filter(o => o.status === "completed").reduce((sum, o) => sum + (o.totalAmount || 0), 0);
 
   // Status visual configurations
-  const STATUS_CONFIG = {
+  const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; icon: string }> = {
     pending: { label: "Pending", bg: "bg-amber-100", text: "text-amber-700", icon: "fa-clock" },
     confirmed: { label: "Confirmed", bg: "bg-blue-100", text: "text-blue-700", icon: "fa-calendar-check" },
     completed: { label: "Completed", bg: "bg-emerald-100", text: "text-emerald-700", icon: "fa-check-circle" },
     cancelled: { label: "Cancelled", bg: "bg-red-100", text: "text-red-700", icon: "fa-times-circle" },
+    conflict: { label: "Conflict", bg: "bg-red-100", text: "text-red-700", icon: "fa-exclamation-triangle" },
   };
 
   return (
@@ -131,7 +132,7 @@ export default function OrdersTab() {
           />
         </div>
         <div className="flex bg-slate-100 rounded-lg p-1 w-full sm:w-auto overflow-x-auto">
-          {(["all", "pending", "confirmed", "completed", "cancelled"] as const).map(status => (
+          {(["all", "pending", "conflict", "confirmed", "completed", "cancelled"] as const).map(status => (
             <button 
               key={status} 
               onClick={() => setStatusFilter(status)}

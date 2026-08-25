@@ -308,6 +308,7 @@ export default function VendorsTab({ allVendors, onNavigate }: { allVendors: Ven
                         {!isPending && allBadges.length > 0 ? (
                           allBadges.map(badge => {
                             const config = BADGE_CONFIG[badge];
+                            if (!config) return null;
                             return (
                               <span key={badge} className={`inline-flex items-center gap-1 ${config.bg} ${config.text} px-2 py-0.5 rounded-full text-[8px] font-bold`}>
                                 <i className={`fas ${config.icon}`}></i>

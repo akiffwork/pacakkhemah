@@ -112,6 +112,9 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
     const unsub = onSnapshot(q, (snap) => {
       setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order)).filter(o => !o.deleted));
       setLoading(false);
+    }, (error) => {
+      console.error("Orders listener error:", error);
+      setLoading(false);
     });
 
     return () => unsub();
@@ -130,6 +133,8 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
           .map(d => ({ id: d.id, ...d.data() } as UnlinkedAgreement))
           .filter(a => !a.orderId)
       );
+    }, (error) => {
+      console.error("Agreements listener error:", error);
     });
     return () => unsub();
   }, [vendorId]);

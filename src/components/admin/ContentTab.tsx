@@ -111,6 +111,8 @@ export default function ContentTab() {
     const q = query(collection(db, "articles"), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(q, snap => {
       setArticles(snap.docs.map(d => ({ id: d.id, ...d.data() } as Article)));
+    }, (error) => {
+      console.error("Articles listener error:", error);
     });
     return () => unsub();
   }, []);
