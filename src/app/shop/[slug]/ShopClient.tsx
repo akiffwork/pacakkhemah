@@ -463,7 +463,7 @@ function ShopPageContent({
   }
 
   useEffect(() => {
-    if (!vendorData) return;
+    if (!vendorData || blockState) return;
     let cancelled = false;
     const blocked: any[] = availRules.filter(r => r.type === "block").map(r => ({ from: r.start, to: r.end || r.start }));
     const offDays = Object.entries(weeklyOff).filter(([, v]) => v).map(([k]) => Number(k));
@@ -482,11 +482,11 @@ function ShopPageContent({
       });
     });
     return () => { cancelled = true; cpRef.current?.destroy(); opRef.current?.destroy(); };
-  }, [vendorData, availRules, weeklyOff, fromParam, toParam]);
+  }, [vendorData, blockState, availRules, weeklyOff, fromParam, toParam]);
 
   // Cart modal date pickers
   useEffect(() => {
-    if (!showCart || !vendorData) return;
+    if (!showCart || !vendorData || blockState) return;
     let cancelled = false;
     const blocked: any[] = availRules.filter(r => r.type === "block").map(r => ({ from: r.start, to: r.end || r.start }));
     const offDays = Object.entries(weeklyOff).filter(([, v]) => v).map(([k]) => Number(k));
@@ -519,7 +519,7 @@ function ShopPageContent({
     });
 
     return () => { cancelled = true; cartCpRef.current?.destroy(); cartOpRef.current?.destroy(); };
-  }, [showCart, vendorData, availRules, weeklyOff]);
+  }, [showCart, vendorData, blockState, availRules, weeklyOff]);
 
   // Auto-open item modal from URL param or server-passed initialItemId
   useEffect(() => {

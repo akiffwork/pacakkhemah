@@ -473,7 +473,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
   }
 
   useEffect(() => {
-    if (!vendorData) return;
+    if (!vendorData || blockState) return;
     const blocked: any[] = availRules.filter(r => r.type === "block").map(r => ({ from: r.start, to: r.end || r.start }));
     const offDays = Object.entries(weeklyOff).filter(([, v]) => v).map(([k]) => Number(k));
     if (offDays.length) blocked.push((date: Date) => offDays.includes(date.getDay()));
@@ -486,7 +486,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
       onChange: ([d]) => setSelectedDates(prev => [prev[0], d]),
     });
     return () => { cpRef.current?.destroy(); opRef.current?.destroy(); };
-  }, [vendorData, availRules, weeklyOff]);
+  }, [vendorData, blockState, availRules, weeklyOff]);
 
   // Auto-open item modal from URL param
   useEffect(() => {
