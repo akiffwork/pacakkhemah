@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { functions } from "@/lib/firebase";
+import { httpsCallable } from "firebase/functions";
 
 type SavedOrder = {
   id: string;
@@ -94,36 +94,9 @@ export default function MyBookingsPage() {
     setLoading(true);
     setSearched(true);
     try {
-      const q = query(
-        collection(db, "orders"),
-        where("customerPhone", "==", searchPhone)
-      );
-      const snap = await getDocs(q);
-      const results: SavedOrder[] = [];
-
-      for (const d of snap.docs) {
-        const data = d.data();
-        if (data.deleted) continue;
-        results.push({
-          id: d.id,
-          vendorId: data.vendorId,
-          vendorName: data.vendorName,
-          vendorSlug: data.vendorSlug,
-          items: data.items || [],
-          totalAmount: data.totalAmount || 0,
-          rentalAmount: data.rentalAmount,
-          depositAmount: data.depositAmount,
-          bookingDates: data.bookingDates || { start: "", end: "" },
-          status: data.status || "pending",
-          paymentStatus: data.paymentStatus,
-          createdAt: data.createdAt?.toDate?.()?.toISOString?.() || "",
-          customerName: data.customerName,
-          customerPhone: data.customerPhone,
-        });
-      }
-
-      // Sort by date descending (client-side to avoid composite index)
-      results.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+      const lookupBookingsByPhone = httpsCallable(functions, "lookupBookingsByPhone");
+      const res = await lookupBookingsByPhone({ phone: searchPhone });
+      const { results } = res.data as { results: SavedOrder[] };
       setOrders(results);
 
       // Save phone for next visit

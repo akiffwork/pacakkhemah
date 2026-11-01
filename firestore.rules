@@ -105,19 +105,40 @@ service cloud.firestore {
 
     // --- 8. ORDERS COLLECTION ---
     match /orders/{orderId} {
-      allow read: if true;
+      // Single-doc fetch by ID is allowed unauthenticated: the orderId is an
+      // unguessable Firestore auto-ID, used as a bearer token for links like
+      // the agreement-signing page (same trust model as reviewToken below).
+      allow get: if true;
+      // Listing/querying the collection (e.g. by customerPhone) must NOT be
+      // open to everyone — that would let anyone dump every customer's PII.
+      // Anonymous phone-lookup flows (my-bookings, shop "my booking" search)
+      // go through the lookupBookingsByPhone Cloud Function instead.
+      allow list: if isAdmin() || isVendorOwner(resource.data.vendorId);
       allow create: if true;
-      allow update: if isAdmin() || isVendorOwner(resource.data.vendorId);
+      allow update: if isAdmin() || isVendorOwner(resource.data.vendorId) ||
+        // Customer marks their review link as used after submitting a review:
+        // only reviewTokenUsed may change, and only to true, and the token
+        // itself must be unchanged (prevents tampering with other fields).
+        (request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['reviewTokenUsed']) &&
+         request.resource.data.reviewTokenUsed == true &&
+         request.resource.data.reviewToken == resource.data.reviewToken);
       allow delete: if isAdmin();
     }
 
     // --- 9. REVIEWS COLLECTION ---
     match /reviews/{reviewId} {
       allow read: if true;
-      allow create: if request.resource.data.isVerified == true &&
-                       request.resource.data.rating >= 1 &&
+      allow create: if request.resource.data.rating >= 1 &&
                        request.resource.data.rating <= 5 &&
-                       request.resource.data.status == "published";
+                       request.resource.data.status == "published" &&
+                       request.resource.data.isVerified == true &&
+                       // Must correspond to a real, completed, not-yet-reviewed order,
+                       // and the token must match — prevents forged "verified" reviews.
+                       request.resource.data.reviewToken ==
+                         get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.reviewToken &&
+                       get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.status == "completed" &&
+                       get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.reviewTokenUsed != true;
       allow update: if isAdmin() ||
                        (isVendorOwner(resource.data.vendorId) &&
                         request.resource.data.diff(resource.data).affectedKeys()
