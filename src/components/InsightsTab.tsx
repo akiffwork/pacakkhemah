@@ -634,6 +634,10 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
                           )}
                         </div>
                         <p className="text-[9px] text-slate-400 font-bold">{c.phone}</p>
+                        <p className="text-[8px] text-slate-300 font-bold">
+                          <i className="fas fa-calendar-check text-slate-300 mr-1"></i>
+                          First booked {formatDate(c.firstBooking)}
+                        </p>
                       </div>
                     </div>
                     <div className="text-right shrink-0">
