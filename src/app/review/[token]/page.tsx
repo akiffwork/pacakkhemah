@@ -3,12 +3,12 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { db } from "@/lib/firebase";
+import { db, functions } from "@/lib/firebase";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import {
-  doc, getDoc, collection, addDoc,
-  serverTimestamp,
+  doc, collection, serverTimestamp, writeBatch,
 } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 
 type OrderData = {
   vendorId: string;
@@ -113,21 +113,15 @@ export default function ReviewPage() {
 
   async function loadOrder() {
     try {
-      const { getDocs, query, where } = await import("firebase/firestore");
-      const snapshot = await getDocs(
-        query(collection(db, "orders"), where("reviewToken", "==", token))
-      );
+      const lookupOrderByReviewToken = httpsCallable(functions, "lookupOrderByReviewToken");
+      const res = await lookupOrderByReviewToken({ token });
+      const data = res.data as { error?: "invalid" | "used" | "not_completed"; orderId?: string; order?: OrderData };
 
-      if (snapshot.empty) { setError("invalid"); return; }
+      if (data.error) { setError(data.error); return; }
 
-      const orderDoc = snapshot.docs[0];
-      const orderData = orderDoc.data() as OrderData;
-
-      if (orderData.reviewTokenUsed) { setError("used"); return; }
-      if (orderData.status !== "completed") { setError("not_completed"); return; }
-
+      const orderData = data.order as OrderData;
       setOrder(orderData);
-      setOrderId(orderDoc.id);
+      setOrderId(data.orderId as string);
       setDisplayName(orderData.customerName || "");
     } catch (e) {
       console.error(e);
@@ -183,7 +177,12 @@ export default function ReviewPage() {
         uploadedUrls.push(await getDownloadURL(snap.ref));
       }
 
-      await addDoc(collection(db, "reviews"), {
+      // Create the review and mark the order's review link as used in one
+      // atomic batch — Firestore rules validate both writes together, so a
+      // review can never be created without correctly consuming its token.
+      const batch = writeBatch(db);
+      const reviewRef = doc(collection(db, "reviews"));
+      batch.set(reviewRef, {
         orderId,
         vendorId: order.vendorId,
         customerPhone: maskPhone(order.customerPhone),
@@ -197,6 +196,8 @@ export default function ReviewPage() {
         status: "published",
         createdAt: serverTimestamp(),
       });
+      batch.update(doc(db, "orders", orderId), { reviewTokenUsed: true });
+      await batch.commit();
       setSubmitted(true);
     } catch (e) {
       console.error(e);

@@ -4,7 +4,8 @@ import { useEffect, useState, useRef, use, Suspense } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { db, auth } from "@/lib/firebase";
+import { db, auth, functions } from "@/lib/firebase";
+import { httpsCallable } from "firebase/functions";
 import {
   doc, getDoc, collection, query, where, getDocs, getDocsFromServer,
   serverTimestamp, addDoc, orderBy, updateDoc, arrayUnion, increment, limit,
@@ -599,23 +600,9 @@ function ShopPageContent({
     setMyBookingsLoading(true);
     setMyBookingsSearched(true);
     try {
-      const q = query(collection(db, "orders"), where("vendorId", "==", vendorId), where("customerPhone", "==", searchPhone));
-      const snap = await getDocs(q);
-      const results = snap.docs.filter(d => !d.data().deleted).map(d => {
-        const data = d.data();
-        return {
-          id: d.id,
-          items: data.items || [],
-          totalAmount: data.totalAmount || 0,
-          rentalAmount: data.rentalAmount,
-          depositAmount: data.depositAmount,
-          bookingDates: data.bookingDates || { start: "", end: "" },
-          status: data.status || "pending",
-          createdAt: data.createdAt?.toDate?.()?.toISOString?.() || "",
-        };
-      });
-      // Sort by date descending (client-side to avoid composite index)
-      results.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+      const lookupBookingsByPhone = httpsCallable(functions, "lookupBookingsByPhone");
+      const res = await lookupBookingsByPhone({ phone: searchPhone, vendorId });
+      const { results } = res.data as { results: typeof myBookings };
       setMyBookings(results);
     } catch (e) { console.error("Bookings lookup:", e); }
     finally { setMyBookingsLoading(false); }
