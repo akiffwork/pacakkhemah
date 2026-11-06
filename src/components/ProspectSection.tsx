@@ -164,7 +164,7 @@ export default function ProspectSection({ searched, place, location, lang, varia
             <Link href="/register-vendor" className="font-bold text-emerald-700 underline">{t("Register free", "Daftar kedai percuma")}</Link>
             {" "}{t("or", "atau")}{" "}
             <a className="font-bold text-slate-600 underline" target="_blank" rel="noreferrer"
-              href={waLink(ADMIN_WHATSAPP, "Salam admin Pacak Khemah, saya pemilik bisnes yang disenaraikan dan nak minta listing dibuang.")}>
+              href={waLink(ADMIN_WHATSAPP, "Hi admin Pacak Khemah, saya pemilik bisnes yang disenaraikan dan nak minta listing dibuang.")}>
               {t("ask to be removed", "minta buang listing")}
             </a>.
           </div>

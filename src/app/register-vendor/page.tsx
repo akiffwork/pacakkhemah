@@ -470,7 +470,7 @@ function RegisterContent() {
                     </p>
                     <p className="text-[10px] text-emerald-700 mt-1">
                       {tx("Customers in your area are already looking for you. Register to receive bookings directly.",
-                          "Customer di kawasan bos dah cari bisnes bos. Daftar untuk terima tempahan terus.")}
+                          "Customer di kawasan anda dah cari bisnes anda. Daftar untuk terima tempahan terus.")}
                     </p>
                   </div>
                 )}
