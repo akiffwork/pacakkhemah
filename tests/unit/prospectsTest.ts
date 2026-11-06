@@ -27,16 +27,39 @@ describe("buildEnquiryMessage", () => {
     expect(buildEnquiryMessage("Camptastic", "Port Dickson", {
       pickupDate: "2026-12-14", returnDate: "2026-12-15", pax: 4, items: ["khemah", "dapur"],
     })).toBe(
-      "Salam Camptastic, saya jumpa bisnes bos di Pacak Khemah (pacakkhemah.com). " +
+      "Hi Camptastic, saya jumpa bisnes anda di Pacak Khemah (pacakkhemah.com). " +
       "Masih buat sewaan barang camping? Saya plan nak camping di Port Dickson, 14–15 Dis, 4 orang. " +
       "Kalau boleh nak khemah dan dapur.");
   });
   it("drops skipped parts cleanly", () => {
     expect(buildEnquiryMessage("Camptastic", "Port Dickson")).toBe(
-      "Salam Camptastic, saya jumpa bisnes bos di Pacak Khemah (pacakkhemah.com). " +
+      "Hi Camptastic, saya jumpa bisnes anda di Pacak Khemah (pacakkhemah.com). " +
       "Masih buat sewaan barang camping? Saya plan nak camping di Port Dickson.");
     expect(buildEnquiryMessage("A", "PD", { pax: 2 })).toContain("camping di PD, 2 orang.");
     expect(buildEnquiryMessage("A", "PD", { items: [] })).not.toContain("Kalau boleh");
+  });
+});
+
+describe("buildEnquiryMessage (English)", () => {
+  it("builds the full English message", () => {
+    expect(buildEnquiryMessage("GLAMPING KK", "Kota Kinabalu", {
+      pickupDate: "2026-12-14", returnDate: "2026-12-15", pax: 4, items: ["khemah", "dapur"],
+    }, "en")).toBe(
+      "Hi GLAMPING KK, I found your business on Pacak Khemah (pacakkhemah.com). " +
+      "Do you still rent out camping gear? I'm planning to camp in Kota Kinabalu on 14–15 Dec, 4 pax. " +
+      "If possible, I'd need tent and stove.");
+  });
+  it("drops skipped parts cleanly", () => {
+    expect(buildEnquiryMessage("A", "Kota Kinabalu", {}, "en")).toBe(
+      "Hi A, I found your business on Pacak Khemah (pacakkhemah.com). " +
+      "Do you still rent out camping gear? I'm planning to camp in Kota Kinabalu.");
+    expect(buildEnquiryMessage("A", "KK", { pax: 2 }, "en")).toContain("camp in KK, 2 pax.");
+    expect(buildEnquiryMessage("A", "KK", { items: ["beg tidur"] }, "en")).toContain("I'd need sleeping bag.");
+  });
+  it("never uses a religious greeting", () => {
+    for (const l of ["my", "en"] as const) {
+      expect(buildEnquiryMessage("A", "B", {}, l)).not.toMatch(/salam/i);
+    }
   });
 });
 
@@ -84,7 +107,8 @@ describe("statsFor + outreach", () => {
     expect(s.topMonths).toEqual(["Dis"]);
     expect(s.topItems[0]).toBe("khemah");
     const msg = buildOutreachMessage({ name: "Camptastic", district: "Port Dickson", state: "Negeri Sembilan" }, s, "https://x/y");
-    expect(msg).toContain("3 customer hubungi bos");
+    expect(msg).toContain("3 customer hubungi anda");
+    expect(msg.startsWith("Hi Camptastic")).toBe(true);
     expect(msg).toContain("total 10 orang");
     expect(msg).toContain("(kebanyakan Dis)");
     expect(msg).toContain("https://x/y");

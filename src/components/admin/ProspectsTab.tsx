@@ -225,7 +225,7 @@ export default function ProspectsTab({ allVendors }: { allVendors: AdminVendor[]
                       <div key={w.id} className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2">
                         <span className="text-[11px] font-bold text-slate-600 flex-1">+{w.phone} <span className="text-slate-400 font-medium">· searched “{w.searched}”</span></span>
                         <a target="_blank" rel="noreferrer"
-                          href={waLink(w.phone, `Salam dari Pacak Khemah. Anda minta kami beritahu bila ada vendor sewaan camping di ${a.district || w.searched}. Kini dah ada, boleh semak di pacakkhemah.com/directory`)}
+                          href={waLink(w.phone, `Hi dari Pacak Khemah. Anda minta kami beritahu bila ada vendor sewaan camping di ${a.district || w.searched}. Kini dah ada, boleh semak di pacakkhemah.com/directory`)}
                           className="text-[10px] font-black text-emerald-600 uppercase"><i className="fab fa-whatsapp mr-1"></i>Notify</a>
                         <button onClick={() => removeWaitlist(w)} className="text-[10px] font-black text-slate-400 hover:text-red-500 uppercase ml-2">Done</button>
                       </div>

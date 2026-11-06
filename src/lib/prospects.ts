@@ -42,7 +42,7 @@ export type EnquiryDetails = {
 
 export const ENQUIRY_ITEMS = ["khemah", "flysheet", "kerusi", "meja", "dapur", "beg tidur", "lampu"] as const;
 
-/** UI language. The WhatsApp message to the vendor is always in BM. */
+/** UI language, also used for the enquiry message the customer chooses to send. */
 export type Lang = "en" | "my";
 export const tr = (lang: Lang) => (en: string, my: string) => (lang === "my" ? my : en);
 
@@ -58,6 +58,7 @@ export const ENQUIRY_ITEM_LABELS: Record<(typeof ENQUIRY_ITEMS)[number], { en: s
 };
 
 const BM_MONTHS = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
+const EN_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function parseYmd(s: string): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
@@ -66,37 +67,57 @@ function parseYmd(s: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-/** "14 Dis", "14–15 Dis", "30 Dis – 2 Jan" */
-export function formatDateRangeBM(pickup?: string | null, ret?: string | null): string {
+/** "14 Dis", "14–15 Dis", "30 Dis – 2 Jan" (or English month names) */
+export function formatDateRange(pickup?: string | null, ret?: string | null, lang: Lang = "my"): string {
+  const M = lang === "en" ? EN_MONTHS : BM_MONTHS;
   const a = pickup ? parseYmd(pickup) : null;
   const b = ret ? parseYmd(ret) : null;
   if (!a && !b) return "";
-  if (a && !b) return `${a.getDate()} ${BM_MONTHS[a.getMonth()]}`;
-  if (!a && b) return `${b.getDate()} ${BM_MONTHS[b.getMonth()]}`;
+  if (a && !b) return `${a.getDate()} ${M[a.getMonth()]}`;
+  if (!a && b) return `${b.getDate()} ${M[b.getMonth()]}`;
   const x = a!, y = b!;
-  if (x.getTime() === y.getTime()) return `${x.getDate()} ${BM_MONTHS[x.getMonth()]}`;
+  if (x.getTime() === y.getTime()) return `${x.getDate()} ${M[x.getMonth()]}`;
   if (x.getMonth() === y.getMonth() && x.getFullYear() === y.getFullYear()) {
-    return `${x.getDate()}–${y.getDate()} ${BM_MONTHS[x.getMonth()]}`;
+    return `${x.getDate()}–${y.getDate()} ${M[x.getMonth()]}`;
   }
-  return `${x.getDate()} ${BM_MONTHS[x.getMonth()]} – ${y.getDate()} ${BM_MONTHS[y.getMonth()]}`;
+  return `${x.getDate()} ${M[x.getMonth()]} – ${y.getDate()} ${M[y.getMonth()]}`;
 }
+export const formatDateRangeBM = (pickup?: string | null, ret?: string | null) => formatDateRange(pickup, ret, "my");
 
-/** ["khemah"] → "khemah"; ["a","b","c"] → "a, b dan c" */
-export function joinBM(items: string[]): string {
+/** ["a","b","c"] → "a, b dan c" (BM) or "a, b and c" (EN) */
+export function joinList(items: string[], lang: Lang = "my"): string {
   const list = items.filter(Boolean);
   if (list.length <= 1) return list[0] ?? "";
-  return `${list.slice(0, -1).join(", ")} dan ${list[list.length - 1]}`;
+  return `${list.slice(0, -1).join(", ")} ${lang === "en" ? "and" : "dan"} ${list[list.length - 1]}`;
 }
+export const joinBM = (items: string[]) => joinList(items, "my");
 
-/** Customer → prospect enquiry. Skipped fields drop out cleanly. */
-export function buildEnquiryMessage(vendorName: string, place: string, d: EnquiryDetails = {}): string {
+/**
+ * Customer → prospect enquiry, in BM or English. Opens with a neutral "Hi"
+ * so it suits any vendor. Skipped fields drop out cleanly.
+ */
+export function buildEnquiryMessage(vendorName: string, place: string, d: EnquiryDetails = {}, lang: Lang = "my"): string {
+  const name = vendorName.trim();
+  const dates = formatDateRange(d.pickupDate, d.returnDate, lang);
+  const items = (d.items || []).filter(Boolean);
+  if (lang === "en") {
+    let plan = `I'm planning to camp in ${place.trim()}`;
+    if (dates) plan += ` on ${dates}`;
+    if (d.pax && d.pax > 0) plan += `, ${d.pax} pax`;
+    let msg = `Hi ${name}, I found your business on Pacak Khemah (pacakkhemah.com). ` +
+      `Do you still rent out camping gear? ${plan}.`;
+    if (items.length) {
+      const labels = items.map(i => (ENQUIRY_ITEM_LABELS as Record<string, { en: string }>)[i]?.en.toLowerCase() ?? i);
+      msg += ` If possible, I'd need ${joinList(labels, "en")}.`;
+    }
+    return msg;
+  }
   const parts = [`Saya plan nak camping di ${place.trim()}`];
-  const dates = formatDateRangeBM(d.pickupDate, d.returnDate);
   if (dates) parts.push(dates);
   if (d.pax && d.pax > 0) parts.push(`${d.pax} orang`);
-  let msg = `Salam ${vendorName.trim()}, saya jumpa bisnes bos di Pacak Khemah (pacakkhemah.com). ` +
+  let msg = `Hi ${name}, saya jumpa bisnes anda di Pacak Khemah (pacakkhemah.com). ` +
     `Masih buat sewaan barang camping? ${parts.join(", ")}.`;
-  if (d.items && d.items.length) msg += ` Kalau boleh nak ${joinBM(d.items)}.`;
+  if (items.length) msg += ` Kalau boleh nak ${joinList(items, "my")}.`;
   return msg;
 }
 
@@ -150,15 +171,15 @@ export function buildOutreachMessage(p: Pick<Prospect, "name" | "district" | "st
   const area = p.district || p.state;
   let demand = "";
   if (s.clicks > 0) {
-    demand = `Setakat ni ada ${s.clicks} customer hubungi bos melalui Pacak Khemah`;
+    demand = `Setakat ni ada ${s.clicks} customer hubungi anda melalui Pacak Khemah`;
     if (s.pax > 0) demand += `, total ${s.pax} orang`;
     demand += `, nak camping di kawasan ${area}`;
     if (s.topMonths.length) demand += ` (kebanyakan ${joinBM(s.topMonths)})`;
     demand += ". ";
   }
-  return `Salam ${p.name.trim()}, saya dari Pacak Khemah (pacakkhemah.com), platform sewaan barang camping. ` +
+  return `Hi ${p.name.trim()}, saya dari Pacak Khemah (pacakkhemah.com), platform sewaan barang camping. ` +
     demand +
-    `Customer di ${area} sekarang tak boleh tempah terus sebab bisnes bos belum ada kedai di platform. ` +
+    `Customer di ${area} sekarang tak boleh tempah terus sebab bisnes anda belum ada kedai di platform. ` +
     `Daftar percuma di sini: ${signupUrl}`;
 }
 

@@ -9,6 +9,7 @@ import {
 } from "@/lib/prospects";
 
 const PREFS_KEY = "pk_enquiry_prefs";
+const MSG_LANG_KEY = "pk_enquiry_msg_lang";
 const CLICKS_KEY = "pk_prospect_clicks";
 const DEDUPE_MS = 24 * 60 * 60 * 1000;
 
@@ -88,11 +89,21 @@ export default function ProspectEnquirySheet({ prospect, place, searched, locati
     return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
   }, [onClose]);
 
+  // Language of the message sent to the vendor. Defaults to BM (most vendors);
+  // the customer's last choice is remembered for the next vendor.
+  const [msgLang, setMsgLang] = useState<Lang>(() => {
+    try { return localStorage.getItem(MSG_LANG_KEY) === "en" ? "en" : "my"; } catch { return "my"; }
+  });
+  function chooseMsgLang(l: Lang) {
+    setMsgLang(l);
+    try { localStorage.setItem(MSG_LANG_KEY, l); } catch { }
+  }
+
   const details: EnquiryDetails = { pickupDate, returnDate, pax, items };
-  const message = useMemo(() => buildEnquiryMessage(prospect.name, place, details),
+  const message = useMemo(() => buildEnquiryMessage(prospect.name, place, details, msgLang),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [prospect.name, place, pickupDate, returnDate, pax, items]);
-  const plainMessage = useMemo(() => buildEnquiryMessage(prospect.name, place), [prospect.name, place]);
+    [prospect.name, place, pickupDate, returnDate, pax, items, msgLang]);
+  const plainMessage = useMemo(() => buildEnquiryMessage(prospect.name, place, {}, msgLang), [prospect.name, place, msgLang]);
 
   function onPickup(v: string) {
     setPickupDate(v);
@@ -175,7 +186,19 @@ export default function ProspectEnquirySheet({ prospect, place, searched, locati
           </div>
 
           <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3">
-            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{t("Message to vendor", "Mesej")}</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{t("Message to vendor", "Mesej kepada vendor")}</p>
+              <div className="flex bg-white border border-slate-200 rounded-lg p-0.5" role="group" aria-label={t("Message language", "Bahasa mesej")}>
+                {([["my", "BM"], ["en", "EN"]] as const).map(([l, label]) => (
+                  <button key={l} onClick={() => chooseMsgLang(l)} aria-pressed={msgLang === l}
+                    className={`px-2.5 py-1 rounded-md text-[9px] font-black transition-colors ${
+                      msgLang === l ? "bg-[#062c24] text-white" : "text-slate-400 hover:text-slate-600"
+                    }`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <p className="text-[11px] text-slate-600 leading-relaxed">{message}</p>
           </div>
 
