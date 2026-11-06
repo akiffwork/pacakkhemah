@@ -42,6 +42,21 @@ export type EnquiryDetails = {
 
 export const ENQUIRY_ITEMS = ["khemah", "flysheet", "kerusi", "meja", "dapur", "beg tidur", "lampu"] as const;
 
+/** UI language. The WhatsApp message to the vendor is always in BM. */
+export type Lang = "en" | "my";
+export const tr = (lang: Lang) => (en: string, my: string) => (lang === "my" ? my : en);
+
+/** Chip labels shown to the customer; the message itself keeps the BM value. */
+export const ENQUIRY_ITEM_LABELS: Record<(typeof ENQUIRY_ITEMS)[number], { en: string; my: string }> = {
+  "khemah": { en: "Tent", my: "Khemah" },
+  "flysheet": { en: "Flysheet", my: "Flysheet" },
+  "kerusi": { en: "Chairs", my: "Kerusi" },
+  "meja": { en: "Table", my: "Meja" },
+  "dapur": { en: "Stove", my: "Dapur" },
+  "beg tidur": { en: "Sleeping bag", my: "Beg tidur" },
+  "lampu": { en: "Lamp", my: "Lampu" },
+};
+
 const BM_MONTHS = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
 
 function parseYmd(s: string): Date | null {

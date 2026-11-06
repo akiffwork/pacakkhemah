@@ -641,21 +641,21 @@ export default function DirectoryPage() {
                       <i className="fas fa-map-marked-alt"></i>
                     </div>
                     <h3 className="text-lg font-black text-[#062c24] mb-2">
-                      Belum ada vendor berdaftar di {emptyPlace}
+                      No registered vendors in {emptyPlace} yet
                     </h3>
                     <p className="text-sm text-slate-500 mb-6 leading-relaxed">
                       {nearbyVendors.length
-                        ? `Cuba vendor berdekatan di ${emptyLoc?.state}, atau tanya vendor tempatan di bawah.`
-                        : "Tanya vendor tempatan di bawah, atau minta kami beritahu bila ada vendor."}
+                        ? `Try a nearby vendor in ${emptyLoc?.state}, or ask a local business below.`
+                        : "Ask a local business below, or let us notify you when a vendor joins."}
                     </p>
 
                     {/* Registered vendors in the same state */}
                     {nearbyVendors.length > 0 && (
                       <div className="text-left mb-6">
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
-                          Vendor Pacak Khemah di {emptyLoc?.state}
+                          Pacak Khemah vendors in {emptyLoc?.state}
                         </p>
-                        <p className="text-[11px] text-slate-500 mb-3">Tanya vendor jika boleh hantar atau ambil di {emptyPlace}.</p>
+                        <p className="text-[11px] text-slate-500 mb-3">Ask if they can deliver to or arrange pickup in {emptyPlace}.</p>
                         <div className="grid grid-cols-1 gap-4">
                           {nearbyVendors.slice(0, 4).map((vendor, i) => (
                             <VendorCard key={vendor.id} vendor={vendor} gear={vendorGear[vendor.id] || []} index={i} />
@@ -665,7 +665,7 @@ export default function DirectoryPage() {
                     )}
 
                     {/* Unregistered prospects + waitlist */}
-                    <ProspectSection key={customLocation} searched={customLocation} place={emptyPlace} location={emptyLoc} />
+                    <ProspectSection key={customLocation} searched={customLocation} place={emptyPlace} location={emptyLoc} lang="en" />
 
                     {/* CTA Cards */}
                     <div className="space-y-3 text-left mt-3">
