@@ -108,6 +108,19 @@ function containsWord(haystack: string, needle: string): boolean {
   return ` ${haystack} `.includes(` ${needle} `);
 }
 
+// Regions that span more than one state. A vendor listed as "Klang Valley"
+// covers all of Selangor and KL, so it resolves to both, state-wide.
+const REGIONS: { keys: string[]; states: string[] }[] = [
+  { keys: ["klang valley", "lembah klang", "greater kl"], states: ["Selangor", "Kuala Lumpur"] },
+];
+
+function regionStates(q: string): string[] | null {
+  for (const r of REGIONS) {
+    if (r.keys.some(k => q === k || containsWord(q, k))) return r.states;
+  }
+  return null;
+}
+
 /**
  * Map free text to a state and (if possible) district.
  * Exact match first, then whole-word containment ("camping port dickson"),
@@ -118,6 +131,9 @@ export function resolveLocation(text: string | undefined | null): ResolvedLocati
   if (!text) return null;
   const q = normalizeLocation(text);
   if (!q) return null;
+
+  const region = regionStates(q);
+  if (region) return { state: region[0] };
 
   const exact = ENTRIES.find(e => e.key === q);
   if (exact) return { state: exact.state, district: exact.district };
@@ -132,12 +148,32 @@ export function resolveLocation(text: string | undefined | null): ResolvedLocati
   return null;
 }
 
-/** Resolve the first of several free-text fields that maps to a known place. */
+/** All places a free-text field covers (a region like "Klang Valley" gives several states). */
+export function resolvePlaces(text: string | undefined | null): ResolvedLocation[] {
+  if (!text) return [];
+  const region = regionStates(normalizeLocation(text));
+  if (region) return region.map(state => ({ state }));
+  const r = resolveLocation(text);
+  return r ? [r] : [];
+}
+
+/** Every known place covered by several free-text fields, de-duplicated. */
 export function resolveAny(texts: (string | undefined | null)[]): ResolvedLocation[] {
   const out: ResolvedLocation[] = [];
   for (const t of texts) {
-    const r = resolveLocation(t);
-    if (r && !out.some(o => o.state === r.state && o.district === r.district)) out.push(r);
+    for (const r of resolvePlaces(t)) {
+      if (!out.some(o => o.state === r.state && o.district === r.district)) out.push(r);
+    }
   }
   return out;
+}
+
+/**
+ * Does a vendor place cover the searched place? A state-wide vendor place
+ * covers every district in that state; a district place covers that
+ * district and a state-level search.
+ */
+export function covers(vendorPlace: ResolvedLocation, searched: ResolvedLocation): boolean {
+  if (vendorPlace.state !== searched.state) return false;
+  return !searched.district || !vendorPlace.district || vendorPlace.district === searched.district;
 }

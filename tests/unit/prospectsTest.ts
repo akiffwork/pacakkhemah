@@ -2,7 +2,7 @@ import {
   buildEnquiryMessage, buildOutreachMessage, formatDateRangeBM, joinBM,
   normalizeMyPhone, statsFor, waLink,
 } from "@/lib/prospects";
-import { resolveLocation } from "@/lib/malaysiaLocations";
+import { resolveLocation, resolveAny, covers } from "@/lib/malaysiaLocations";
 
 describe("formatDateRangeBM", () => {
   it("formats single, same-month and cross-month ranges", () => {
@@ -92,5 +92,32 @@ describe("statsFor + outreach", () => {
   it("omits demand line when there are no clicks", () => {
     const msg = buildOutreachMessage({ name: "A", state: "Perlis" }, statsFor([]), "u");
     expect(msg).not.toContain("customer hubungi");
+  });
+});
+
+describe("vendor coverage", () => {
+  const vendors = [
+    { id: "rare", city: "Klang Valley" },
+    { id: "kt", city: "Kuantan" },
+    { id: "sa", city: "Shah Alam" },
+  ];
+  const inArea = (q: string) => {
+    const loc = resolveLocation(q);
+    return loc ? vendors.filter(v => resolveAny([v.city]).some(r => covers(r, loc))).map(v => v.id) : [];
+  };
+  it.each([
+    ["selangor", ["rare", "sa"]],
+    ["shah alam", ["rare", "sa"]],
+    ["kl", ["rare"]],
+    ["klang", ["rare"]],
+    ["pahang", ["kt"]],
+    ["cherating", ["kt"]],
+    ["port dickson", []],
+  ])("%s → %j", (q, ids) => {
+    expect(inArea(q)).toEqual(ids);
+  });
+  it("Klang Valley is a region, not Klang town", () => {
+    expect(resolveLocation("Klang Valley")).toEqual({ state: "Selangor" });
+    expect(resolveAny(["Klang Valley"])).toEqual([{ state: "Selangor" }, { state: "Kuala Lumpur" }]);
   });
 });

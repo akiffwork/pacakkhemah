@@ -9,17 +9,30 @@ import {
 import BottomNav from "@/components/BottomNav";
 import AdBanner from "@/components/AdBanner";
 import ProspectSection from "@/components/ProspectSection";
-import { resolveLocation, resolveAny, ResolvedLocation } from "@/lib/malaysiaLocations";
+import { resolveLocation, resolveAny, covers, ResolvedLocation } from "@/lib/malaysiaLocations";
 
 function titleCase(s: string): string {
   return s.trim().replace(/\s+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
+function vendorPlaces(v: Vendor): ResolvedLocation[] {
+  return resolveAny([v.city, ...(v.areas || []), ...(v.pickup || [])]);
+}
+
 /** Registered vendors whose city / areas / pickup points are in the same state. */
 function vendorsNear(vendors: Vendor[], loc: ResolvedLocation | null): Vendor[] {
   if (!loc) return [];
-  return vendors.filter(v =>
-    resolveAny([v.city, ...(v.areas || []), ...(v.pickup || [])]).some(r => r.state === loc.state));
+  return vendors.filter(v => vendorPlaces(v).some(r => r.state === loc.state));
+}
+
+/**
+ * Vendors that count as "in" the searched place: same district when the
+ * search names a district ("port dickson"), same state when it names a
+ * state ("selangor" matches a vendor listed as "Klang Valley").
+ */
+function vendorsIn(vendors: Vendor[], loc: ResolvedLocation | null): Vendor[] {
+  if (!loc) return [];
+  return vendors.filter(v => vendorPlaces(v).some(r => covers(r, loc)));
 }
 
 // --- TYPES ---
@@ -390,6 +403,33 @@ export default function DirectoryPage() {
     loadGearForVendors(filtered);
   }
 
+  /** Text search: listed location first, then state/district lookup, else empty-area screen. */
+  function searchLocation(text: string) {
+    const q = text.trim();
+    if (!q) return;
+    const lower = q.toLowerCase();
+    const listed = locations.find(l => l.toLowerCase() === lower)
+      || locations.find(l => l.toLowerCase().includes(lower));
+    if (listed) {
+      filterBy(listed);
+      setLocationSearch(listed);
+      setCustomLocation("");
+      return;
+    }
+    const inArea = vendorsIn(allVendors, resolveLocation(q));
+    if (inArea.length) {
+      setActiveFilter(q);
+      setSearchTerm("");
+      setCustomLocation("");
+      setFilteredVendors(inArea);
+      setVisibleCount(LOAD_STEP);
+      loadGearForVendors(inArea);
+      return;
+    }
+    setCustomLocation(q);
+    setFilteredVendors([]);
+  }
+
   // Empty-area search: resolve the text to a state/district, then surface
   // registered vendors in the same state and unregistered prospects.
   const emptyLoc = customLocation ? resolveLocation(customLocation) : null;
@@ -514,20 +554,7 @@ export default function DirectoryPage() {
               onKeyDown={e => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  const exactMatch = locations.find(l => l.toLowerCase() === locationSearch.toLowerCase());
-                  if (exactMatch) {
-                    filterBy(exactMatch);
-                    setLocationSearch(exactMatch);
-                  } else if (locationSearch) {
-                    const partialMatch = locations.find(l => l.toLowerCase().includes(locationSearch.toLowerCase()));
-                    if (partialMatch) {
-                      filterBy(partialMatch);
-                      setLocationSearch(partialMatch);
-                    } else {
-                      setCustomLocation(locationSearch);
-                      setFilteredVendors([]);
-                    }
-                  }
+                  searchLocation(locationSearch);
                   setShowLocDropdown(false);
                   (e.target as HTMLInputElement).blur();
                 }
@@ -545,20 +572,7 @@ export default function DirectoryPage() {
               {locationSearch ? (
                 <button 
                   onClick={() => {
-                    const exactMatch = locations.find(l => l.toLowerCase() === locationSearch.toLowerCase());
-                    if (exactMatch) {
-                      filterBy(exactMatch);
-                      setLocationSearch(exactMatch);
-                    } else {
-                      const partialMatch = locations.find(l => l.toLowerCase().includes(locationSearch.toLowerCase()));
-                      if (partialMatch) {
-                        filterBy(partialMatch);
-                        setLocationSearch(partialMatch);
-                      } else {
-                        setCustomLocation(locationSearch);
-                        setFilteredVendors([]);
-                      }
-                    }
+                    searchLocation(locationSearch);
                     setShowLocDropdown(false);
                   }}
                   className="w-8 h-8 flex items-center justify-center bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors shadow-sm">
@@ -588,7 +602,7 @@ export default function DirectoryPage() {
                   ))
                 }
                 {locationSearch && !locations.some(l => l.toLowerCase().includes(locationSearch.toLowerCase())) && (
-                  <button onClick={() => { setCustomLocation(locationSearch); setFilteredVendors([]); setShowLocDropdown(false); }}
+                  <button onClick={() => { searchLocation(locationSearch); setShowLocDropdown(false); }}
                     className="w-full text-left px-4 py-3 text-sm font-bold text-slate-400 hover:bg-slate-50">
                     <i className="fas fa-search text-slate-300 mr-2 text-xs"></i> Search "{locationSearch}"
                   </button>
