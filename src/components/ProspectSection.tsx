@@ -37,9 +37,22 @@ function matchProspects(all: Prospect[], loc: ResolvedLocation | null, searched:
   return { list: textOnly, scope: "district" as const };
 }
 
-type Props = { searched: string; place: string; location: ResolvedLocation | null; lang: Lang };
+type Props = {
+  searched: string;
+  place: string;
+  location: ResolvedLocation | null;
+  lang: Lang;
+  /**
+   * "empty": no registered vendor here, show prospects + waitlist.
+   * "more": registered vendors were found; show prospects below them as
+   * extra options, or nothing if there are none.
+   */
+  variant?: "empty" | "more";
+  /** Phones of registered vendors, so a business already on the platform isn't listed twice. */
+  excludePhones?: string[];
+};
 
-export default function ProspectSection({ searched, place, location, lang }: Props) {
+export default function ProspectSection({ searched, place, location, lang, variant = "empty", excludePhones = [] }: Props) {
   const t = tr(lang);
   const [prospects, setProspects] = useState<Prospect[] | null>(null);
   const [active, setActive] = useState<Prospect | null>(null);
@@ -83,7 +96,12 @@ export default function ProspectSection({ searched, place, location, lang }: Pro
     }
   }
 
-  const { list, scope } = prospects ? matchProspects(prospects, location, searched) : { list: [], scope: "district" as const };
+  const registered = new Set(excludePhones.map(normalizeMyPhone).filter(Boolean));
+  const { list, scope } = prospects
+    ? matchProspects(prospects.filter(p => !registered.has(normalizeMyPhone(p.phone))), location, searched)
+    : { list: [], scope: "district" as const };
+  const isMore = variant === "more";
+  if (isMore && list.length === 0) return null;
 
   return (
     <div className="space-y-3 text-left">
@@ -92,13 +110,34 @@ export default function ProspectSection({ searched, place, location, lang }: Pro
       ) : list.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="px-4 pt-4 pb-3 border-b border-slate-100">
-            <p className="text-sm font-black text-[#062c24]">
-              {t("Possible vendors in", "Vendor yang mungkin ada di")} {scope === "state" && location ? location.state : place}
-            </p>
-            <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-              {t("Not registered on Pacak Khemah yet. Contact them on WhatsApp to ask about availability.",
-                 "Belum berdaftar dengan Pacak Khemah. Hubungi terus melalui WhatsApp untuk tanya ketersediaan.")}
-            </p>
+            {isMore ? (
+              <>
+                <p className="text-sm font-black text-[#062c24]">
+                  {t("Not what you're looking for?", "Tak jumpa apa yang dicari?")}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                  {t(`Here are some other vendors in ${scope === "state" && location ? location.state : place} that might help.`,
+                     `Ini beberapa vendor lain di ${scope === "state" && location ? location.state : place} yang mungkin boleh bantu.`)}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-black text-[#062c24]">
+                  {t("Possible vendors in", "Vendor yang mungkin ada di")} {scope === "state" && location ? location.state : place}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                  {t("Not registered on Pacak Khemah yet. Contact them on WhatsApp to ask about availability.",
+                     "Belum berdaftar dengan Pacak Khemah. Hubungi terus melalui WhatsApp untuk tanya ketersediaan.")}
+                </p>
+              </>
+            )}
+            <div className="mt-3 flex gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5">
+              <i className="fas fa-info-circle text-amber-500 text-xs mt-0.5"></i>
+              <p className="text-[10px] text-amber-800 leading-relaxed">
+                {t("Pacak Khemah does not verify these businesses. We list them only as options we found. Any booking, payment or agreement is your own choice and is made directly with the vendor.",
+                   "Pacak Khemah tidak mengesahkan bisnes ini. Kami senaraikan sebagai pilihan yang kami jumpa sahaja. Sebarang tempahan, bayaran atau perjanjian adalah pilihan anda sendiri dan dibuat terus dengan vendor.")}
+              </p>
+            </div>
           </div>
           <ul className="divide-y divide-slate-100">
             {list.slice(0, 8).map(p => (
@@ -132,8 +171,8 @@ export default function ProspectSection({ searched, place, location, lang }: Pro
         </div>
       )}
 
-      {/* Waitlist */}
-      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-4">
+      {/* Waitlist (only when there's no registered vendor here) */}
+      {!isMore && <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-4">
         {waitState === "done" ? (
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center shrink-0">
@@ -157,7 +196,7 @@ export default function ProspectSection({ searched, place, location, lang }: Pro
             {waitState === "error" && <p className="text-[10px] text-red-500 font-bold mt-2">{t("Please enter a valid Malaysian phone number.", "Sila masukkan nombor telefon Malaysia yang sah.")}</p>}
           </>
         )}
-      </div>
+      </div>}
 
       {active && (
         <ProspectEnquirySheet prospect={active} place={place} searched={searched} location={location} lang={lang}

@@ -40,7 +40,7 @@ type Badge = "verified" | "id_verified" | "top_rated" | "fast_responder" | "prem
 type Vendor = {
   id: string; name: string; logo?: string; image?: string;
   city?: string; areas?: string[]; pickup?: string[];
-  tagline?: string; slug?: string; credits?: number;
+  tagline?: string; slug?: string; credits?: number; phone?: string;
   createdAt?: any; is_vacation?: boolean; status?: string;
   rating?: number; reviewCount?: number;
   // NEW: Badge & Mockup fields
@@ -441,6 +441,11 @@ export default function DirectoryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nearbyKey]);
 
+  // Location search with results: also offer unregistered prospects below.
+  const resultsLoc = !customLocation && activeFilter !== "all" ? resolveLocation(activeFilter) : null;
+  const resultsPlace = resultsLoc ? (resultsLoc.district || resultsLoc.state) : titleCase(activeFilter);
+  const registeredPhones = allVendors.map(v => v.phone || "").filter(Boolean);
+
   const displayList = filteredVendors.slice(0, visibleCount);
   const annTheme = announcement ? announcementThemes[announcement.type] || announcementThemes.info : null;
 
@@ -679,7 +684,7 @@ export default function DirectoryPage() {
                     )}
 
                     {/* Unregistered prospects + waitlist */}
-                    <ProspectSection key={customLocation} searched={customLocation} place={emptyPlace} location={emptyLoc} lang="en" />
+                    <ProspectSection key={customLocation} searched={customLocation} place={emptyPlace} location={emptyLoc} lang="en" excludePhones={registeredPhones} />
 
                     {/* CTA Cards */}
                     <div className="space-y-3 text-left mt-3">
@@ -756,6 +761,14 @@ export default function DirectoryPage() {
                 className="bg-white border border-slate-200 text-slate-500 font-bold uppercase text-[10px] px-8 py-3 rounded-xl hover:bg-slate-50 hover:text-[#062c24] shadow-sm">
                 Load More <i className="fas fa-chevron-down ml-2"></i>
               </button>
+            </div>
+          )}
+
+          {/* Other options under the results for the searched area */}
+          {!loading && !customLocation && activeFilter !== "all" && filteredVendors.length > 0 && (
+            <div className="mt-8">
+              <ProspectSection key={`more-${activeFilter}`} variant="more" searched={activeFilter} place={resultsPlace}
+                location={resultsLoc} lang="en" excludePhones={registeredPhones} />
             </div>
           )}
         </section>
