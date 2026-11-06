@@ -12,14 +12,16 @@ import FinanceTab from "@/components/admin/FinanceTab";
 import ContentTab from "@/components/admin/ContentTab";
 import AdminSettingsTab from "@/components/admin/SettingsTab";
 import CampsitesTab from "@/components/admin/CampsitesTab";
+import ProspectsTab from "@/components/admin/ProspectsTab";
 
 const ADMIN_EMAIL = "akiff.work@gmail.com";
-type View = "dashboard" | "vendors" | "orders" | "finance" | "content" | "campsites" | "settings"; // Added "orders"
+type View = "dashboard" | "vendors" | "prospects" | "orders" | "finance" | "content" | "campsites" | "settings"; // Added "orders"
 
 const PAGE_TITLES: Record<View, string> = {
   dashboard: "Overview", 
   finance: "Financials", 
   vendors: "Vendor Management",
+  prospects: "Prospect Vendors",
   orders: "Platform Orders", // Added orders title
   campsites: "Campsite Directory",
   content: "Content Manager", 
@@ -33,6 +35,7 @@ const NAV_ITEMS: { id: View; label: string; icon: string; category: typeof NAV_C
   { id: "finance", label: "Finance", icon: "fa-wallet", category: "Insights" },
   
   { id: "vendors", label: "Vendors", icon: "fa-store", category: "Operations" },
+  { id: "prospects", label: "Prospects", icon: "fa-bullhorn", category: "Operations" },
   { id: "orders", label: "Orders", icon: "fa-receipt", category: "Operations" }, // Added orders tab
   
   { id: "campsites", label: "Campsites", icon: "fa-campground", category: "Platform" },
@@ -193,6 +196,7 @@ function AdminShell({ user, allVendors }: { user: User; allVendors: any[] }) {
           {activeView === "dashboard" && <DashboardTab allVendors={allVendors} onNavigate={setActiveView} />}
           {activeView === "finance" && <FinanceTab />}
           {activeView === "vendors" && <VendorsTab allVendors={allVendors} />}
+          {activeView === "prospects" && <ProspectsTab allVendors={allVendors} />}
           {activeView === "orders" && <OrdersTab />} {/* Added Orders tab render */}
           {activeView === "campsites" && <CampsitesTab />}
           {activeView === "content" && <ContentTab />}

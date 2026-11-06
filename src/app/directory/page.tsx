@@ -8,6 +8,19 @@ import {
 } from "firebase/firestore";
 import BottomNav from "@/components/BottomNav";
 import AdBanner from "@/components/AdBanner";
+import ProspectSection from "@/components/ProspectSection";
+import { resolveLocation, resolveAny, ResolvedLocation } from "@/lib/malaysiaLocations";
+
+function titleCase(s: string): string {
+  return s.trim().replace(/\s+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/** Registered vendors whose city / areas / pickup points are in the same state. */
+function vendorsNear(vendors: Vendor[], loc: ResolvedLocation | null): Vendor[] {
+  if (!loc) return [];
+  return vendors.filter(v =>
+    resolveAny([v.city, ...(v.areas || []), ...(v.pickup || [])]).some(r => r.state === loc.state));
+}
 
 // --- TYPES ---
 type Badge = "verified" | "id_verified" | "top_rated" | "fast_responder" | "premium";
@@ -377,6 +390,17 @@ export default function DirectoryPage() {
     loadGearForVendors(filtered);
   }
 
+  // Empty-area search: resolve the text to a state/district, then surface
+  // registered vendors in the same state and unregistered prospects.
+  const emptyLoc = customLocation ? resolveLocation(customLocation) : null;
+  const emptyPlace = customLocation ? (emptyLoc?.district || titleCase(customLocation)) : "";
+  const nearbyVendors = customLocation ? vendorsNear(allVendors, emptyLoc) : [];
+  const nearbyKey = nearbyVendors.map(v => v.id).join(",");
+  useEffect(() => {
+    if (nearbyVendors.length) loadGearForVendors(nearbyVendors);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nearbyKey]);
+
   const displayList = filteredVendors.slice(0, visibleCount);
   const annTheme = announcement ? announcementThemes[announcement.type] || announcementThemes.info : null;
 
@@ -613,23 +637,38 @@ export default function DirectoryPage() {
               <div className="col-span-full text-center py-12">
                 {customLocation ? (
                   <div className="max-w-md mx-auto">
-                    {/* Fun illustration */}
-                    <div className="relative inline-block mb-6">
-                      <div className="text-6xl animate-bounce">🏕️</div>
-                      <div className="absolute -right-2 -top-2 text-2xl animate-pulse">🔍</div>
+                    <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4 text-xl">
+                      <i className="fas fa-map-marked-alt"></i>
                     </div>
-                    
                     <h3 className="text-lg font-black text-[#062c24] mb-2">
-                      Oops! No vendors in {customLocation}... yet! 😅
+                      Belum ada vendor berdaftar di {emptyPlace}
                     </h3>
-                    
                     <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-                      We&apos;re on a mission to bring camping gear rentals everywhere! 
-                      Our scouts are actively searching this area. 🕵️‍♂️
+                      {nearbyVendors.length
+                        ? `Cuba vendor berdekatan di ${emptyLoc?.state}, atau tanya vendor tempatan di bawah.`
+                        : "Tanya vendor tempatan di bawah, atau minta kami beritahu bila ada vendor."}
                     </p>
 
+                    {/* Registered vendors in the same state */}
+                    {nearbyVendors.length > 0 && (
+                      <div className="text-left mb-6">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                          Vendor Pacak Khemah di {emptyLoc?.state}
+                        </p>
+                        <p className="text-[11px] text-slate-500 mb-3">Tanya vendor jika boleh hantar atau ambil di {emptyPlace}.</p>
+                        <div className="grid grid-cols-1 gap-4">
+                          {nearbyVendors.slice(0, 4).map((vendor, i) => (
+                            <VendorCard key={vendor.id} vendor={vendor} gear={vendorGear[vendor.id] || []} index={i} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Unregistered prospects + waitlist */}
+                    <ProspectSection key={customLocation} searched={customLocation} place={emptyPlace} location={emptyLoc} />
+
                     {/* CTA Cards */}
-                    <div className="space-y-3 text-left">
+                    <div className="space-y-3 text-left mt-3">
                       {/* Know a vendor? */}
                       <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-4">
                         <div className="flex items-start gap-3">
