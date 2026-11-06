@@ -44,6 +44,8 @@ export default function RegisterVendorPage() {
 function RegisterContent() {
   const searchParams = useSearchParams();
   const refCode = searchParams.get("ref") || "";
+  const prospectId = (searchParams.get("prospect") || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
+  const [prospect, setProspect] = useState<{ name: string; phone: string; city: string } | null>(null);
 
   const [lang, setLang] = useState<Lang>("my");
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -67,9 +69,18 @@ function RegisterContent() {
     getDoc(doc(db, "settings", "payment_config")).then(snap => {
       if (snap.exists()) setStartingCredits(snap.data().startingCredits || 10);
     });
+    if (prospectId) {
+      getDoc(doc(db, "prospects", prospectId)).then(snap => {
+        if (!snap.exists()) return;
+        const p = snap.data();
+        setProspect({ name: p.name || "", phone: p.phone || "", city: p.district || p.state || "" });
+        setPhone(prev => prev || p.phone || "");
+      }).catch(() => {});
+    }
     getCountFromServer(query(collection(db, "vendors"), where("status", "==", "approved")))
       .then(snap => setVendorCount(snap.data().count))
       .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -85,7 +96,7 @@ function RegisterContent() {
   async function createVendorShell(user: User, whatsappPhone?: string) {
     const vendorData: Record<string, any> = {
       owner_uid: user.uid,
-      name: user.displayName || "New Vendor",
+      name: prospect?.name || user.displayName || "New Vendor",
       email: user.email,
       phone: whatsappPhone || user.phoneNumber || "",
       image: user.photoURL || "",
@@ -95,6 +106,11 @@ function RegisterContent() {
       setup_complete: false,
       security_deposit: 50,
     };
+    // Tag vendors who came from a prospect outreach link
+    if (prospect && prospectId) {
+      vendorData.prospect_id = prospectId;
+      if (prospect.city) vendorData.city = prospect.city;
+    }
     // Save referral code if present
     if (refCode.trim()) {
       vendorData.referredBy = refCode.trim().toUpperCase();
@@ -116,7 +132,7 @@ function RegisterContent() {
       fetch("/api/notify-telegram", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vendorName: cred.user.displayName || "New Vendor", email: cred.user.email, phone: cleanPhone, method: "Email", referralCode: refCode || null }),
+        body: JSON.stringify({ vendorName: prospect ? `${prospect.name} (from prospect outreach)` : (cred.user.displayName || "New Vendor"), email: cred.user.email, phone: cleanPhone, method: "Email", referralCode: refCode || null }),
       }).catch(() => {});
       setDisplayEmail(email);
       setSuccess(true);
@@ -138,7 +154,7 @@ function RegisterContent() {
         fetch("/api/notify-telegram", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ vendorName: user.displayName || "New Vendor", email: user.email, phone: cleanPhone, method: "Google", referralCode: refCode || null }),
+          body: JSON.stringify({ vendorName: prospect ? `${prospect.name} (from prospect outreach)` : (user.displayName || "New Vendor"), email: user.email, phone: cleanPhone, method: "Google", referralCode: refCode || null }),
         }).catch(() => {});
         alert(tx("Account created! Please wait for admin approval.", "Akaun berjaya dicipta! Sila tunggu kelulusan admin."));
       }
@@ -447,6 +463,17 @@ function RegisterContent() {
                 </div>
                 <h2 className="text-2xl font-black text-[#062c24] uppercase mb-2">{tx("Register Now", "Daftar Sekarang")}</h2>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{tx("Free. Always free.", "Percuma. Sentiasa percuma.")}</p>
+                {prospect && (
+                  <div className="mt-3 bg-emerald-50 border border-emerald-200 px-4 py-3 rounded-2xl text-left">
+                    <p className="text-[10px] font-black text-emerald-700 uppercase">
+                      <i className="fas fa-store mr-1"></i>{tx("Setting up shop for", "Sediakan kedai untuk")} {prospect.name}
+                    </p>
+                    <p className="text-[10px] text-emerald-700 mt-1">
+                      {tx("Customers in your area are already looking for you. Register to receive bookings directly.",
+                          "Customer di kawasan bos dah cari bisnes bos. Daftar untuk terima tempahan terus.")}
+                    </p>
+                  </div>
+                )}
                 {refCode && (
                   <div className="mt-3 inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-4 py-2 rounded-full">
                     <i className="fas fa-gift text-emerald-500 text-xs"></i>

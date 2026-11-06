@@ -179,5 +179,47 @@ service cloud.firestore {
       allow update: if true;
       allow read, delete: if isAdmin();
     }
+
+    // --- 15. PROSPECT VENDORS (not yet registered) ---
+    // Public read so the directory can list them in empty areas. Keep only
+    // public business info here (name, public business number, area).
+    match /prospects/{prospectId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // --- 16. PROSPECT CLICKS (customer enquiries sent to prospects) ---
+    // Anonymous create with a strict shape; only admin can read.
+    match /prospect_clicks/{clickId} {
+      allow create: if request.resource.data.keys().hasOnly(
+                         ['prospectId', 'searched', 'state', 'district', 'pickupDate',
+                          'returnDate', 'pax', 'items', 'createdAt']) &&
+                       request.resource.data.prospectId is string &&
+                       request.resource.data.prospectId.size() < 64 &&
+                       exists(/databases/$(database)/documents/prospects/$(request.resource.data.prospectId)) &&
+                       request.resource.data.searched is string &&
+                       request.resource.data.searched.size() <= 80 &&
+                       (!('pax' in request.resource.data) || request.resource.data.pax == null ||
+                        (request.resource.data.pax is int && request.resource.data.pax >= 1 && request.resource.data.pax <= 100)) &&
+                       (!('items' in request.resource.data) ||
+                        (request.resource.data.items is list && request.resource.data.items.size() <= 10)) &&
+                       request.resource.data.createdAt == request.time;
+      allow read, delete: if isAdmin();
+      allow update: if false;
+    }
+
+    // --- 17. AREA WAITLIST (customers waiting for a vendor in their area) ---
+    // Holds customer phone numbers, so read is admin-only.
+    match /area_waitlist/{entryId} {
+      allow create: if request.resource.data.keys().hasOnly(
+                         ['phone', 'searched', 'state', 'district', 'createdAt']) &&
+                       request.resource.data.phone is string &&
+                       request.resource.data.phone.matches('^60[0-9]{8,11}$') &&
+                       request.resource.data.searched is string &&
+                       request.resource.data.searched.size() <= 80 &&
+                       request.resource.data.createdAt == request.time;
+      allow read, delete: if isAdmin();
+      allow update: if false;
+    }
   }
 }
