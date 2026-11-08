@@ -277,6 +277,9 @@ function ShopPageContent({
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<TimeSlot | null>(null);
   const [useCombo, setUseCombo] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  // Trip details collected before the WhatsApp order
+  const [paxCount, setPaxCount] = useState<number | null>(null);
+  const [campingLocation, setCampingLocation] = useState("");
   const cartBodyRef = useRef<HTMLDivElement>(null);
   const [cartAtBottom, setCartAtBottom] = useState(false);
   const gearBottomRef = useRef<HTMLDivElement>(null);
@@ -1152,6 +1155,9 @@ function ShopPageContent({
       pricingSection += ` (excl. delivery)`;
     }
 
+    // Trip details (customer text is URL-encoded since the message is built pre-encoded)
+    const tripSection = `%0A%0A🏕️ *TRIP*%0APax: ${paxCount ?? "-"}%0ACamping Location: ${encodeURIComponent(campingLocation.trim() || "-")}`;
+
     // Mock-up shop: Different message for demo inquiries
     const isMockupShop = vendorId === MOCKUP_VENDOR_ID || vendorData?.is_mockup === true;
     
@@ -1159,6 +1165,7 @@ function ShopPageContent({
     if (isMockupShop) {
       msg = `Hi Pacak Khemah,%0A%0AI just tried the DEMO SHOP and I'm interested in becoming a vendor!%0A%0A📦 *DEMO ORDER PREVIEW*%0A${cartLines}` +
         `%0A%0A📅 *DATES*%0APick-up: ${pickupDate}%0AReturn: ${returnDate}%0ADuration: ${nights === 0 ? "Day Trip" : `${nights} night${nights > 1 ? "s" : ""}`}` +
+        tripSection +
         fulfillmentSection +
         pricingSection +
         `%0A%0A----%0A🚀 I want to register my own shop like this!`;
@@ -1166,6 +1173,7 @@ function ShopPageContent({
       msg = `Hi ${vendorData?.name}, Booking Request:%0A` +
         `%0A📦 *ITEMS*%0A${cartLines}` +
         `%0A%0A📅 *DATES*%0APick-up: ${pickupDate}%0AReturn: ${returnDate}%0ADuration: ${nights === 0 ? "Day Trip" : `${nights} night${nights > 1 ? "s" : ""}`}` +
+        tripSection +
         fulfillmentSection +
         pricingSection;
     }
@@ -1286,6 +1294,8 @@ function ShopPageContent({
           deliveryZone: selectedZone?.name || null,
           timeSlot: selectedTimeSlot?.label || null,
           bookingDates: { start: pickupDate, end: returnDate },
+          pax: paxCount,
+          campingLocation: campingLocation.trim(),
           status: "pending" as const,
           createdAt: serverTimestamp(),
           ...(appliedPromo ? {
@@ -1452,7 +1462,9 @@ function ShopPageContent({
   // Can order validation
   const needsAddress = fulfillmentType === "delivery" && !deliveryAddress.trim();
   const needsDistance = fulfillmentType === "delivery" && services?.delivery?.pricingType === "per_km" && !deliveryDistance;
-  const canOrder = cartCount > 0 && selectedDates[0] && selectedDates[1] && termsAgreed && !needsAddress && !needsDistance;
+  const needsPax = !paxCount || paxCount < 1;
+  const needsCampLocation = !campingLocation.trim();
+  const canOrder = cartCount > 0 && selectedDates[0] && selectedDates[1] && termsAgreed && !needsAddress && !needsDistance && !needsPax && !needsCampLocation;
   
   const terms = vendorData?.rules?.map(r => (
     <div key={r} className="flex gap-2 items-start text-left">
@@ -2330,6 +2342,29 @@ function ShopPageContent({
                 {nights > 0 && <p className="text-[9px] font-bold text-emerald-600 text-center mt-2"><i className="fas fa-moon mr-1"></i>{nights} Night{nights > 1 ? "s" : ""}</p>}
               </div>
 
+              {/* Trip Details */}
+              <div className="bg-gradient-to-br from-emerald-50/50 to-slate-50 p-4 rounded-2xl border border-emerald-100 space-y-3">
+                <p className="text-[9px] font-black text-slate-400 uppercase flex items-center gap-2"><i className="fas fa-campground text-emerald-500"></i>Trip Details</p>
+                <div className="flex items-center justify-between gap-3">
+                  <label htmlFor="cart-pax" className="text-[8px] font-black text-slate-400 uppercase ml-1">Number of Pax</label>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setPaxCount(p => (p && p > 1 ? p - 1 : null))} disabled={!paxCount} aria-label="Decrease pax"
+                      className="w-10 h-10 rounded-xl bg-white border border-slate-200 text-[#062c24] font-black disabled:opacity-40">−</button>
+                    <input id="cart-pax" type="number" inputMode="numeric" min={1} max={100} value={paxCount ?? ""} placeholder="–"
+                      onChange={e => { const n = parseInt(e.target.value, 10); setPaxCount(Number.isFinite(n) && n > 0 ? Math.min(n, 100) : null); }}
+                      className="w-14 h-10 bg-white border border-slate-200 rounded-xl text-center text-sm font-black text-[#062c24] outline-none focus:ring-2 focus:ring-emerald-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
+                    <button type="button" onClick={() => setPaxCount(p => Math.min((p ?? 0) + 1, 100))} aria-label="Increase pax"
+                      className="w-10 h-10 rounded-xl bg-emerald-500 text-white font-black hover:bg-emerald-600">+</button>
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="cart-camp-location" className="text-[8px] font-black text-slate-400 uppercase block mb-1 ml-1">Camping Location</label>
+                  <input id="cart-camp-location" type="text" value={campingLocation} maxLength={120}
+                    onChange={e => setCampingLocation(e.target.value)} placeholder="e.g. Janda Baik, Bentong"
+                    className="w-full bg-white border border-slate-200 text-xs font-bold text-[#062c24] outline-none px-3 py-3 rounded-xl focus:ring-2 focus:ring-emerald-500" />
+                </div>
+              </div>
+
               {hasDelivery && (
                 <div className="bg-gradient-to-br from-slate-50 to-emerald-50/50 p-4 rounded-2xl border border-emerald-100">
                   <p className="text-[9px] font-black text-slate-400 uppercase mb-3 flex items-center gap-2"><i className="fas fa-truck text-emerald-500"></i>Fulfillment Method</p>
@@ -2504,6 +2539,8 @@ function ShopPageContent({
                 {isSending ? "Processing..." 
                   : !cart.length ? "Add Items to Start" 
                   : !selectedDates[0] || !selectedDates[1] ? "Select Pickup & Return Dates" 
+                  : needsPax ? "Enter Number of Pax"
+                  : needsCampLocation ? "Enter Camping Location"
                   : needsAddress ? "Enter Delivery Address"
                   : needsDistance ? "Enter Delivery Distance"
                   : !termsAgreed ? "Agree to Terms to Proceed" 
