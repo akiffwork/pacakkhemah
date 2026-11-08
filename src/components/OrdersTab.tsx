@@ -22,6 +22,8 @@ type Order = {
   promoType?: string;
   autoDiscount?: number;
   pickupLocation: string;
+  pax?: number | null;
+  campingLocation?: string;
   bookingDates: { start: string; end: string };
   status: "pending" | "confirmed" | "completed" | "cancelled" | "conflict";
   paymentStatus?: "unpaid" | "deposit_paid" | "full_paid" | "refunded" | "deposit_burnt";
@@ -789,6 +791,18 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
                   <span className="text-slate-500">Pickup</span>
                   <span className="font-bold">{selectedOrder.pickupLocation}</span>
                 </div>
+                {selectedOrder.pax ? (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Pax</span>
+                    <span className="font-bold">{selectedOrder.pax} pax</span>
+                  </div>
+                ) : null}
+                {selectedOrder.campingLocation ? (
+                  <div className="flex justify-between gap-4">
+                    <span className="text-slate-500 shrink-0">Camping at</span>
+                    <span className="font-bold text-right">{selectedOrder.campingLocation}</span>
+                  </div>
+                ) : null}
               </div>
             </div>
 
