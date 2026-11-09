@@ -468,35 +468,35 @@ export default function DirectoryPage() {
         <div className="absolute inset-0 opacity-40" style={{ backgroundImage: "url('/pattern-chevron.png')", backgroundSize: "300px" }} />
         <div className="absolute inset-0 bg-gradient-to-b from-[#062c24] via-[#062c24]/50 to-[#062c24]/90" />
 
-        <div className="relative z-10 max-w-4xl mx-auto px-4 pt-6 pb-10">
+        <div className="relative z-10 max-w-4xl md:max-w-6xl mx-auto px-4 pt-6 pb-10 md:pt-8 md:pb-20">
           {/* Logo row */}
-          <div className="flex justify-between items-center mb-8">
-            <div className="flex items-center gap-2.5 cursor-pointer select-none" onClick={handleLogoTap}>
-              <img src="/pacak-khemah.png" className="h-10 w-10 object-contain rounded-xl" alt="Pacak Khemah" draggable={false} />
+          <div className="flex justify-between items-center mb-8 md:mb-14">
+            <div className="flex items-center gap-2.5 md:gap-3 cursor-pointer select-none" onClick={handleLogoTap}>
+              <img src="/pacak-khemah.png" className="h-10 w-10 md:h-12 md:w-12 object-contain rounded-xl" alt="Pacak Khemah" draggable={false} />
               <div>
-                <h1 className="text-lg font-black tracking-tight leading-none">pacakkhemah</h1>
-                <p className="text-[7px] font-bold text-emerald-400 uppercase tracking-[0.15em]">Pacak. Rehat. Ulang.</p>
+                <h1 className="text-lg md:text-xl font-black tracking-tight leading-none">pacakkhemah</h1>
+                <p className="text-[7px] md:text-[8px] font-bold text-emerald-400 uppercase tracking-[0.15em]">Pacak. Rehat. Ulang.</p>
               </div>
             </div>
-            <Link href="/store" className="text-[9px] font-bold text-white/60 hover:text-white transition-colors flex items-center gap-2">
+            <Link href="/store" className="text-[9px] md:text-xs font-bold text-white/60 hover:text-white transition-colors flex items-center gap-2 md:bg-white/10 md:border md:border-white/15 md:px-4 md:py-2.5 md:rounded-xl">
               <i className="fas fa-store"></i> <span className="hidden sm:inline">Vendor Login</span>
             </Link>
           </div>
 
           {/* Hero content */}
           <div className="text-center">
-            <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-tight mb-3 leading-tight">
+            <h2 className="text-2xl sm:text-3xl md:text-5xl lg:text-6xl font-black uppercase tracking-tight mb-3 md:mb-5 leading-tight md:leading-[1.05]">
               Rent Camping Gear.<br/>
               <span className="text-emerald-400">Without Hassle.</span>
             </h2>
-            <p className="text-sm text-white/70 max-w-md mx-auto mb-6 leading-relaxed">
+            <p className="text-sm md:text-lg text-white/70 max-w-md md:max-w-2xl mx-auto mb-6 md:mb-9 leading-relaxed">
               Rent quality camping gear from verified local vendors across Malaysia. Tents, sleeping bags, cooking equipment & more.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <button onClick={scrollToVendors} className="bg-emerald-500 hover:bg-emerald-400 text-white px-6 py-3.5 rounded-xl font-black uppercase text-xs tracking-widest transition-all shadow-lg">
+              <button onClick={scrollToVendors} className="bg-emerald-500 hover:bg-emerald-400 text-white px-6 py-3.5 md:px-8 md:py-4 rounded-xl font-black uppercase text-xs md:text-sm tracking-widest transition-all shadow-lg">
                 <i className="fas fa-search mr-2"></i> Find Vendors
               </button>
-              <Link href="/register-vendor" className="bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-3.5 rounded-xl font-black uppercase text-xs tracking-widest transition-all">
+              <Link href="/register-vendor" className="bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-3.5 md:px-8 md:py-4 rounded-xl font-black uppercase text-xs md:text-sm tracking-widest transition-all">
                 <i className="fas fa-store mr-2"></i> Become a Vendor
               </Link>
             </div>
@@ -506,15 +506,15 @@ export default function DirectoryPage() {
 
       {/* ═══ TRUST BADGES ═══ */}
       <section className="bg-white border-b border-slate-100">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex flex-wrap justify-center gap-x-6 gap-y-2">
+        <div className="max-w-4xl md:max-w-6xl mx-auto px-4 py-4 md:py-5">
+          <div className="flex flex-wrap justify-center gap-x-6 md:gap-x-12 gap-y-2">
             {[
               { icon: "fa-check-circle", text: "Verified Vendors" },
               { icon: "fa-shield-alt", text: "Secure Booking" },
               { icon: "fa-whatsapp", text: "Direct WhatsApp", fab: true },
               { icon: "fa-tag", text: "No Hidden Fees" },
             ].map((badge, i) => (
-              <div key={i} className="flex items-center gap-2 text-[10px] font-bold text-slate-500">
+              <div key={i} className="flex items-center gap-2 text-[10px] md:text-sm font-bold text-slate-500">
                 <i className={`${badge.fab ? "fab" : "fas"} ${badge.icon} text-emerald-500`}></i>
                 <span>{badge.text}</span>
               </div>
@@ -524,20 +524,20 @@ export default function DirectoryPage() {
       </section>
 
       {/* ═══ HOW IT WORKS ═══ */}
-      <section className="max-w-4xl mx-auto px-4 py-8">
-        <h3 className="text-center text-xs font-black text-slate-400 uppercase tracking-widest mb-6">How It Works</h3>
-        <div className="grid grid-cols-3 gap-3">
+      <section className="max-w-4xl md:max-w-6xl mx-auto px-4 py-8 md:py-12">
+        <h3 className="text-center text-xs md:text-sm font-black text-slate-400 uppercase tracking-widest mb-6 md:mb-8">How It Works</h3>
+        <div className="grid grid-cols-3 gap-3 md:gap-6">
           {[
             { step: "1", icon: "fa-search", title: "Find", desc: "Browse vendors near you" },
             { step: "2", icon: "fa-calendar-check", title: "Select", desc: "Pick dates & gear" },
             { step: "3", icon: "fa-comments", title: "Book", desc: "Confirm via WhatsApp" },
           ].map((item, i) => (
-            <div key={i} className="bg-white rounded-2xl p-4 text-center border border-slate-100 shadow-sm">
-              <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3 text-sm font-black">
+            <div key={i} className="bg-white rounded-2xl p-4 md:p-7 text-center border border-slate-100 shadow-sm">
+              <div className="w-10 h-10 md:w-12 md:h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3 md:mb-4 text-sm md:text-base font-black">
                 {item.step}
               </div>
-              <p className="text-xs font-black text-[#062c24] uppercase mb-1">{item.title}</p>
-              <p className="text-[10px] text-slate-500">{item.desc}</p>
+              <p className="text-xs md:text-base font-black text-[#062c24] uppercase mb-1">{item.title}</p>
+              <p className="text-[10px] md:text-sm text-slate-500">{item.desc}</p>
             </div>
           ))}
         </div>
