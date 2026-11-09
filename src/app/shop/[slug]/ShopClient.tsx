@@ -1547,7 +1547,7 @@ function ShopPageContent({
         <div className="absolute inset-0 bg-gradient-to-b from-[#062c24] via-[#062c24]/50 to-[#062c24]/90" />
 
         {/* Nav row */}
-        <div className="relative z-10 flex justify-between items-center px-4 pt-4">
+        <div className="relative z-10 flex justify-between items-center px-4 pt-4 md:max-w-4xl md:mx-auto md:pt-6 md:mb-6">
           <Link href="/directory" className="w-10 h-10 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center hover:bg-white hover:text-[#062c24] transition-all">
             <i className="fas fa-arrow-left text-sm"></i>
           </Link>
@@ -1564,14 +1564,15 @@ function ShopPageContent({
         </div>
 
         {/* Centered profile */}
-        <div id="demo-hero" className="relative z-10 flex flex-col items-center text-center px-6 pt-6 pb-2">
-          <div className="w-20 h-20 bg-white rounded-2xl p-1 shadow-2xl mb-4">
+        <div id="demo-hero" className="relative z-10 flex flex-col items-center text-center px-6 pt-6 pb-2 md:max-w-4xl md:mx-auto md:flex-row md:items-center md:text-left md:gap-8 md:px-4 md:pt-4 md:pb-10">
+          <div className="w-20 h-20 md:w-32 md:h-32 md:shrink-0 bg-white rounded-2xl md:rounded-3xl p-1 md:p-1.5 shadow-2xl mb-4 md:mb-0">
             <img src={vendorData?.image || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-[0.9rem]" alt="logo" />
           </div>
+          <div className="flex flex-col items-center md:items-start min-w-0">
           
           {/* Vendor Name + Badges */}
-          <div className="flex items-center gap-2 mb-2">
-            <h1 className="text-xl font-black uppercase tracking-tight">{vendorData?.name || "Loading..."}</h1>
+          <div className="flex items-center gap-2 mb-2 md:mb-3">
+            <h1 className="text-xl md:text-3xl font-black uppercase tracking-tight">{vendorData?.name || "Loading..."}</h1>
             {allBadges.length > 0 && (
               <div className="flex items-center gap-1">
                 {allBadges.slice(0, 3).map(badge => (
@@ -1585,7 +1586,7 @@ function ShopPageContent({
           </div>
           
           {allBadges.length > 0 && (
-            <div className="flex flex-wrap justify-center gap-1.5 mb-3">
+            <div className="flex flex-wrap justify-center md:justify-start gap-1.5 mb-3">
               {allBadges.map(badge => (
                 <BadgePill key={badge} badge={badge} />
               ))}
@@ -1600,7 +1601,7 @@ function ShopPageContent({
             </div>
           )}
 
-          <div id="demo-services" className="flex flex-wrap justify-center gap-2 text-[9px] font-bold uppercase mb-3">
+          <div id="demo-services" className="flex flex-wrap justify-center md:justify-start gap-2 text-[9px] md:text-[10px] font-bold uppercase mb-3">
             <span className="bg-white/10 backdrop-blur-sm px-2.5 py-1 rounded-full border border-white/10">
               <i className="fas fa-truck text-emerald-400 mr-1"></i>Pickup: {vendorData?.pickup?.join(", ") || vendorData?.city}
             </span>
@@ -1627,6 +1628,7 @@ function ShopPageContent({
             {vendorData?.ig && <a href={vendorData.ig} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center hover:bg-white/20 transition-colors border border-white/10"><i className="fab fa-instagram text-sm"></i></a>}
             {vendorData?.threads && <a href={vendorData.threads} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center hover:bg-white/20 transition-colors border border-white/10"><i className="fab fa-threads text-sm"></i></a>}
             {vendorData?.fb && <a href={vendorData.fb} target="_blank" rel="noreferrer" className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center hover:bg-white/20 transition-colors border border-white/10"><i className="fab fa-facebook text-sm"></i></a>}
+          </div>
           </div>
         </div>
       </header>
