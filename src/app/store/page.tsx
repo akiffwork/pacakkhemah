@@ -13,7 +13,6 @@ import AnalyticsTab from "@/components/AnalyticsTab";
 import HomeTab from "@/components/HomeTab";
 import DocumentsTab from "@/components/DocumentsTab";
 import InventoryTab from "@/components/InventoryTab";
-import StorefrontTab from "@/components/StorefrontTab";
 import SettingsTab from "@/components/SettingsTab";
 import OrdersTab from "@/components/OrdersTab";
 import ReviewsTab from "@/components/ReviewsTab";
@@ -26,6 +25,7 @@ import WelcomeTour from "@/components/vendor/WelcomeTour";
 import FirstItemTour from "@/components/vendor/FirstItemTour";
 import FirstOrderTour from "@/components/vendor/FirstOrderTour";
 import { summarize, type Order } from "@/lib/orderFlow";
+import { refreshPushIfEnabled } from "@/lib/pushRegistration";
 
 type VendorData = {
   name: string;
@@ -176,6 +176,13 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
   const [showFirstItemTour, setShowFirstItemTour] = useState(false);
   const [showFirstOrderTour, setShowFirstOrderTour] = useState(false);
   const [showAddGearModal, setShowAddGearModal] = useState(false);
+
+  // Keep the push token fresh for vendors who turned alerts on (Settings › Account)
+  useEffect(() => {
+    if (isAdminOverride || !vendorId) return;
+    refreshPushIfEnabled(vendorId, !!vendorData?.fcmToken);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId, isAdminOverride]);
 
   // Check which tour should be shown (skip for admin override)
   useEffect(() => {
@@ -332,7 +339,6 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
             <div className="space-y-1.5">
               <MenuItem icon="fa-chart-line" label="Analytics" onClick={() => { handleTabChange("analytics"); setMenuOpen(false); }} />
               <MenuItem icon="fa-boxes" label="Inventory" onClick={() => { handleTabChange("inventory"); setMenuOpen(false); }} />
-              <MenuItem icon="fa-store" label="Storefront" onClick={() => { handleTabChange("storefront"); setMenuOpen(false); }} />
               <MenuItem icon="fa-bullhorn" label="Updates" onClick={() => { handleTabChange("updates"); setMenuOpen(false); }} />
               <MenuItem icon="fa-file-contract" label="Documents" onClick={() => { handleTabChange("documents"); setMenuOpen(false); }} />
               <MenuItem icon="fa-gift" label="Referrals" onClick={() => { handleTabChange("referrals"); setMenuOpen(false); }} />
@@ -423,9 +429,11 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
         {activeTab === "updates" && <UpdatesTab vendorId={vendorId} vendorName={vendorData.name} vendorSlug={vendorData.slug} />}
         {activeTab === "documents" && <DocumentsTab vendorId={vendorId} vendorData={vendorData} />}
         {activeTab === "inventory" && <InventoryTab vendorId={vendorId} />}
-        {activeTab === "storefront" && <StorefrontTab vendorId={vendorId} vendorData={vendorData} />}
         {activeTab === "referrals" && <ReferralsTab vendorId={vendorId} vendorName={vendorData.name} />}
-        {activeTab === "settings" && <SettingsTab vendorId={vendorId} vendorData={vendorData} onRestartTour={handleRestartWelcomeTour} />}
+        {(activeTab === "settings" || activeTab === "storefront") && (
+          <SettingsTab key={activeTab} vendorId={vendorId} vendorData={vendorData} initialGroup={activeTab === "storefront" ? "storefront" : "rules"}
+            onRestartTour={handleRestartWelcomeTour} onNavigate={(tab: string) => handleTabChange(tab as Tab)} />
+        )}
         {activeTab === "food_partners" && <FoodPartnersTab vendorId={vendorId} />}
         {activeTab === "order_guide" && <OrderGuideTab vendorId={vendorId} vendorSlug={vendorData.slug} />}
       </div>
