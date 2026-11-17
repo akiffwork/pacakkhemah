@@ -3,8 +3,15 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // --- HELPER FUNCTIONS ---
 
+    // The owner is always an admin; extra admins are listed in private/admins
+    // (Admin › Settings › Admin access).
     function isAdmin() {
-      return request.auth != null && request.auth.token.email == 'akiff.work@gmail.com';
+      return request.auth != null && (
+        request.auth.token.email == 'akiff.work@gmail.com' ||
+        (request.auth.token.email_verified == true &&
+         exists(/databases/$(database)/documents/private/admins) &&
+         request.auth.token.email.lower() in get(/databases/$(database)/documents/private/admins).data.emails)
+      );
     }
     function isOwner() {
       return request.auth != null && request.auth.uid == resource.data.owner_uid;
@@ -64,7 +71,7 @@ service cloud.firestore {
         allow read: if true;
         allow create: if isVendorOwner(vendorId) ||
                          request.resource.data.orderId != null;
-        allow update, delete: if isVendorOwner(vendorId);
+        allow update, delete: if isVendorOwner(vendorId) || isAdmin();
       }
       match /posts/{postId} {
         allow read: if true;
@@ -128,6 +135,11 @@ service cloud.firestore {
     match /settings/{docId} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    // --- 5b. PRIVATE (admin-only documents, e.g. the admin list) ---
+    match /private/{docId} {
+      allow read, write: if isAdmin();
     }
 
     // --- 6. EVENTS ---

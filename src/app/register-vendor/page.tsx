@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { loadDefaultPolicies, newShopDefaults } from "@/lib/siteSettings";
 import { db, auth } from "@/lib/firebase";
 import { doc, getDoc, setDoc, serverTimestamp, collection, getCountFromServer, query, where } from "firebase/firestore";
 import {
@@ -104,7 +105,8 @@ function RegisterContent() {
       credits: startingCredits,
       joinedAt: serverTimestamp(),
       setup_complete: false,
-      security_deposit: 50,
+      // Admin › Settings › Defaults for new shops
+      ...newShopDefaults(await loadDefaultPolicies()),
     };
     // Tag vendors who came from a prospect outreach link
     if (prospect && prospectId) {

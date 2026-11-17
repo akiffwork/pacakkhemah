@@ -1,609 +1,268 @@
 "use client";
 
-import { useState, useEffect } from "react";
+// Admin › Vendors: live shops, applications, suspended shops and prospects.
+
+import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { doc, updateDoc, deleteDoc, increment, arrayUnion, arrayRemove, collection, query, where, getDocs, getDoc, writeBatch } from "firebase/firestore";
+import {
+  arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, increment, query, updateDoc, where, writeBatch,
+} from "firebase/firestore";
+import { adjustCredits } from "@/lib/credits";
+import {
+  BottomSheet, Chip, ConfirmSheet, EmptyState, PageHeader, SearchInput, Segments, SwitchRow, Toast, hintCls, smallBtn, primarySmallBtn, useToast,
+} from "@/components/ui/kit";
+import ProspectsTab from "./ProspectsTab";
+import CreditChangeSheet from "./CreditChangeSheet";
+import type { AdminVendor, Badge } from "./types";
 
-type Badge = "verified" | "id_verified" | "top_rated" | "fast_responder" | "premium";
+type View = "active" | "applications" | "suspended" | "prospects";
+type Filter = "all" | "low" | "premium" | "demo";
 
-type Vendor = { 
-  id: string; 
-  name: string; 
-  email?: string; 
-  phone?: string; 
-  status?: string; 
-  credits?: number; 
-  slug?: string;
-  badges?: Badge[];
-  total_orders?: number;
-  rating?: number;
-  avg_response_time?: number;
-  is_mockup?: boolean;
-  referredBy?: string;
-  referralRewarded?: boolean;
+const BADGES: Record<Badge, { label: string; icon: string; rule: string; manual: boolean }> = {
+  verified: { label: "Verified", icon: "fa-check-circle", rule: "Shop is approved", manual: false },
+  top_rated: { label: "Top rated", icon: "fa-star", rule: "30+ orders and 4.7+ rating", manual: false },
+  fast_responder: { label: "Fast responder", icon: "fa-bolt", rule: "Replies within 2 hours on average", manual: false },
+  id_verified: { label: "ID verified", icon: "fa-id-card", rule: "You checked their IC or SSM", manual: true },
+  premium: { label: "Premium", icon: "fa-trophy", rule: "Premium partner", manual: true },
 };
 
-const BADGE_CONFIG: Record<Badge, { label: string; icon: string; bg: string; text: string; type: "auto" | "manual" }> = {
-  verified: { label: "Verified", icon: "fa-check-circle", bg: "bg-emerald-50", text: "text-emerald-600", type: "auto" },
-  id_verified: { label: "ID Verified", icon: "fa-id-card", bg: "bg-teal-50", text: "text-teal-600", type: "manual" },
-  top_rated: { label: "Top Rated", icon: "fa-star", bg: "bg-amber-50", text: "text-amber-600", type: "auto" },
-  fast_responder: { label: "Fast Responder", icon: "fa-bolt", bg: "bg-blue-50", text: "text-blue-600", type: "auto" },
-  premium: { label: "Premium", icon: "fa-trophy", bg: "bg-purple-50", text: "text-purple-600", type: "manual" },
-};
+function autoBadges(v: AdminVendor): Badge[] {
+  const out: Badge[] = [];
+  if (v.status === "approved") out.push("verified");
+  if ((v.total_orders || 0) >= 30 && (v.rating || 0) >= 4.7) out.push("top_rated");
+  if ((v.avg_response_time || 999) <= 120) out.push("fast_responder");
+  return out;
+}
 
-const MANUAL_BADGES: Badge[] = ["id_verified", "premium"];
+type Pending =
+  | { kind: "approve" | "suspend" | "reactivate" | "delete" | "reward"; vendor: AdminVendor }
+  | { kind: "credits" | "badges"; vendor: AdminVendor }
+  | null;
 
-export default function VendorsTab({ allVendors, onNavigate }: { allVendors: Vendor[], onNavigate?: (view: any) => void }) {
-  const [search, setSearch] = useState("");
-  const [badgeModalVendor, setBadgeModalVendor] = useState<Vendor | null>(null);
-  const [filter, setFilter] = useState<"all" | "pending" | "premium" | "mockup">("all");
-  const [referralReward, setReferralReward] = useState(5);
-  const [rewardingId, setRewardingId] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
-  
-  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
+export default function VendorsTab({ allVendors, initialView, initialSearch }: { allVendors: AdminVendor[]; initialView?: string; initialSearch?: string }) {
+  const start: View = (["active", "applications", "suspended", "prospects"] as View[]).includes(initialView as View) ? initialView as View : "active";
+  const [view, setView] = useState<View>(start);
+  const [filter, setFilter] = useState<Filter>("all");
+  const [search, setSearch] = useState(initialSearch || "");
+  const [reward, setReward] = useState(5);
+  const [rewardOn, setRewardOn] = useState(true);
+  const [open, setOpen] = useState<Pending>(null);
+  const [busy, setBusy] = useState(false);
+  const { toast, show } = useToast();
 
   useEffect(() => {
-    getDoc(doc(db, "settings", "referral_config")).then(snap => {
-      if (snap.exists() && snap.data().rewardCredits) {
-        setReferralReward(snap.data().rewardCredits);
-      }
+    getDoc(doc(db, "settings", "referral_config")).then(s => {
+      if (!s.exists()) return;
+      if (s.data().rewardCredits) setReward(s.data().rewardCredits);
+      if (s.data().enabled === false) setRewardOn(false);
     }).catch(() => {});
   }, []);
 
-  const pendingCount = allVendors.filter(v => v.status === "pending").length;
+  // Sheets read the live copy, so toggles show at once
+  const live = (v: AdminVendor) => allVendors.find(x => x.id === v.id) || v;
 
-  const filtered = allVendors.filter(v => {
-    const matchSearch = !search ||
-      v.name?.toLowerCase().includes(search.toLowerCase()) ||
-      v.email?.toLowerCase().includes(search.toLowerCase()) ||
-      v.phone?.includes(search);
-    
-    if (filter === "pending") return matchSearch && v.status === "pending";
-    if (filter === "premium") return matchSearch && v.badges?.includes("premium");
-    if (filter === "mockup") return matchSearch && v.is_mockup === true;
-    return matchSearch;
-  });
+  const byView = {
+    active: allVendors.filter(v => v.status === "approved"),
+    applications: allVendors.filter(v => v.status === "pending"),
+    suspended: allVendors.filter(v => v.status === "suspended"),
+  };
+  const q = search.trim().toLowerCase();
+  const list = view === "prospects" ? [] : byView[view]
+    .filter(v => !q || [v.name, v.email, v.phone, v.slug, v.city].some(x => x?.toLowerCase().includes(q)))
+    .filter(v => view !== "active" || filter === "all"
+      || (filter === "low" && (v.credits || 0) <= 5)
+      || (filter === "premium" && v.badges?.includes("premium"))
+      || (filter === "demo" && v.is_mockup))
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
-  async function suspendVendor(id: string) {
-    if (!confirm("Suspend this vendor?")) return;
-    try {
-      await updateDoc(doc(db, "vendors", id), { status: "pending" });
-      showToast("Vendor suspended");
-    } catch { showToast("Failed to suspend", "error"); }
+  async function run(fn: () => Promise<void>, ok: string) {
+    setBusy(true);
+    try { await fn(); show(ok); setOpen(null); }
+    catch (e) { console.error(e); show("Something went wrong. Please try again.", "error"); }
+    finally { setBusy(false); }
   }
 
-  async function approveVendor(id: string) {
-    if (!confirm("Approve this vendor?")) return;
-    try {
-      await updateDoc(doc(db, "vendors", id), { status: "approved" });
-      showToast("✅ Vendor approved!");
-    } catch { showToast("Failed to approve", "error"); }
-    
-    const vendor = allVendors.find(v => v.id === id);
-    if (vendor?.referredBy && !vendor.referralRewarded) {
-      await rewardReferrer(id, vendor.referredBy);
-    }
+  async function rewardReferrer(v: AdminVendor) {
+    const snap = await getDocs(query(collection(db, "vendors"), where("myReferralCode", "==", v.referredBy)));
+    if (snap.empty) { await updateDoc(doc(db, "vendors", v.id), { referralRewarded: true }); return `Code ${v.referredBy} not found, marked as done`; }
+    const ref = snap.docs[0];
+    await adjustCredits({ vendorId: ref.id, vendorName: ref.data().name || "Vendor", type: "bonus", credits: reward, note: `Referral: ${v.name} approved` });
+    await updateDoc(doc(db, "vendors", ref.id), { referral_total_referred: increment(1), referral_total_credits: increment(reward) });
+    await updateDoc(doc(db, "vendors", v.id), { referralRewarded: true, referralRewardedAt: new Date().toISOString() });
+    return `${ref.data().name || "The referrer"} got ${reward} credits`;
   }
 
-  async function rewardReferrer(vendorId: string, refCode: string) {
-    setRewardingId(vendorId);
+  async function approve(v: AdminVendor) {
+    setBusy(true);
     try {
-      const snap = await getDocs(query(collection(db, "vendors"), where("myReferralCode", "==", refCode)));
-      if (!snap.empty) {
-        const referrerId = snap.docs[0].id;
-        const referrerName = snap.docs[0].data().name || "Vendor";
-        
-        await updateDoc(doc(db, "vendors", referrerId), {
-          credits: increment(referralReward),
-          referral_total_referred: increment(1),
-          referral_total_credits: increment(referralReward),
-        });
+      await updateDoc(doc(db, "vendors", v.id), { status: "approved" });
+      const extra = rewardOn && v.referredBy && !v.referralRewarded ? await rewardReferrer(v).catch(() => "Referral reward failed, use Reward referrer") : "";
+      show(`${v.name} approved${extra ? `. ${extra}` : ""}`);
+      setOpen(null);
+    } catch (e) { console.error(e); show("Could not approve", "error"); }
+    finally { setBusy(false); }
+  }
 
-        await updateDoc(doc(db, "vendors", vendorId), {
-          referralRewarded: true,
-          referralRewardedAt: new Date().toISOString(),
-        });
-
-        showToast(`🎁 Rewarded ${referrerName} with ${referralReward} credits!`);
-      } else {
-        showToast(`Referral code "${refCode}" not found`, "error");
-        await updateDoc(doc(db, "vendors", vendorId), { referralRewarded: true });
+  async function deleteVendor(v: AdminVendor) {
+    const wipe = async (col: string) => {
+      const snap = await getDocs(query(collection(db, col), where("vendorId", "==", v.id)));
+      for (let i = 0; i < snap.docs.length; i += 400) {
+        const b = writeBatch(db); snap.docs.slice(i, i + 400).forEach(d => b.delete(d.ref)); await b.commit();
       }
-    } catch (e) {
-      console.error("Referral reward error:", e);
-      showToast("Failed to process referral reward", "error");
-    } finally {
-      setRewardingId(null);
+    };
+    for (const col of ["gear", "orders", "analytics", "reviews", "agreements"]) await wipe(col);
+    for (const sub of ["availability", "settings", "discounts", "referrals", "posts", "foodPartners", "wizard"]) {
+      const snap = await getDocs(collection(db, "vendors", v.id, sub));
+      if (!snap.empty) { const b = writeBatch(db); snap.docs.forEach(d => b.delete(d.ref)); await b.commit(); }
     }
+    await deleteDoc(doc(db, "vendors", v.id));
   }
 
-  async function toggleBadge(vendorId: string, badge: Badge, currentlyHas: boolean) {
-    try {
-      if (currentlyHas) {
-        await updateDoc(doc(db, "vendors", vendorId), { badges: arrayRemove(badge) });
-        showToast(`Badge removed`);
-      } else {
-        await updateDoc(doc(db, "vendors", vendorId), { badges: arrayUnion(badge) });
-        showToast(`Badge added`);
-      }
-    } catch { showToast("Failed to update badge", "error"); }
-  }
-
-  async function toggleMockup(vendorId: string, currentlyMockup: boolean) {
-    try {
-      await updateDoc(doc(db, "vendors", vendorId), { is_mockup: !currentlyMockup });
-      showToast(currentlyMockup ? "Mockup disabled" : "Mockup enabled");
-    } catch { showToast("Failed to toggle mockup", "error"); }
-  }
-
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [topupModalVendor, setTopupModalVendor] = useState<Vendor | null>(null);
-  const [topupAmount, setTopupAmount] = useState("");
-  const [toppingUp, setToppingUp] = useState(false);
-
-  async function handleTopUp() {
-    if (!topupModalVendor) return;
-    const amount = parseInt(topupAmount, 10);
-    if (!amount || amount <= 0) return showToast("Enter a valid amount", "error");
-    setToppingUp(true);
-    try {
-      await updateDoc(doc(db, "vendors", topupModalVendor.id), { credits: increment(amount) });
-      showToast(`+${amount} credits added to ${topupModalVendor.name}`);
-      setTopupModalVendor(null);
-      setTopupAmount("");
-    } catch { showToast("Failed to top up credits", "error"); }
-    finally { setToppingUp(false); }
-  }
-
-  async function deleteVendor(vendorId: string, vendorName: string) {
-    const confirmed = prompt(`Type "${vendorName}" to permanently delete this vendor and ALL their data:`);
-    if (confirmed !== vendorName) {
-      if (confirmed !== null) alert("Name didn't match. Delete cancelled.");
-      return;
-    }
-
-    setDeletingId(vendorId);
-    try {
-      const gearSnap = await getDocs(query(collection(db, "gear"), where("vendorId", "==", vendorId)));
-      const batch1 = writeBatch(db);
-      gearSnap.docs.forEach(d => batch1.delete(d.ref));
-      if (!gearSnap.empty) await batch1.commit();
-
-      const ordersSnap = await getDocs(query(collection(db, "orders"), where("vendorId", "==", vendorId)));
-      const batch2 = writeBatch(db);
-      ordersSnap.docs.forEach(d => batch2.delete(d.ref));
-      if (!ordersSnap.empty) await batch2.commit();
-
-      const analyticsSnap = await getDocs(query(collection(db, "analytics"), where("vendorId", "==", vendorId)));
-      const batch3 = writeBatch(db);
-      analyticsSnap.docs.forEach(d => batch3.delete(d.ref));
-      if (!analyticsSnap.empty) await batch3.commit();
-
-      const reviewsSnap = await getDocs(query(collection(db, "reviews"), where("vendorId", "==", vendorId)));
-      const batch4 = writeBatch(db);
-      reviewsSnap.docs.forEach(d => batch4.delete(d.ref));
-      if (!reviewsSnap.empty) await batch4.commit();
-
-      const agreementsSnap = await getDocs(query(collection(db, "agreements"), where("vendorId", "==", vendorId)));
-      const batch5 = writeBatch(db);
-      agreementsSnap.docs.forEach(d => batch5.delete(d.ref));
-      if (!agreementsSnap.empty) await batch5.commit();
-
-      for (const sub of ["availability", "settings", "discounts"]) {
-        const subSnap = await getDocs(collection(db, "vendors", vendorId, sub));
-        if (!subSnap.empty) {
-          const batchSub = writeBatch(db);
-          subSnap.docs.forEach(d => batchSub.delete(d.ref));
-          await batchSub.commit();
-        }
-      }
-
-      await deleteDoc(doc(db, "vendors", vendorId));
-
-      alert(`✅ ${vendorName} and all related data permanently deleted.`);
-      showToast(`🗑 ${vendorName} permanently deleted`);
-    } catch (e) {
-      console.error("Delete vendor error:", e);
-      alert("❌ Failed to delete vendor. Check console for details.");
-    } finally {
-      setDeletingId(null);
-    }
-  }
-
-  function getAutoBadges(v: Vendor): Badge[] {
-    const badges: Badge[] = [];
-    if (v.status === "approved") badges.push("verified");
-    if ((v.total_orders || 0) >= 30 && (v.rating || 0) >= 4.7) badges.push("top_rated");
-    if ((v.avg_response_time || 999) <= 120) badges.push("fast_responder");
-    return badges;
-  }
-
-  function getAllBadges(v: Vendor): Badge[] {
-    return [...new Set([...getAutoBadges(v), ...(v.badges || [])])];
-  }
+  const tabs = [
+    { key: "active" as View, label: `Live · ${byView.active.length}` },
+    { key: "applications" as View, label: `Applications · ${byView.applications.length}`, tone: byView.applications.length ? "warn" as const : undefined },
+    { key: "suspended" as View, label: `Suspended · ${byView.suspended.length}` },
+    { key: "prospects" as View, label: "Prospects" },
+  ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-white p-4 rounded-2xl border border-slate-100 shadow-sm gap-4">
-        <div className="relative w-full lg:w-96">
-          <i className="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
-          <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name, email or phone..."
-            className="w-full bg-slate-50 border border-slate-100 pl-10 pr-4 py-3 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 transition-all" />
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex bg-slate-100 rounded-lg p-1">
-            {([
-              { id: "all" as const, label: "All" },
-              { id: "pending" as const, label: "Pending", icon: "fa-clock", count: pendingCount },
-              { id: "premium" as const, label: "Premium", icon: "fa-trophy" },
-              { id: "mockup" as const, label: "Mock-up", icon: "fa-flask" },
-            ]).map(f => (
-              <button key={f.id} onClick={() => setFilter(f.id)}
-                className={`px-3 py-1.5 rounded-md text-[9px] font-black uppercase transition-all flex items-center gap-1.5 ${
-                  filter === f.id 
-                    ? f.id === "pending" && f.count && f.count > 0
-                      ? "bg-amber-500 text-white shadow-sm" 
-                      : "bg-white text-[#062c24] shadow-sm" 
-                    : f.id === "pending" && f.count && f.count > 0
-                      ? "text-amber-600 bg-amber-50"
-                      : "text-slate-400 hover:text-slate-600"
-                }`}>
-                {f.icon && <i className={`fas ${f.icon} text-[8px]`}></i>}
-                {f.label}
-                {f.count !== undefined && f.count > 0 && (
-                  <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[8px] ${filter === f.id ? "bg-white/30" : "bg-amber-500 text-white"}`}>
-                    {f.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{filtered.length} Partners</span>
-          </div>
-        </div>
-      </div>
+    <div className="flex flex-col gap-4">
+      <PageHeader title="Vendors" subtitle="Shops, applications and vendors you are reaching out to" />
+      <Segments label="Vendor lists" value={view} onChange={setView} items={tabs} />
 
-      <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[800px]">
-            <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 tracking-wider">
-              <tr>
-                <th className="p-5 pl-8">Vendor</th>
-                <th className="p-5">Status / Badges</th>
-                <th className="p-5">Contact</th>
-                <th className="p-5">Credits</th>
-                <th className="p-5">Shop</th>
-                <th className="p-5 text-right pr-8">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50 text-xs font-bold text-slate-600">
-              {filtered.length === 0 ? (
-                <tr><td colSpan={6} className="p-10 text-center text-slate-300 text-[10px] uppercase font-black">No vendors found</td></tr>
-              ) : filtered.map(v => {
-                const allBadges = getAllBadges(v);
-                const isPending = v.status === "pending";
+      {view === "prospects" ? <ProspectsTab allVendors={allVendors} /> : (
+        <>
+          <SearchInput id="vendor-search" value={search} onChange={setSearch} placeholder="Search name, email, phone or city" />
+          {view === "active" && (
+            <Segments label="Filter shops" role="group" value={filter} onChange={setFilter} items={[
+              { key: "all", label: "All" },
+              { key: "low", label: "5 credits or fewer" },
+              { key: "premium", label: "Premium" },
+              { key: "demo", label: "Demo shops" },
+            ]} />
+          )}
+
+          {list.length === 0 ? (
+            <EmptyState icon="fa-store" title={q ? "No shops match your search" : view === "applications" ? "No applications waiting" : view === "suspended" ? "No suspended shops" : "No shops here"} />
+          ) : (
+            <div className="grid lg:grid-cols-2 gap-3">
+              {list.map(v => {
+                const badges = [...new Set([...autoBadges(v), ...(v.badges || [])])];
+                const credits = v.credits || 0;
                 return (
-                  <tr key={v.id} className={`hover:bg-slate-50 transition-colors ${isPending ? "bg-amber-50/30" : ""}`}>
-                    <td className="p-5 pl-8">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 relative ${isPending ? "bg-amber-500 text-white" : "bg-[#062c24] text-white"}`}>
-                          {v.name?.[0]?.toUpperCase()}
-                          {v.is_mockup && (
-                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center">
-                              <i className="fas fa-flask text-white text-[6px]"></i>
-                            </span>
-                          )}
-                        </div>
-                        <div>
-                          <p className="font-black uppercase text-[#062c24] text-[11px] flex items-center gap-1.5">
-                            {v.name}
-                            {v.is_mockup && <span className="text-[8px] text-purple-500 font-bold normal-case">(Demo)</span>}
-                          </p>
-                          <p className="text-[9px] text-slate-400 font-medium">{v.email}</p>
-                        </div>
+                  <article key={v.id} className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
+                    <div className="flex items-start gap-3">
+                      {v.image
+                        // eslint-disable-next-line @next/next/no-img-element
+                        ? <img src={v.image} alt="" className="w-11 h-11 rounded-xl object-cover border border-slate-200 shrink-0" />
+                        : <span className="w-11 h-11 rounded-xl bg-[#062c24] text-white font-bold flex items-center justify-center shrink-0" aria-hidden="true">{(v.name || "?")[0].toUpperCase()}</span>}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[15px] font-bold text-slate-900 truncate">{v.name}</p>
+                        <p className="text-[13px] text-slate-600 truncate">{[v.city, v.phone].filter(Boolean).join(" · ") || v.email || "No contact details"}</p>
                       </div>
-                    </td>
-                    <td className="p-5">
-                      <div className="flex items-center gap-1 flex-wrap">
-                        {isPending && (
-                          <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full text-[8px] font-black border border-amber-200">
-                            <i className="fas fa-clock"></i>
-                            Pending Approval
-                          </span>
-                        )}
-                        {v.referredBy && (
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold border ${v.referralRewarded ? "bg-emerald-50 text-emerald-600 border-emerald-200" : "bg-purple-50 text-purple-600 border-purple-200"}`}>
-                            <i className={`fas ${v.referralRewarded ? "fa-check-circle" : "fa-gift"}`}></i>
-                            Ref: {v.referredBy}
-                            {v.referralRewarded && <span className="opacity-60">(Rewarded)</span>}
-                          </span>
-                        )}
-                        {!isPending && allBadges.length > 0 ? (
-                          allBadges.map(badge => {
-                            const config = BADGE_CONFIG[badge];
-                            if (!config) return null;
-                            return (
-                              <span key={badge} className={`inline-flex items-center gap-1 ${config.bg} ${config.text} px-2 py-0.5 rounded-full text-[8px] font-bold`}>
-                                <i className={`fas ${config.icon}`}></i>
-                                {config.label}
-                              </span>
-                            );
-                          })
-                        ) : !isPending && (
-                          <span className="text-[9px] text-slate-300">No badges</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="p-5">
-                      <p className="text-[10px] font-bold text-slate-600">{v.phone || "—"}</p>
-                    </td>
-                    <td className="p-5">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm font-black ${(v.credits || 0) > 0 ? "text-emerald-600" : "text-red-500"}`}>
-                          {v.credits || 0}
-                        </span>
-                        <span className="text-[9px] text-slate-300 font-medium">credits</span>
-                      </div>
-                    </td>
-                    <td className="p-5">
-                      {v.slug ? (
-                        <a href={`/shop/${v.slug}`} target="_blank"
-                          className="text-[9px] font-bold text-emerald-600 hover:underline flex items-center gap-1">
-                          <i className="fas fa-external-link-alt text-[8px]"></i> /shop/{v.slug}
-                        </a>
-                      ) : <span className="text-[9px] text-slate-300">No slug</span>}
-                    </td>
-                    <td className="p-5 text-right pr-8">
-                      <div className="flex justify-end gap-2">
-                        {isPending && (
-                          <button onClick={() => approveVendor(v.id)}
-                            className="w-8 h-8 rounded-lg bg-emerald-500 text-white flex items-center justify-center hover:bg-emerald-600 transition-all shadow-sm" title="Approve Vendor">
-                            <i className="fas fa-check text-[10px]"></i>
-                          </button>
-                        )}
-                        {v.referredBy && !v.referralRewarded && !isPending && (
-                          <button onClick={() => rewardReferrer(v.id, v.referredBy!)}
-                            disabled={rewardingId === v.id}
-                            className="w-8 h-8 rounded-lg bg-purple-50 text-purple-500 flex items-center justify-center hover:bg-purple-500 hover:text-white transition-all disabled:opacity-50" title={`Reward referrer (${referralReward} credits)`}>
-                            <i className={`fas ${rewardingId === v.id ? "fa-spinner fa-spin" : "fa-gift"} text-[10px]`}></i>
-                          </button>
-                        )}
-                        <button onClick={() => setBadgeModalVendor(v)}
-                          className="w-8 h-8 rounded-lg bg-amber-50 text-amber-500 flex items-center justify-center hover:bg-amber-500 hover:text-white transition-all" title="Manage Badges">
-                          <i className="fas fa-award text-[10px]"></i>
-                        </button>
-                        <a href={`/store?admin_override=${v.id}`} target="_blank"
-                          className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-500 flex items-center justify-center hover:bg-indigo-500 hover:text-white transition-all" title="View as Vendor">
-                          <i className="fas fa-key text-[10px]"></i>
-                        </a>
-                        
-                        <button onClick={() => { setTopupModalVendor(v); setTopupAmount(""); }}
-                          className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center hover:bg-emerald-500 hover:text-white transition-all" title="Top Up Credits">
-                          <i className="fas fa-wallet text-[10px]"></i>
-                        </button>
-                        
-                        {!isPending ? (
-                          <button onClick={() => suspendVendor(v.id)}
-                            className="w-8 h-8 rounded-lg bg-red-50 text-red-400 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all" title="Suspend">
-                            <i className="fas fa-ban text-[10px]"></i>
-                          </button>
-                        ) : (
-                          <button onClick={() => deleteVendor(v.id, v.name)}
-                            disabled={deletingId === v.id}
-                            className="w-8 h-8 rounded-lg bg-red-50 text-red-400 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all disabled:opacity-50" title="Reject & Delete">
-                            <i className={`fas ${deletingId === v.id ? "fa-spinner fa-spin" : "fa-times"} text-[10px]`}></i>
-                          </button>
-                        )}
-                        <button onClick={() => deleteVendor(v.id, v.name)}
-                          disabled={deletingId === v.id}
-                          className="w-8 h-8 rounded-lg bg-red-100 text-red-500 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all disabled:opacity-50" title="Permanently Delete">
-                          <i className={`fas ${deletingId === v.id ? "fa-spinner fa-spin" : "fa-trash"} text-[10px]`}></i>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                      <span className={`text-right shrink-0 ${credits <= 0 ? "text-red-800" : credits <= 5 ? "text-amber-800" : "text-emerald-800"}`}>
+                        <span className="block text-lg font-bold leading-tight">{credits}</span><span className="text-xs">credits</span>
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      {v.status === "pending" && <Chip tone="warn">Waiting for approval</Chip>}
+                      {v.status === "suspended" && <Chip tone="danger">Suspended</Chip>}
+                      {v.is_mockup && <Chip tone="violet">Demo shop</Chip>}
+                      {v.is_vacation && <Chip>On holiday</Chip>}
+                      {v.status !== "pending" && badges.map(b => BADGES[b] && <Chip key={b} tone={b === "premium" ? "violet" : "good"}>{BADGES[b].label}</Chip>)}
+                      {v.referredBy && <Chip tone={v.referralRewarded ? "neutral" : "info"}>Invited by {v.referredBy}{v.referralRewarded ? " · rewarded" : ""}</Chip>}
+                    </div>
+
+                    {v.slug
+                      ? <a href={`/shop/${v.slug}`} target="_blank" rel="noreferrer" className="text-[13px] font-semibold text-emerald-800 truncate">pacakkhemah.com/shop/{v.slug}</a>
+                      : <p className={hintCls}>No shop link yet</p>}
+
+                    <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
+                      {v.status === "pending" && <button type="button" className={primarySmallBtn} onClick={() => setOpen({ kind: "approve", vendor: v })}>Approve</button>}
+                      {v.status === "suspended" && <button type="button" className={primarySmallBtn} onClick={() => setOpen({ kind: "reactivate", vendor: v })}>Reactivate</button>}
+                      <button type="button" className={smallBtn} onClick={() => setOpen({ kind: "credits", vendor: v })}><i className="fas fa-coins mr-1.5" aria-hidden="true"></i>Credits</button>
+                      <button type="button" className={smallBtn} onClick={() => setOpen({ kind: "badges", vendor: v })}><i className="fas fa-award mr-1.5" aria-hidden="true"></i>Badges</button>
+                      <a href={`/store?admin_override=${v.id}`} target="_blank" rel="noreferrer" className={`${smallBtn} flex items-center`}><i className="fas fa-key mr-1.5" aria-hidden="true"></i>Open dashboard</a>
+                      {rewardOn && v.referredBy && !v.referralRewarded && v.status === "approved" && (
+                        <button type="button" className={smallBtn} onClick={() => setOpen({ kind: "reward", vendor: v })}><i className="fas fa-gift mr-1.5" aria-hidden="true"></i>Reward referrer</button>
+                      )}
+                      {v.status === "approved" && <button type="button" className={smallBtn} onClick={() => setOpen({ kind: "suspend", vendor: v })}>Suspend</button>}
+                      <button type="button" className={`${smallBtn} text-red-800 border-red-200`} onClick={() => setOpen({ kind: "delete", vendor: v })}>{v.status === "pending" ? "Reject and delete" : "Delete"}</button>
+                    </div>
+                  </article>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {topupModalVendor && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden">
-            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-6 text-white">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center font-black text-xl">
-                    {topupModalVendor.name?.[0]?.toUpperCase()}
-                  </div>
-                  <div>
-                    <h3 className="font-black uppercase text-lg">{topupModalVendor.name}</h3>
-                    <p className="text-white/70 text-[10px] font-medium">
-                      Current balance: <span className="font-black text-white">{topupModalVendor.credits || 0} credits</span>
-                    </p>
-                  </div>
-                </div>
-                <button onClick={() => setTopupModalVendor(null)} className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors">
-                  <i className="fas fa-times"></i>
-                </button>
-              </div>
             </div>
-
-            <div className="p-6 space-y-4">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                <i className="fas fa-plus-circle mr-1"></i> Add Credits
-              </p>
-              <div className="flex gap-2 flex-wrap">
-                {[5, 10, 20, 50].map(preset => (
-                  <button key={preset} onClick={() => setTopupAmount(String(preset))}
-                    className={`px-4 py-2 rounded-xl text-xs font-black uppercase transition-all border ${topupAmount === String(preset) ? "bg-emerald-500 text-white border-emerald-500" : "bg-slate-50 text-slate-500 border-slate-200 hover:border-emerald-300"}`}>
-                    +{preset}
-                  </button>
-                ))}
-              </div>
-              <input
-                type="number"
-                min="1"
-                value={topupAmount}
-                onChange={e => setTopupAmount(e.target.value)}
-                placeholder="Or enter custom amount"
-                className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold outline-none focus:border-emerald-500 transition-all"
-              />
-              {topupAmount && parseInt(topupAmount) > 0 && (
-                <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl text-center">
-                  <p className="text-xs font-black text-emerald-700">
-                    New balance: {(topupModalVendor.credits || 0) + parseInt(topupAmount)} credits
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="border-t border-slate-100 p-4 flex gap-3">
-              <button onClick={() => setTopupModalVendor(null)}
-                className="flex-1 py-3 rounded-xl font-black uppercase text-xs border border-slate-200 text-slate-500 hover:bg-slate-50 transition-all">
-                Cancel
-              </button>
-              <button onClick={handleTopUp} disabled={toppingUp || !topupAmount || parseInt(topupAmount) <= 0}
-                className="flex-1 py-3 rounded-xl font-black uppercase text-xs bg-emerald-500 text-white hover:bg-emerald-600 transition-all disabled:opacity-50 shadow-sm">
-                {toppingUp ? <><i className="fas fa-spinner fa-spin mr-1"></i>Adding...</> : "Add Credits"}
-              </button>
-            </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
 
-      {badgeModalVendor && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
-            <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-6 text-white">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center font-black text-xl">
-                    {badgeModalVendor.name?.[0]?.toUpperCase()}
-                  </div>
-                  <div>
-                    <h3 className="font-black uppercase text-lg">{badgeModalVendor.name}</h3>
-                    <p className="text-white/70 text-[10px] font-medium">{badgeModalVendor.email}</p>
-                  </div>
-                </div>
-                <button onClick={() => setBadgeModalVendor(null)} className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors">
-                  <i className="fas fa-times"></i>
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-6">
-              <div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
-                  <i className="fas fa-robot mr-1"></i> Auto Badges (System Calculated)
-                </p>
-                <div className="space-y-2">
-                  {(["verified", "top_rated", "fast_responder"] as Badge[]).map(badge => {
-                    const config = BADGE_CONFIG[badge];
-                    const hasIt = getAutoBadges(badgeModalVendor).includes(badge);
-                    return (
-                      <div key={badge} className={`flex items-center justify-between p-3 rounded-xl border ${hasIt ? `${config.bg} ${config.text} border-current/20` : "bg-slate-50 border-slate-100 text-slate-300"}`}>
-                        <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${hasIt ? "bg-white/50" : "bg-slate-100"}`}>
-                            <i className={`fas ${config.icon}`}></i>
-                          </div>
-                          <div>
-                            <p className="text-xs font-black">{config.label}</p>
-                            <p className="text-[9px] opacity-70">
-                              {badge === "verified" && "Approved vendor status"}
-                              {badge === "top_rated" && "30+ orders, 4.7+ rating"}
-                              {badge === "fast_responder" && "Avg reply ≤ 2 hours"}
-                            </p>
-                          </div>
-                        </div>
-                        {hasIt ? (
-                          <span className="text-[9px] font-black uppercase bg-white/50 px-2 py-1 rounded-full">Active</span>
-                        ) : (
-                          <span className="text-[9px] font-bold uppercase">Not Earned</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
-                  <i className="fas fa-hand-pointer mr-1"></i> Manual Badges (Admin Assigned)
-                </p>
-                <div className="space-y-2">
-                  {MANUAL_BADGES.map(badge => {
-                    const config = BADGE_CONFIG[badge];
-                    const hasIt = badgeModalVendor.badges?.includes(badge) || false;
-                    return (
-                      <div key={badge} className={`flex items-center justify-between p-3 rounded-xl border transition-all ${hasIt ? `${config.bg} ${config.text} border-current/20` : "bg-slate-50 border-slate-100"}`}>
-                        <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${hasIt ? "bg-white/50" : "bg-slate-100"} ${hasIt ? config.text : "text-slate-400"}`}>
-                            <i className={`fas ${config.icon}`}></i>
-                          </div>
-                          <div>
-                            <p className={`text-xs font-black ${hasIt ? "" : "text-slate-600"}`}>{config.label}</p>
-                            <p className="text-[9px] text-slate-400">
-                              {badge === "id_verified" && "IC/SSM document verified"}
-                              {badge === "premium" && "Premium partner status"}
-                            </p>
-                          </div>
-                        </div>
-                        <button 
-                          onClick={() => toggleBadge(badgeModalVendor.id, badge, hasIt)}
-                          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${hasIt ? "bg-red-100 text-red-500 hover:bg-red-500 hover:text-white" : "bg-emerald-100 text-emerald-600 hover:bg-emerald-500 hover:text-white"}`}>
-                          {hasIt ? "Remove" : "Assign"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-6">
-                <div className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${badgeModalVendor.is_mockup ? "bg-purple-50 border-purple-200" : "bg-slate-50 border-slate-100"}`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${badgeModalVendor.is_mockup ? "bg-purple-500 text-white" : "bg-slate-200 text-slate-400"}`}>
-                      <i className="fas fa-flask"></i>
-                    </div>
-                    <div>
-                      <p className="text-sm font-black text-[#062c24]">Demo Shop Mode</p>
-                      <p className="text-[10px] text-slate-400">Enable mock-up shop for sales demos</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => toggleMockup(badgeModalVendor.id, badgeModalVendor.is_mockup || false)}
-                    className={`relative w-14 h-7 rounded-full transition-all ${badgeModalVendor.is_mockup ? "bg-purple-500" : "bg-slate-200"}`}>
-                    <span className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-md transition-all ${badgeModalVendor.is_mockup ? "left-8" : "left-1"}`}></span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="border-t border-slate-100 p-4 bg-slate-50">
-              <button onClick={() => setBadgeModalVendor(null)} className="w-full bg-[#062c24] text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-800 transition-all">
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
+      {open?.kind === "approve" && (
+        <ConfirmSheet title={`Approve ${open.vendor.name}?`} confirmLabel="Approve shop" busy={busy} onClose={() => setOpen(null)} onConfirm={() => approve(open.vendor)}
+          body={<>
+            <p>The shop goes live in the directory and can receive booking requests.</p>
+            {rewardOn && open.vendor.referredBy && !open.vendor.referralRewarded && <p>The vendor who invited them ({open.vendor.referredBy}) gets <b>{reward} credits</b>.</p>}
+          </>} />
       )}
-
-      {toast && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[500] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[10px] font-black uppercase tracking-widest animate-[toastIn_0.3s_ease-out] ${
-          toast.type === "success" ? "bg-emerald-600" : "bg-red-500"
-        }`}>
-          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`}></i>
-          {toast.msg}
-        </div>
+      {open?.kind === "reward" && (
+        <ConfirmSheet title="Reward the referrer?" confirmLabel={`Give ${reward} credits`} busy={busy} onClose={() => setOpen(null)}
+          body={<p>The vendor who owns code <b>{open.vendor.referredBy}</b> gets {reward} credits for inviting {open.vendor.name}.</p>}
+          onConfirm={() => run(async () => { await rewardReferrer(open.vendor); }, "Referrer rewarded")} />
       )}
-      <style>{`@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
+      {open?.kind === "suspend" && (
+        <ConfirmSheet title={`Suspend ${open.vendor.name}?`} confirmLabel="Suspend shop" tone="danger" busy={busy} onClose={() => setOpen(null)}
+          body={<p>The shop disappears from the directory and cannot take bookings. Their data is kept and you can reactivate them any time.</p>}
+          reason={{ label: "Reason, for your records", placeholder: "e.g. Complaints from customers" }}
+          onConfirm={reason => run(() => updateDoc(doc(db, "vendors", open.vendor.id), { status: "suspended", suspendedAt: new Date().toISOString(), suspendReason: reason }), `${open.vendor.name} suspended`)} />
+      )}
+      {open?.kind === "reactivate" && (
+        <ConfirmSheet title={`Reactivate ${open.vendor.name}?`} confirmLabel="Reactivate shop" busy={busy} onClose={() => setOpen(null)}
+          body={<p>The shop goes back into the directory and can take bookings again.</p>}
+          onConfirm={() => run(() => updateDoc(doc(db, "vendors", open.vendor.id), { status: "approved", suspendReason: null }), `${open.vendor.name} is live again`)} />
+      )}
+      {open?.kind === "delete" && (
+        <ConfirmSheet title={`Delete ${open.vendor.name}?`} confirmLabel="Delete everything" tone="danger" busy={busy} typeToConfirm={open.vendor.name} onClose={() => setOpen(null)}
+          body={<>
+            <p>This permanently deletes the shop and all of its gear, orders, agreements, reviews, analytics, calendar, discounts, posts and settings. It cannot be undone.</p>
+            {open.vendor.status !== "pending" && <p>If you only want to stop them taking bookings, suspend the shop instead.</p>}
+          </>}
+          onConfirm={() => run(() => deleteVendor(open.vendor), `${open.vendor.name} deleted`)} />
+      )}
+      {open?.kind === "credits" && <CreditChangeSheet vendor={live(open.vendor)} onClose={() => setOpen(null)} onDone={show} />}
+      {open?.kind === "badges" && <BadgesSheet vendor={live(open.vendor)} onClose={() => setOpen(null)} notify={show} />}
+      <Toast toast={toast} />
     </div>
+  );
+}
+
+function BadgesSheet({ vendor, onClose, notify }: { vendor: AdminVendor; onClose: () => void; notify: (m: string, t?: "success" | "error") => void }) {
+  const auto = autoBadges(vendor);
+  async function save(fields: Record<string, unknown>, msg: string) {
+    try { await updateDoc(doc(db, "vendors", vendor.id), fields); notify(msg); }
+    catch { notify("Could not update", "error"); }
+  }
+  return (
+    <BottomSheet title={`Badges for ${vendor.name}`} onClose={onClose}>
+      <div className="flex flex-col gap-2">
+        <p className="text-[13px] font-semibold text-slate-700">Earned automatically</p>
+        {(["verified", "top_rated", "fast_responder"] as Badge[]).map(b => (
+          <div key={b} className="flex items-center justify-between gap-3 border border-slate-200 rounded-xl px-3.5 py-2.5">
+            <span className="flex flex-col"><span className="text-sm font-semibold">{BADGES[b].label}</span><span className={hintCls}>{BADGES[b].rule}</span></span>
+            <Chip tone={auto.includes(b) ? "good" : "neutral"}>{auto.includes(b) ? "Has it" : "Not yet"}</Chip>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-col gap-3">
+        <p className="text-[13px] font-semibold text-slate-700">Given by you</p>
+        {(["id_verified", "premium"] as Badge[]).map(b => {
+          const has = !!vendor.badges?.includes(b);
+          return <SwitchRow key={b} title={BADGES[b].label} hint={BADGES[b].rule} checked={has}
+            onChange={on => save({ badges: on ? arrayUnion(b) : arrayRemove(b) }, `${BADGES[b].label} ${on ? "given" : "removed"}`)} />;
+        })}
+        <SwitchRow title="Demo shop" hint="A sample shop for showing how Pacak Khemah works" checked={!!vendor.is_mockup}
+          onChange={on => save({ is_mockup: on }, on ? "Marked as a demo shop" : "No longer a demo shop")} />
+      </div>
+    </BottomSheet>
   );
 }

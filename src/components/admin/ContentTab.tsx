@@ -4,10 +4,12 @@ import { useEffect, useState, useRef, lazy, Suspense } from "react";
 const RichTextEditor = lazy(() => import("@/components/RichTextEditor"));
 import { db } from "@/lib/firebase";
 import { doc, getDoc, setDoc, collection, getDocs, addDoc, deleteDoc, updateDoc, serverTimestamp, onSnapshot, orderBy, query } from "firebase/firestore";
+import { DEFAULT_FAQ } from "@/lib/faq";
+import { ConfirmSheet, primaryBtn } from "@/components/ui/kit";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
-type FAQItem = { question: string; answer: string };
-type FAQSection = { title: string; icon: string; items: FAQItem[] };
+type FAQItem = { question: string; question_my?: string; answer: string; answer_my?: string };
+type FAQSection = { title: string; title_my?: string; icon: string; items: FAQItem[] };
 type Testimonial = { id?: string; name: string; location: string; text: string; rating: number };
 type Event = { id?: string; name: string; poster: string; link: string; organizer: string; location?: string; startDate?: string; endDate?: string; allYearLong?: boolean };
 type Announcement = { isActive: boolean; message: string; type: "info" | "warning" | "promo" };
@@ -24,8 +26,8 @@ type Article = {
   authorType: "admin";
   authorName: string;
   status: "draft" | "published";
-  createdAt?: any;
-  updatedAt?: any;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 };
 
 type AboutContent = {
@@ -69,8 +71,11 @@ const DEFAULT_ABOUT: AboutContent = {
 
 const DEFAULT_ANNOUNCEMENT: Announcement = { isActive: false, message: "", type: "info" };
 
-export default function ContentTab() {
-  const [activeSection, setActiveSection] = useState<"about" | "faq" | "homepage" | "testimonials" | "events" | "announcement">("announcement");
+export type ContentSection = "announcement" | "homepage" | "about" | "faq" | "testimonials" | "events" | "articles";
+
+export default function ContentTab({ section, notify }: { section: ContentSection; notify: (msg: string, tone?: "success" | "error") => void }) {
+  const activeSection = section;
+  const [toDelete, setToDelete] = useState<{ kind: "testimonial" | "event" | "article"; id: string } | null>(null);
   const [about, setAbout] = useState<AboutContent>(DEFAULT_ABOUT);
   const [faq, setFaq] = useState<FAQSection[]>([]);
   const [homepage, setHomepage] = useState<HomepageContent>({ heroTitle: "", heroSubtitle: "", heroCta: "" });
@@ -133,9 +138,9 @@ export default function ContentTab() {
         if (data.homepage) setHomepage(data.homepage);
         if (data.footer) setFooter(data.footer);
       }
-      if (faqSnap.exists() && faqSnap.data().sections) {
-        setFaq(faqSnap.data().sections);
-      }
+      // Start from what customers see today, so saving never wipes the FAQ
+      const legacyFaq = contentSnap.exists() ? contentSnap.data().faq : null;
+      setFaq(faqSnap.exists() && faqSnap.data().sections?.length ? faqSnap.data().sections : Array.isArray(legacyFaq) && legacyFaq.length ? legacyFaq : DEFAULT_FAQ);
       if (announcementSnap.exists()) {
         setAnnouncement({ ...DEFAULT_ANNOUNCEMENT, ...announcementSnap.data() });
       }
@@ -165,10 +170,11 @@ export default function ContentTab() {
         setDoc(doc(db, "settings", "global_announcement"), announcement),
       ]);
       setSaved(true);
+      notify("Saved. It is live on the site.");
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
       console.error(e);
-      alert("Failed to save");
+      notify("Could not save. Please try again.", "error");
     } finally {
       setSaving(false);
     }
@@ -187,12 +193,12 @@ export default function ContentTab() {
       setEditingTestimonial(null);
     } catch (e) {
       console.error(e);
-      alert("Failed to save testimonial");
+      notify("Could not save the testimonial", "error");
     }
   }
 
-  async function deleteTestimonial(id: string) {
-    if (!confirm("Delete this testimonial?")) return;
+  function deleteTestimonial(id: string) { setToDelete({ kind: "testimonial", id }); }
+  async function doDeleteTestimonial(id: string) {
     try {
       await deleteDoc(doc(db, "testimonials", id));
       loadContent();
@@ -223,14 +229,14 @@ export default function ContentTab() {
       setEditingEvent(null);
     } catch (err) {
       console.error(err);
-      alert("Failed to save event");
+      notify("Could not save the event", "error");
     } finally {
       setEvtUploading(false);
     }
   }
 
-  async function deleteEvent(id: string) {
-    if (!confirm("Delete this event?")) return;
+  function deleteEvent(id: string) { setToDelete({ kind: "event", id }); }
+  async function doDeleteEvent(id: string) {
     try {
       await deleteDoc(doc(db, "events", id));
       loadContent();
@@ -240,7 +246,7 @@ export default function ContentTab() {
   }
 
   // FAQ helpers
-  function addFaqSection() { setFaq([...faq, { title: "New Section", icon: "fa-question", items: [] }]); }
+  function addFaqSection() { setFaq([...faq, { title: "New section", icon: "fa-question", items: [] }]); }
   function removeFaqSection(idx: number) { setFaq(faq.filter((_, i) => i !== idx)); }
   function updateFaqSection(idx: number, field: string, value: string) {
     const updated = [...faq];
@@ -298,12 +304,12 @@ export default function ContentTab() {
       setEditingArticle(null);
       setArticleForm({ title: "", slug: "", excerpt: "", content: "", coverImage: "", videoUrl: "", category: "General", status: "draft" });
       setArticleImageFile(null);
-    } catch (e) { console.error(e); alert("Failed to save article"); }
+    } catch (e) { console.error(e); notify("Could not save the article", "error"); }
     finally { setArticleSaving(false); }
   }
 
-  async function deleteArticle(id: string) {
-    if (!confirm("Delete this article?")) return;
+  function deleteArticle(id: string) { setToDelete({ kind: "article", id }); }
+  async function doDeleteArticle(id: string) {
     await deleteDoc(doc(db, "articles", id));
   }
 
@@ -333,48 +339,22 @@ export default function ContentTab() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <i className="fas fa-spinner fa-spin text-2xl text-emerald-500"></i>
+        <i className="fas fa-spinner fa-spin text-2xl text-emerald-700"></i>
       </div>
     );
   }
 
-  const sections = [
-    { id: "announcement", label: "Announcement", icon: "fa-bullhorn" },
-    { id: "homepage", label: "Homepage", icon: "fa-home" },
-    { id: "about", label: "About Page", icon: "fa-info-circle" },
-    { id: "faq", label: "FAQ", icon: "fa-question-circle" },
-    { id: "testimonials", label: "Testimonials", icon: "fa-star" },
-    { id: "events", label: "Events", icon: "fa-calendar" },
-  ] as const;
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-4 pb-24">
       
-      {/* Mobile-Friendly Horizontal Scroll Tabs */}
-      <div className="flex overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap gap-2 scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-        {sections.map(sec => (
-          <button
-            key={sec.id}
-            onClick={() => setActiveSection(sec.id)}
-            className={`flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all shrink-0 ${
-              activeSection === sec.id
-                ? "bg-[#062c24] text-white shadow-md"
-                : "bg-white text-slate-500 hover:bg-slate-100 border border-slate-200"
-            }`}
-          >
-            <i className={`fas ${sec.icon}`}></i>
-            {sec.label}
-          </button>
-        ))}
-      </div>
-
       {/* Announcement */}
       {activeSection === "announcement" && (
         <div className="bg-white rounded-2xl border border-slate-100 p-4 sm:p-6 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h3 className="text-sm font-black text-[#062c24] uppercase">Global Banner</h3>
-              <p className="text-[10px] text-slate-400 font-bold mt-1">Show a site-wide message at the top of the screen.</p>
+              <h3 style={{ textTransform: "none" }} className="text-sm font-bold text-[#062c24] ">Site-wide announcement</h3>
+              <p className="text-xs text-slate-600 font-bold mt-1">Show a site-wide message at the top of the screen.</p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
@@ -383,18 +363,18 @@ export default function ContentTab() {
                 onChange={e => setAnnouncement({ ...announcement, isActive: e.target.checked })}
                 className="sr-only peer"
               />
-              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-700"></div>
             </label>
           </div>
           <div className="space-y-5">
             <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Message Style</label>
-              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+              <label className="text-xs font-bold text-slate-600 mb-2 block">Style</label>
+              <div className="grid grid-cols-3 gap-2">
                 {(["info", "warning", "promo"] as const).map(type => (
                   <button
                     key={type}
                     onClick={() => setAnnouncement({ ...announcement, type })}
-                    className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase transition-all flex justify-center items-center gap-2 border ${
+                    className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold  transition-all flex justify-center items-center gap-2 border ${
                       announcement.type === type
                         ? type === "info" ? "bg-blue-500 text-white border-blue-600" :
                           type === "warning" ? "bg-amber-500 text-white border-amber-600" :
@@ -403,13 +383,13 @@ export default function ContentTab() {
                     }`}
                   >
                     <i className={`fas ${type === "info" ? "fa-info-circle" : type === "warning" ? "fa-exclamation-triangle" : "fa-gift"}`}></i>
-                    {type}
+                    {type === "info" ? "Information" : type === "warning" ? "Warning" : "Promotion"}
                   </button>
                 ))}
               </div>
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Announcement Text</label>
+              <label className="text-xs font-bold text-slate-600 mb-2 block">Announcement text</label>
               <input
                 value={announcement.message}
                 onChange={e => setAnnouncement({ ...announcement, message: e.target.value })}
@@ -433,34 +413,36 @@ export default function ContentTab() {
       {/* Homepage */}
       {activeSection === "homepage" && (
         <div className="bg-white rounded-2xl border border-slate-100 p-4 sm:p-6 shadow-sm">
-          <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Hero Section Content</h3>
+          <h3 style={{ textTransform: "none" }} className="text-sm font-bold text-[#062c24] mb-4">Homepage banner</h3>
           <div className="space-y-4">
             <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Main Title</label>
-              <input
+              <label className="text-xs font-bold text-slate-600 mb-2 block">Title</label>
+              <textarea
                 value={homepage.heroTitle}
                 onChange={e => setHomepage({ ...homepage, heroTitle: e.target.value })}
-                className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold outline-none focus:border-emerald-500 focus:bg-white transition-all"
-                placeholder="Sewa Gear Camping. Tanpa Hassle."
+                rows={2}
+                className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold outline-none resize-none focus:border-emerald-500 focus:bg-white transition-all"
+                placeholder={"Rent Camping Gear.\nWithout Hassle."}
               />
+              <p className="text-xs text-slate-600 mt-1.5">A second line shows in green. Leave empty to keep the current title.</p>
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Subtitle / Description</label>
+              <label className="text-xs font-bold text-slate-600 mb-2 block">Text under the title</label>
               <textarea
                 value={homepage.heroSubtitle}
                 onChange={e => setHomepage({ ...homepage, heroSubtitle: e.target.value })}
                 rows={3}
                 className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-medium outline-none resize-none focus:border-emerald-500 focus:bg-white transition-all"
-                placeholder="Rent quality camping gear from trusted local vendors..."
+                placeholder="Rent quality camping gear from verified local vendors across Malaysia..."
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Primary CTA Button</label>
+              <label className="text-xs font-bold text-slate-600 mb-2 block">Main button text</label>
               <input
                 value={homepage.heroCta}
                 onChange={e => setHomepage({ ...homepage, heroCta: e.target.value })}
                 className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold outline-none focus:border-emerald-500 focus:bg-white transition-all"
-                placeholder="Explore Gear"
+                placeholder="Find Vendors"
               />
             </div>
           </div>
@@ -471,7 +453,7 @@ export default function ContentTab() {
       {activeSection === "about" && (
         <div className="space-y-4">
           <div className="bg-white rounded-2xl border border-slate-100 p-4 sm:p-6 shadow-sm">
-            <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Our Story</h3>
+            <h3 style={{ textTransform: "none" }} className="text-sm font-bold text-[#062c24] mb-4">Our story</h3>
             <textarea
               value={about.story}
               onChange={e => setAbout({ ...about, story: e.target.value })}
@@ -481,7 +463,7 @@ export default function ContentTab() {
           </div>
           <div className="grid md:grid-cols-2 gap-4">
             <div className="bg-white rounded-2xl border border-slate-100 p-4 sm:p-6 shadow-sm">
-              <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Value for Campers</h3>
+              <h3 style={{ textTransform: "none" }} className="text-sm font-bold text-[#062c24] mb-4">What campers get</h3>
               <textarea
                 value={about.forCampers}
                 onChange={e => setAbout({ ...about, forCampers: e.target.value })}
@@ -490,7 +472,7 @@ export default function ContentTab() {
               />
             </div>
             <div className="bg-white rounded-2xl border border-slate-100 p-4 sm:p-6 shadow-sm">
-              <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Value for Vendors</h3>
+              <h3 style={{ textTransform: "none" }} className="text-sm font-bold text-[#062c24] mb-4">What vendors get</h3>
               <textarea
                 value={about.forVendors}
                 onChange={e => setAbout({ ...about, forVendors: e.target.value })}
@@ -500,7 +482,7 @@ export default function ContentTab() {
             </div>
           </div>
           <div className="bg-white rounded-2xl border border-slate-100 p-4 sm:p-6 shadow-sm">
-            <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Our Mission</h3>
+            <h3 style={{ textTransform: "none" }} className="text-sm font-bold text-[#062c24] mb-4">Our mission</h3>
             <textarea
               value={about.mission}
               onChange={e => setAbout({ ...about, mission: e.target.value })}
@@ -516,35 +498,41 @@ export default function ContentTab() {
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
             <div>
-              <h3 className="text-sm font-black text-[#062c24] uppercase">Frequently Asked Questions</h3>
-              <p className="text-[10px] text-slate-400 font-bold mt-1">{faq.length} categories active</p>
+              <h3 style={{ textTransform: "none" }} className="text-sm font-bold text-[#062c24] ">Frequently asked questions</h3>
+              <p className="text-xs text-slate-600 font-bold mt-1">{faq.length} categories active</p>
             </div>
-            <button onClick={addFaqSection} className="w-full sm:w-auto bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-sm transition-all flex items-center justify-center gap-2">
-              <i className="fas fa-plus"></i> Add Category
+            <button onClick={addFaqSection} className="w-full sm:w-auto bg-[#062c24] hover:bg-[#0a4135] text-white px-5 py-3 rounded-xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2">
+              <i className="fas fa-plus"></i> Add category
             </button>
           </div>
 
           {faq.map((section, sIdx) => (
             <div key={sIdx} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
               {/* FAQ Section Header - Made Mobile Responsive */}
-              <div className="p-4 bg-slate-50 border-b border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="p-4 bg-slate-50 border-b border-slate-100 flex flex-col gap-3">
+                <div className="grid grid-cols-[64px_1fr] sm:grid-cols-[64px_1fr_1fr] gap-2">
                   <input
                     value={section.icon}
                     onChange={e => updateFaqSection(sIdx, "icon", e.target.value)}
-                    className="w-16 bg-white border border-slate-200 p-3 rounded-xl text-xs text-center outline-none focus:border-emerald-500"
-                    placeholder="fa-icon"
+                    className="min-w-0 bg-white border border-slate-200 p-3 rounded-xl text-xs text-center outline-none focus:border-emerald-500"
+                    placeholder="fa-icon" aria-label="Icon name"
                   />
                   <input
                     value={section.title}
                     onChange={e => updateFaqSection(sIdx, "title", e.target.value)}
-                    className="flex-1 bg-white border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none focus:border-emerald-500"
-                    placeholder="Category Title"
+                    className="min-w-0 bg-white border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none focus:border-emerald-500"
+                    placeholder="Category title"
+                  />
+                  <input
+                    value={section.title_my || ""}
+                    onChange={e => updateFaqSection(sIdx, "title_my", e.target.value)}
+                    className="col-span-2 sm:col-span-1 min-w-0 bg-white border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none focus:border-emerald-500"
+                    placeholder="Tajuk (BM)"
                   />
                 </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <button onClick={() => addFaqItem(sIdx)} className="flex-1 sm:flex-none text-xs font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-4 py-3 rounded-xl transition-all">
-                    + Q&A
+                <div className="flex items-center gap-2">
+                  <button onClick={() => addFaqItem(sIdx)} className="flex-1 sm:flex-none text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-4 py-3 rounded-xl transition-all">
+                    + Add a question
                   </button>
                   <button onClick={() => removeFaqSection(sIdx)} className="w-12 sm:w-10 h-12 sm:h-10 text-red-400 bg-red-50 hover:bg-red-500 hover:text-white rounded-xl flex items-center justify-center transition-all">
                     <i className="fas fa-trash"></i>
@@ -555,7 +543,7 @@ export default function ContentTab() {
               {/* FAQ Items */}
               <div className="p-4 space-y-4">
                 {section.items.length === 0 ? (
-                  <p className="text-center text-xs text-slate-400 font-medium py-4">No questions added yet.</p>
+                  <p className="text-center text-xs text-slate-600 font-medium py-4">No questions added yet.</p>
                 ) : section.items.map((item, iIdx) => (
                   <div key={iIdx} className="bg-slate-50 border border-slate-100 p-4 rounded-xl flex flex-col sm:flex-row gap-3 relative">
                     <div className="flex-1 space-y-3">
@@ -568,12 +556,25 @@ export default function ContentTab() {
                       <textarea
                         value={item.answer}
                         onChange={e => updateFaqItem(sIdx, iIdx, "answer", e.target.value)}
-                        rows={2}
+                        rows={4}
                         className="w-full bg-white border border-slate-200 p-3.5 rounded-xl text-sm outline-none resize-none focus:border-emerald-500"
                         placeholder="Answer"
                       />
+                      <input
+                        value={item.question_my || ""}
+                        onChange={e => updateFaqItem(sIdx, iIdx, "question_my", e.target.value)}
+                        className="w-full bg-white border border-slate-200 p-3.5 rounded-xl text-sm font-bold outline-none focus:border-emerald-500"
+                        placeholder="Soalan (Bahasa Malaysia, optional)"
+                      />
+                      <textarea
+                        value={item.answer_my || ""}
+                        onChange={e => updateFaqItem(sIdx, iIdx, "answer_my", e.target.value)}
+                        rows={4}
+                        className="w-full bg-white border border-slate-200 p-3.5 rounded-xl text-sm outline-none resize-none focus:border-emerald-500"
+                        placeholder="Jawapan (Bahasa Malaysia, optional)"
+                      />
                     </div>
-                    <button onClick={() => removeFaqItem(sIdx, iIdx)} className="absolute top-2 right-2 sm:static sm:w-10 sm:h-auto text-slate-400 hover:text-red-500 flex items-center justify-center p-2 rounded-lg">
+                    <button onClick={() => removeFaqItem(sIdx, iIdx)} className="absolute top-2 right-2 sm:static sm:w-10 sm:h-auto text-slate-600 hover:text-red-500 flex items-center justify-center p-2 rounded-lg">
                       <i className="fas fa-times sm:fa-trash"></i>
                     </button>
                   </div>
@@ -589,12 +590,12 @@ export default function ContentTab() {
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
             <div>
-              <h3 className="text-sm font-black text-[#062c24] uppercase">Customer Testimonials</h3>
-              <p className="text-[10px] text-slate-400 font-bold mt-1">{testimonials.length} reviews added</p>
+              <h3 style={{ textTransform: "none" }} className="text-sm font-bold text-[#062c24] ">Testimonials</h3>
+              <p className="text-xs text-slate-600 font-bold mt-1">{testimonials.length} reviews added</p>
             </div>
             <button onClick={() => { setEditingTestimonial({ name: "", location: "", text: "", rating: 5 }); setShowTestimonialModal(true); }}
-              className="w-full sm:w-auto bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-sm transition-all flex items-center justify-center gap-2">
-              <i className="fas fa-plus"></i> Add Review
+              className="w-full sm:w-auto bg-[#062c24] hover:bg-[#0a4135] text-white px-5 py-3 rounded-xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2">
+              <i className="fas fa-plus"></i> Add testimonial
             </button>
           </div>
 
@@ -606,17 +607,17 @@ export default function ContentTab() {
                     <i key={j} className={`fas fa-star ${j < t.rating ? "text-amber-400" : "text-slate-200"}`}></i>
                   ))}
                 </div>
-                <p className="text-sm text-slate-600 mb-6 flex-1 italic">"{t.text}"</p>
+                <p className="text-sm text-slate-600 mb-6 flex-1 italic">&ldquo;{t.text}&rdquo;</p>
                 <div className="flex items-center justify-between border-t border-slate-50 pt-4">
                   <div>
-                    <p className="text-xs font-black text-[#062c24] uppercase">{t.name}</p>
-                    <p className="text-[10px] font-bold text-slate-400">{t.location}</p>
+                    <p className="text-xs font-bold text-[#062c24] ">{t.name}</p>
+                    <p className="text-xs font-bold text-slate-600">{t.location}</p>
                   </div>
                   <div className="flex gap-2">
                     <button onClick={() => { setEditingTestimonial(t); setShowTestimonialModal(true); }}
-                      className="w-8 h-8 rounded-lg bg-blue-50 text-blue-500 flex items-center justify-center hover:bg-blue-500 hover:text-white transition-all"><i className="fas fa-pen text-[10px]"></i></button>
+                      className="w-8 h-8 rounded-lg bg-blue-50 text-blue-500 flex items-center justify-center hover:bg-blue-500 hover:text-white transition-all"><i className="fas fa-pen text-xs"></i></button>
                     <button onClick={() => deleteTestimonial(t.id!)}
-                      className="w-8 h-8 rounded-lg bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all"><i className="fas fa-trash text-[10px]"></i></button>
+                      className="w-8 h-8 rounded-lg bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all"><i className="fas fa-trash text-xs"></i></button>
                   </div>
                 </div>
               </div>
@@ -630,12 +631,12 @@ export default function ContentTab() {
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
             <div>
-              <h3 className="text-sm font-black text-[#062c24] uppercase">Community Events</h3>
-              <p className="text-[10px] text-slate-400 font-bold mt-1">{events.length} upcoming events</p>
+              <h3 style={{ textTransform: "none" }} className="text-sm font-bold text-[#062c24] ">Community events</h3>
+              <p className="text-xs text-slate-600 font-bold mt-1">{events.length} upcoming events</p>
             </div>
             <button onClick={() => { setEditingEvent({ name: "", poster: "", link: "", organizer: "", location: "", startDate: "", endDate: "", allYearLong: false }); setEvtPosterFile(null); setEvtPosterPreview(""); setShowEventModal(true); }}
-              className="w-full sm:w-auto bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-sm transition-all flex items-center justify-center gap-2">
-              <i className="fas fa-plus"></i> Add Event
+              className="w-full sm:w-auto bg-[#062c24] hover:bg-[#0a4135] text-white px-5 py-3 rounded-xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2">
+              <i className="fas fa-plus"></i> Add event
             </button>
           </div>
 
@@ -646,24 +647,24 @@ export default function ContentTab() {
                   {e.poster ? (
                     <img src={e.poster} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={e.name} />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-300"><i className="fas fa-image text-2xl"></i></div>
+                    <div className="w-full h-full flex items-center justify-center text-slate-500"><i className="fas fa-image text-2xl"></i></div>
                   )}
                 </div>
                 <div className="p-4 flex-1 flex flex-col">
-                  <p className="text-xs font-black text-[#062c24] uppercase truncate mb-1">{e.name}</p>
-                  <p className="text-[10px] font-bold text-slate-400 truncate">{e.organizer}</p>
-                  {e.location && <p className="text-[9px] text-slate-400 truncate mt-0.5"><i className="fas fa-map-marker-alt mr-1 text-emerald-400"></i>{e.location}</p>}
-                  <p className="text-[9px] text-slate-400 mt-0.5 mb-3">
-                    {e.allYearLong ? <span className="text-emerald-500 font-bold"><i className="fas fa-infinity mr-1"></i>All Year</span>
+                  <p className="text-xs font-bold text-[#062c24] truncate mb-1">{e.name}</p>
+                  <p className="text-xs font-bold text-slate-600 truncate">{e.organizer}</p>
+                  {e.location && <p className="text-xs text-slate-600 truncate mt-0.5"><i className="fas fa-map-marker-alt mr-1 text-emerald-400"></i>{e.location}</p>}
+                  <p className="text-xs text-slate-600 mt-0.5 mb-3">
+                    {e.allYearLong ? <span className="text-emerald-700 font-bold"><i className="fas fa-infinity mr-1"></i>All year</span>
                       : e.startDate ? `${e.startDate}${e.endDate && e.endDate !== e.startDate ? ` → ${e.endDate}` : ""}` : "No date set"}
                   </p>
                   <div className="flex gap-2 mt-auto">
                     <button onClick={() => { setEditingEvent(e); setEvtPosterFile(null); setEvtPosterPreview(""); setShowEventModal(true); }}
-                      className="flex-1 bg-slate-50 text-slate-600 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-50 hover:text-blue-600 transition-all">
+                      className="flex-1 min-h-10 border border-slate-300 bg-white text-slate-700 rounded-xl text-[13px] font-semibold hover:bg-slate-50">
                       Edit
                     </button>
                     <button onClick={() => deleteEvent(e.id!)}
-                      className="w-10 bg-red-50 text-red-500 rounded-xl text-[10px] flex items-center justify-center hover:bg-red-500 hover:text-white transition-all">
+                      className="w-10 bg-red-50 text-red-500 rounded-xl text-xs flex items-center justify-center hover:bg-red-500 hover:text-white transition-all">
                       <i className="fas fa-trash"></i>
                     </button>
                   </div>
@@ -675,6 +676,7 @@ export default function ContentTab() {
       )}
 
       {/* ── ARTICLES ── */}
+      {activeSection === "articles" && (
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
         <div className="bg-gradient-to-r from-[#062c24] to-emerald-800 p-5 text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -682,19 +684,19 @@ export default function ContentTab() {
               <i className="fas fa-book-open"></i>
             </div>
             <div>
-              <h3 className="font-black uppercase text-sm">Camping Guide Articles</h3>
-              <p className="text-[10px] text-white/70">{articles.length} articles</p>
+              <h3 style={{ textTransform: "none" }} className="font-bold text-sm">Camping guide articles</h3>
+              <p className="text-xs text-white/70">{articles.length} articles</p>
             </div>
           </div>
           <button onClick={openNewArticle}
-            className="flex items-center gap-2 bg-white/20 hover:bg-white hover:text-[#062c24] transition-colors px-3 py-2 rounded-xl text-[10px] font-black uppercase">
-            <i className="fas fa-plus"></i> New Article
+            className="flex items-center gap-2 bg-white/20 hover:bg-white hover:text-[#062c24] transition-colors px-3 py-2 rounded-xl text-xs font-bold ">
+            <i className="fas fa-plus"></i> New article
           </button>
         </div>
 
         <div className="divide-y divide-slate-50">
           {articles.length === 0 ? (
-            <div className="p-8 text-center text-slate-400 text-sm">No articles yet — create the first one!</div>
+            <div className="p-8 text-center text-slate-600 text-sm">No articles yet — create the first one!</div>
           ) : articles.map(a => (
             <div key={a.id} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
               <div className="flex items-center gap-3 min-w-0">
@@ -702,14 +704,14 @@ export default function ContentTab() {
                   <img src={a.coverImage} className="w-12 h-12 rounded-xl object-cover shrink-0" alt="" />
                 ) : (
                   <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-                    <i className="fas fa-book-open text-slate-300"></i>
+                    <i className="fas fa-book-open text-slate-500"></i>
                   </div>
                 )}
                 <div className="min-w-0">
                   <p className="font-bold text-[#062c24] text-sm truncate">{a.title}</p>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[9px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{a.category}</span>
-                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${a.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                    <span className="text-xs text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">{a.category}</span>
+                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${a.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
                       {a.status}
                     </span>
                   </div>
@@ -717,19 +719,19 @@ export default function ContentTab() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button onClick={() => toggleArticleStatus(a)}
-                  className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-colors ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold  transition-colors ${
                     a.status === "published"
                       ? "bg-amber-50 text-amber-600 hover:bg-amber-100"
-                      : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+                      : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
                   }`}>
                   {a.status === "published" ? "Unpublish" : "Publish"}
                 </button>
                 <button onClick={() => openEditArticle(a)}
-                  className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors">
+                  className="p-2 text-slate-600 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors">
                   <i className="fas fa-pen text-xs"></i>
                 </button>
                 <button onClick={() => deleteArticle(a.id)}
-                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                  className="p-2 text-slate-600 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
                   <i className="fas fa-trash text-xs"></i>
                 </button>
               </div>
@@ -737,47 +739,61 @@ export default function ContentTab() {
           ))}
         </div>
       </div>
+      )}
 
-      {/* Floating Save Button */}
-      <div className="fixed bottom-0 right-0 left-0 sm:left-64 p-4 lg:p-8 bg-gradient-to-t from-slate-50 via-slate-50 to-transparent pointer-events-none flex justify-end">
-        <button
-          onClick={saveContent}
-          disabled={saving}
-          className={`pointer-events-auto px-6 py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition-all flex items-center gap-3 ${
-            saved ? "bg-emerald-500 text-white translate-y-0" : "bg-[#062c24] text-white hover:bg-emerald-800 hover:-translate-y-1"
-          } disabled:opacity-50 disabled:hover:translate-y-0`}
-        >
-          {saving ? <><i className="fas fa-spinner fa-spin"></i> Saving...</> : saved ? <><i className="fas fa-check"></i> Published</> : <><i className="fas fa-save"></i> Save Changes</>}
-        </button>
-      </div>
+      {/* Save bar: only for the sections saved together */}
+      {(["announcement", "homepage", "about", "faq"] as ContentSection[]).includes(activeSection) && (
+        <div className="fixed left-0 right-0 lg:left-60 bottom-[64px] lg:bottom-0 z-30 pointer-events-none">
+          <div className="max-w-xl lg:max-w-5xl mx-auto px-4 lg:px-8 pb-3">
+            <button type="button" onClick={saveContent} disabled={saving} className={`${primaryBtn} pointer-events-auto shadow-lg`}>
+              {saving ? "Saving" : saved ? "Saved" : "Save and publish"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {toDelete && (
+        <ConfirmSheet title={`Delete this ${toDelete.kind}?`} confirmLabel="Delete" tone="danger" onClose={() => setToDelete(null)}
+          body={<p>It is removed from the site straight away. This cannot be undone.</p>}
+          onConfirm={async () => {
+            const { kind, id } = toDelete;
+            setToDelete(null);
+            try {
+              if (kind === "testimonial") await doDeleteTestimonial(id);
+              else if (kind === "event") await doDeleteEvent(id);
+              else await doDeleteArticle(id);
+              notify("Deleted");
+            } catch { notify("Could not delete", "error"); }
+          }} />
+      )}
 
       {/* Testimonial Modal */}
       {showTestimonialModal && editingTestimonial && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[600] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
-            <h3 className="text-lg font-black text-[#062c24] uppercase mb-6 shrink-0">{editingTestimonial.id ? "Edit" : "Add"} Testimonial</h3>
+            <h3 style={{ textTransform: "none" }} className="text-lg font-bold text-[#062c24] mb-6 shrink-0">{editingTestimonial.id ? "Edit" : "Add"} Testimonial</h3>
             <div className="space-y-4 overflow-y-auto pr-2 pb-4">
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Customer Name</label>
+                <label className="text-xs font-bold text-slate-600 mb-2 block">Customer name</label>
                 <input value={editingTestimonial.name} onChange={e => setEditingTestimonial({ ...editingTestimonial, name: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold outline-none focus:border-emerald-500" placeholder="e.g. Ahmad Abu" />
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Location</label>
+                <label className="text-xs font-bold text-slate-600 mb-2 block">Location</label>
                 <input value={editingTestimonial.location} onChange={e => setEditingTestimonial({ ...editingTestimonial, location: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold outline-none focus:border-emerald-500" placeholder="e.g. Kuala Lumpur" />
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Review Text</label>
+                <label className="text-xs font-bold text-slate-600 mb-2 block">What they said</label>
                 <textarea value={editingTestimonial.text} onChange={e => setEditingTestimonial({ ...editingTestimonial, text: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm outline-none resize-none focus:border-emerald-500" rows={4} placeholder="What did they say?" />
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Star Rating</label>
+                <label className="text-xs font-bold text-slate-600 mb-2 block">Star rating</label>
                 <div className="flex gap-2">
                   {[1,2,3,4,5].map(r => (
                     <button key={r} onClick={() => setEditingTestimonial({ ...editingTestimonial, rating: r })}
-                      className={`w-12 h-12 rounded-xl text-lg transition-all ${editingTestimonial.rating >= r ? "bg-amber-100 text-amber-500 scale-105" : "bg-slate-50 text-slate-300 hover:bg-slate-100"}`}>
+                      className={`w-12 h-12 rounded-xl text-lg transition-all ${editingTestimonial.rating >= r ? "bg-amber-100 text-amber-500 scale-105" : "bg-slate-50 text-slate-500 hover:bg-slate-100"}`}>
                       <i className="fas fa-star"></i>
                     </button>
                   ))}
@@ -786,9 +802,9 @@ export default function ContentTab() {
             </div>
             <div className="flex gap-3 pt-4 border-t border-slate-100 shrink-0">
               <button onClick={() => { setShowTestimonialModal(false); setEditingTestimonial(null); }}
-                className="flex-1 py-4 rounded-xl text-xs font-black uppercase tracking-widest text-slate-500 bg-slate-100 hover:bg-slate-200 transition-all">Cancel</button>
+                className="flex-1 py-4 rounded-xl text-xs font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 transition-all">Cancel</button>
               <button onClick={() => saveTestimonial(editingTestimonial)}
-                className="flex-1 py-4 rounded-xl text-xs font-black uppercase tracking-widest text-white bg-emerald-500 hover:bg-emerald-600 transition-all">Save</button>
+                className="flex-1 py-4 rounded-xl text-xs font-bold text-white bg-[#062c24] hover:bg-[#0a4135] transition-all">Save</button>
             </div>
           </div>
         </div>
@@ -798,32 +814,32 @@ export default function ContentTab() {
       {showEventModal && editingEvent && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[600] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col max-h-[90vh]">
-            <h3 className="text-lg font-black text-[#062c24] uppercase mb-6 shrink-0">{editingEvent.id ? "Edit" : "Add"} Event</h3>
+            <h3 style={{ textTransform: "none" }} className="text-lg font-bold text-[#062c24] mb-6 shrink-0">{editingEvent.id ? "Edit" : "Add"} Event</h3>
             <div className="space-y-4 overflow-y-auto pr-2 pb-4">
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Event Name</label>
+                <label className="text-xs font-bold text-slate-600 mb-2 block">Event name</label>
                 <input value={editingEvent.name} onChange={e => setEditingEvent({ ...editingEvent, name: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold outline-none focus:border-emerald-500" placeholder="e.g. Mega Campout 2025" />
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Organizer</label>
+                <label className="text-xs font-bold text-slate-600 mb-2 block">Organizer</label>
                 <input value={editingEvent.organizer} onChange={e => setEditingEvent({ ...editingEvent, organizer: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold outline-none focus:border-emerald-500" placeholder="e.g. Pacak Khemah HQ" />
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Location</label>
+                <label className="text-xs font-bold text-slate-600 mb-2 block">Location</label>
                 <input value={editingEvent.location || ""} onChange={e => setEditingEvent({ ...editingEvent, location: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm font-bold outline-none focus:border-emerald-500" placeholder="e.g. Taman Negara, Pahang" />
               </div>
               {/* Poster upload */}
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Poster Image</label>
+                <label className="text-xs font-bold text-slate-600 mb-2 block">Poster image</label>
                 {(evtPosterPreview || editingEvent.poster) && (
                   <img src={evtPosterPreview || editingEvent.poster} alt="" className="w-full h-36 object-cover rounded-xl mb-2 border border-slate-200" />
                 )}
                 <button onClick={() => evtFileRef.current?.click()}
-                  className="w-full h-12 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center gap-2 text-[10px] font-black text-slate-400 uppercase hover:border-emerald-400 hover:text-emerald-500 transition-colors">
-                  <i className="fas fa-camera"></i> {evtPosterPreview || editingEvent.poster ? "Change Photo" : "Upload Poster"}
+                  className="w-full h-12 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center gap-2 text-xs font-bold text-slate-600 hover:border-emerald-400 hover:text-emerald-500 transition-colors">
+                  <i className="fas fa-camera"></i> {evtPosterPreview || editingEvent.poster ? "Change photo" : "Upload poster"}
                 </button>
                 <input ref={evtFileRef} type="file" accept="image/*" className="hidden" onChange={f => {
                   const file = f.target.files?.[0]; if (!file) return;
@@ -832,40 +848,40 @@ export default function ContentTab() {
               </div>
               {/* Date */}
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Event Date</label>
+                <label className="text-xs font-bold text-slate-600 mb-2 block">Event date</label>
                 <label className="flex items-center gap-2 mb-3 cursor-pointer">
                   <input type="checkbox" checked={editingEvent.allYearLong || false}
                     onChange={e => setEditingEvent({ ...editingEvent, allYearLong: e.target.checked, startDate: "", endDate: "" })}
                     className="w-4 h-4 accent-emerald-500" />
-                  <span className="text-xs font-bold text-slate-600">All Year Long (no expiry)</span>
+                  <span className="text-xs font-bold text-slate-600">All year (no end date)</span>
                 </label>
                 {!editingEvent.allYearLong && (
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Start Date</p>
+                      <p className="text-xs font-bold text-slate-600 mb-1">Start date</p>
                       <input type="date" value={editingEvent.startDate || ""} onChange={e => setEditingEvent({ ...editingEvent, startDate: e.target.value })}
                         className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none focus:border-emerald-500" />
                     </div>
                     <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase mb-1">End Date</p>
+                      <p className="text-xs font-bold text-slate-600 mb-1">End date</p>
                       <input type="date" value={editingEvent.endDate || ""} onChange={e => setEditingEvent({ ...editingEvent, endDate: e.target.value })}
                         className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none focus:border-emerald-500" />
                     </div>
                   </div>
                 )}
-                {!editingEvent.allYearLong && <p className="text-[9px] text-slate-400 mt-1.5">Event is auto-removed the day after the end date</p>}
+                {!editingEvent.allYearLong && <p className="text-xs text-slate-600 mt-1.5">Event is auto-removed the day after the end date</p>}
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Link / URL</label>
+                <label className="text-xs font-bold text-slate-600 mb-2 block">Link / URL</label>
                 <input value={editingEvent.link} onChange={e => setEditingEvent({ ...editingEvent, link: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 p-4 rounded-xl text-sm outline-none focus:border-emerald-500" placeholder="https://..." />
               </div>
             </div>
             <div className="flex gap-3 pt-4 border-t border-slate-100 shrink-0">
               <button onClick={() => { setShowEventModal(false); setEditingEvent(null); setEvtPosterFile(null); setEvtPosterPreview(""); }}
-                className="flex-1 py-4 rounded-xl text-xs font-black uppercase tracking-widest text-slate-500 bg-slate-100 hover:bg-slate-200 transition-all">Cancel</button>
+                className="flex-1 py-4 rounded-xl text-xs font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 transition-all">Cancel</button>
               <button onClick={() => saveEvent(editingEvent)} disabled={evtUploading}
-                className="flex-1 py-4 rounded-xl text-xs font-black uppercase tracking-widest text-white bg-emerald-500 hover:bg-emerald-600 transition-all disabled:opacity-50">
+                className="flex-1 py-4 rounded-xl text-xs font-bold text-white bg-[#062c24] hover:bg-[#0a4135] transition-all disabled:opacity-50">
                 {evtUploading ? <><i className="fas fa-spinner fa-spin mr-2"></i>Uploading…</> : "Save"}
               </button>
             </div>
@@ -877,18 +893,18 @@ export default function ContentTab() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl my-4">
             <div className="flex items-center justify-between p-5 border-b border-slate-100">
-              <h3 className="font-black text-[#062c24] uppercase text-base">
-                {editingArticle ? "Edit Article" : "New Article"}
+              <h3 style={{ textTransform: "none" }} className="font-bold text-[#062c24] text-base">
+                {editingArticle ? "Edit article" : "New article"}
               </h3>
               <button onClick={() => setArticleModal(false)}
-                className="w-9 h-9 rounded-full bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center">
+                className="w-9 h-9 rounded-full bg-slate-100 text-slate-600 hover:text-slate-600 flex items-center justify-center">
                 <i className="fas fa-times"></i>
               </button>
             </div>
 
             <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Title *</label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Title *</label>
                 <input value={articleForm.title}
                   onChange={e => setArticleForm(f => ({ ...f, title: e.target.value, slug: toSlug(e.target.value) }))}
                   placeholder="How to Set Up a Dome Tent in 5 Minutes"
@@ -896,9 +912,9 @@ export default function ContentTab() {
               </div>
 
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">URL Slug</label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Link (URL slug)</label>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-slate-400 bg-slate-50 border border-slate-200 px-2 py-2.5 rounded-l-xl shrink-0">/guide/</span>
+                  <span className="text-xs text-slate-600 bg-slate-50 border border-slate-200 px-2 py-2.5 rounded-l-xl shrink-0">/guide/</span>
                   <input value={articleForm.slug}
                     onChange={e => setArticleForm(f => ({ ...f, slug: e.target.value }))}
                     className="flex-1 border border-slate-200 rounded-r-xl p-2.5 text-sm outline-none focus:border-emerald-400 font-mono" />
@@ -907,7 +923,7 @@ export default function ContentTab() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Category</label>
+                  <label className="text-xs font-bold text-slate-500 mb-1 block">Category</label>
                   <select value={articleForm.category}
                     onChange={e => setArticleForm(f => ({ ...f, category: e.target.value }))}
                     className="w-full border border-slate-200 rounded-xl p-2.5 text-sm outline-none focus:border-emerald-400">
@@ -917,7 +933,7 @@ export default function ContentTab() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Status</label>
+                  <label className="text-xs font-bold text-slate-500 mb-1 block">Status</label>
                   <select value={articleForm.status}
                     onChange={e => setArticleForm(f => ({ ...f, status: e.target.value as "draft" | "published" }))}
                     className="w-full border border-slate-200 rounded-xl p-2.5 text-sm outline-none focus:border-emerald-400">
@@ -928,7 +944,7 @@ export default function ContentTab() {
               </div>
 
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">YouTube URL (optional)</label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">YouTube URL (optional)</label>
                 <input value={articleForm.videoUrl}
                   onChange={e => setArticleForm(f => ({ ...f, videoUrl: e.target.value }))}
                   placeholder="https://youtube.com/watch?v=..."
@@ -936,7 +952,7 @@ export default function ContentTab() {
               </div>
 
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Cover Image (optional)</label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Cover image (optional)</label>
                 {(articleForm.coverImage || articleImageFile) ? (
                   <div className="relative inline-block">
                     <img
@@ -949,8 +965,8 @@ export default function ContentTab() {
                   </div>
                 ) : (
                   <label className="flex items-center gap-2 p-4 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-emerald-300 hover:bg-emerald-50/30 transition-colors">
-                    <i className="fas fa-image text-slate-300 text-xl"></i>
-                    <span className="text-xs font-bold text-slate-400">Click to upload cover image</span>
+                    <i className="fas fa-image text-slate-500 text-xl"></i>
+                    <span className="text-xs font-bold text-slate-600">Click to upload cover image</span>
                     <input type="file" accept="image/*" className="hidden"
                       onChange={e => e.target.files?.[0] && setArticleImageFile(e.target.files[0])} />
                   </label>
@@ -958,7 +974,7 @@ export default function ContentTab() {
               </div>
 
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Excerpt * <span className="text-slate-300 normal-case font-normal">(1-2 sentences for preview cards)</span></label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Excerpt * <span className="text-slate-500 normal-case font-normal">(1-2 sentences for preview cards)</span></label>
                 <textarea value={articleForm.excerpt}
                   onChange={e => setArticleForm(f => ({ ...f, excerpt: e.target.value }))}
                   rows={2} placeholder="A quick summary of what this article covers..."
@@ -966,7 +982,7 @@ export default function ContentTab() {
               </div>
 
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Content *</label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Content *</label>
                 <Suspense fallback={<div className="h-40 border border-slate-200 rounded-xl animate-pulse bg-slate-50" />}>
                   <RichTextEditor
                     value={articleForm.content}
@@ -979,8 +995,8 @@ export default function ContentTab() {
 
             <div className="p-5 border-t border-slate-100">
               <button onClick={saveArticle} disabled={!articleForm.title.trim() || !articleForm.excerpt.trim() || articleSaving}
-                className="w-full bg-[#062c24] text-white py-3.5 rounded-xl text-xs font-black uppercase disabled:opacity-50 hover:bg-emerald-800 transition-colors">
-                {articleSaving ? <><i className="fas fa-spinner fa-spin mr-2"></i>Saving...</> : editingArticle ? "Update Article" : "Create Article"}
+                className="w-full bg-[#062c24] text-white py-3.5 rounded-xl text-xs font-bold disabled:opacity-50 hover:bg-emerald-800 transition-colors">
+                {articleSaving ? <><i className="fas fa-spinner fa-spin mr-2"></i>Saving...</> : editingArticle ? "Update article" : "Create article"}
               </button>
             </div>
           </div>

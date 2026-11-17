@@ -1,254 +1,216 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from "firebase/auth";
-import DashboardTab from "@/components/admin/DashboardTab";
+import { isAdminEmail } from "@/lib/adminAccess";
+import AdminHome from "@/components/admin/AdminHome";
 import VendorsTab from "@/components/admin/VendorsTab";
-import OrdersTab from "@/components/admin/OrdersTab"; // Added OrdersTab import
+import OrdersTab from "@/components/admin/OrdersTab";
 import FinanceTab from "@/components/admin/FinanceTab";
-import ContentTab from "@/components/admin/ContentTab";
+import SiteTab from "@/components/admin/SiteTab";
 import AdminSettingsTab from "@/components/admin/SettingsTab";
-import CampsitesTab from "@/components/admin/CampsitesTab";
-import ProspectsTab from "@/components/admin/ProspectsTab";
+import type { AdminVendor } from "@/components/admin/types";
 
-const ADMIN_EMAIL = "akiff.work@gmail.com";
-type View = "dashboard" | "vendors" | "prospects" | "orders" | "finance" | "content" | "campsites" | "settings"; // Added "orders"
+export type AdminTab = "home" | "vendors" | "orders" | "money" | "site" | "settings";
+export type AdminNavigate = (tab: AdminTab, extra?: Record<string, string>) => void;
 
-const PAGE_TITLES: Record<View, string> = {
-  dashboard: "Overview", 
-  finance: "Financials", 
-  vendors: "Vendor Management",
-  prospects: "Prospect Vendors",
-  orders: "Platform Orders", // Added orders title
-  campsites: "Campsite Directory",
-  content: "Content Manager", 
-  settings: "System Settings",
-};
-
-const NAV_CATEGORIES = ["Insights", "Operations", "Platform", "System"] as const;
-
-const NAV_ITEMS: { id: View; label: string; icon: string; category: typeof NAV_CATEGORIES[number] }[] = [
-  { id: "dashboard", label: "Overview", icon: "fa-chart-pie", category: "Insights" },
-  { id: "finance", label: "Finance", icon: "fa-wallet", category: "Insights" },
-  
-  { id: "vendors", label: "Vendors", icon: "fa-store", category: "Operations" },
-  { id: "prospects", label: "Prospects", icon: "fa-bullhorn", category: "Operations" },
-  { id: "orders", label: "Orders", icon: "fa-receipt", category: "Operations" }, // Added orders tab
-  
-  { id: "campsites", label: "Campsites", icon: "fa-campground", category: "Platform" },
-  { id: "content", label: "Site Content", icon: "fa-layer-group", category: "Platform" },
-  
-  { id: "settings", label: "Settings", icon: "fa-cog", category: "System" },
+const NAV: { id: AdminTab; label: string; icon: string }[] = [
+  { id: "home", label: "Home", icon: "fa-house" },
+  { id: "vendors", label: "Vendors", icon: "fa-store" },
+  { id: "orders", label: "Orders", icon: "fa-receipt" },
+  { id: "money", label: "Money", icon: "fa-wallet" },
+  { id: "site", label: "Site", icon: "fa-globe" },
+  { id: "settings", label: "Settings", icon: "fa-gear" },
 ];
 
-function AdminGate({ onError }: { onError: boolean }) {
+// Old tab names keep working
+const ALIASES: Record<string, { tab: AdminTab; extra?: Record<string, string> }> = {
+  dashboard: { tab: "home" },
+  finance: { tab: "money" },
+  prospects: { tab: "vendors", extra: { view: "prospects" } },
+  content: { tab: "site" },
+  campsites: { tab: "site", extra: { section: "campsites" } },
+};
+
+function AdminGate({ denied }: { denied: boolean }) {
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
   async function login() {
-    setLoading(true);
+    setLoading(true); setFailed(false);
     try { await signInWithPopup(auth, new GoogleAuthProvider()); }
-    catch { alert("Login Failed"); }
+    catch { setFailed(true); }
     finally { setLoading(false); }
   }
   return (
-    <div className="fixed inset-0 bg-[#062c24] z-[500] flex items-center justify-center p-6">
-      <div className="bg-white p-10 rounded-[2.5rem] max-w-sm w-full text-center shadow-2xl relative">
-        <Link href="/directory" className="absolute top-6 right-8 text-slate-300 hover:text-red-500 transition-colors">
-          <i className="fas fa-times text-xl"></i>
-        </Link>
-        <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm border border-emerald-100">
-          <i className="fas fa-user-shield text-2xl"></i>
+    <div className="fixed inset-0 bg-[#062c24] flex items-center justify-center p-6">
+      <div className="bg-white p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl flex flex-col gap-4">
+        <div className="w-14 h-14 bg-emerald-50 text-emerald-700 rounded-2xl flex items-center justify-center mx-auto border border-emerald-100">
+          <i className="fas fa-user-shield text-xl" aria-hidden="true"></i>
         </div>
-        <h2 className="text-3xl mb-2 font-black tracking-tight text-[#062c24]">Admin HQ</h2>
-        <p className="text-[10px] font-bold text-slate-400 uppercase mb-8 tracking-widest">Authorized Personnel Only</p>
+        <div>
+          <h1 style={{ textTransform: "none" }} className="text-2xl font-extrabold text-[#062c24]">Pacak Khemah admin</h1>
+          <p className="text-sm text-slate-600 mt-1">Sign in with an admin Google account.</p>
+        </div>
         <button onClick={login} disabled={loading}
-          className="w-full bg-white text-slate-600 border border-slate-200 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 transition-all shadow-lg flex items-center justify-center gap-3 disabled:opacity-50">
-          {loading ? <i className="fas fa-spinner fa-spin"></i> : <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="G" />}
+          className="min-h-12 w-full rounded-2xl border border-slate-300 bg-white text-slate-800 text-[15px] font-semibold hover:bg-slate-50 flex items-center justify-center gap-3 disabled:opacity-60">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {loading ? <i className="fas fa-spinner fa-spin" aria-hidden="true"></i> : <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="" />}
           Sign in with Google
         </button>
-        {onError && <p className="text-[10px] text-red-500 font-bold mt-4 uppercase tracking-widest">Access Denied</p>}
+        {denied && <p role="alert" className="text-sm font-semibold text-red-800">This account does not have admin access.</p>}
+        {failed && <p role="alert" className="text-sm font-semibold text-red-800">Sign-in did not finish. Please try again.</p>}
+        <Link href="/directory" className="text-sm font-semibold text-emerald-800 min-h-10 flex items-center justify-center">Back to the site</Link>
       </div>
     </div>
   );
 }
 
-function AdminShell({ user, allVendors }: { user: User; allVendors: any[] }) {
-  const [activeView, setActiveView] = useState<View>("dashboard");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [orderCounts, setOrderCounts] = useState({ pending: 0, total: 0 });
-
-  // Load order counts for badges
+function useAlertCounts(allVendors: AdminVendor[]) {
+  const [topUps, setTopUps] = useState(0);
+  const [pendingOrders, setPendingOrders] = useState(0);
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "orders"), snap => {
-      let pending = 0, total = 0;
-      snap.docs.forEach(d => {
-        const o = d.data();
-        if (o.deleted) return;
-        total++;
-        if (o.status === "pending") pending++;
-      });
-      setOrderCounts({ pending, total });
-    });
-    return () => unsub();
+    const a = onSnapshot(query(collection(db, "topups"), where("status", "==", "pending")), s => setTopUps(s.size), () => setTopUps(0));
+    // Only pending orders, not the whole collection
+    const b = onSnapshot(query(collection(db, "orders"), where("status", "==", "pending")), s => setPendingOrders(s.docs.filter(d => !d.data().deleted).length), () => setPendingOrders(0));
+    return () => { a(); b(); };
   }, []);
+  const applications = allVendors.filter(v => v.status === "pending").length;
+  return { applications, topUps, pendingOrders };
+}
 
-  // Credit top-ups waiting for approval
-  const [pendingTopUps, setPendingTopUps] = useState(0);
-  useEffect(() => {
-    const unsub = onSnapshot(query(collection(db, "topups"), where("status", "==", "pending")), snap => setPendingTopUps(snap.size), () => setPendingTopUps(0));
-    return () => unsub();
-  }, []);
+function AdminShell({ user, allVendors }: { user: User; allVendors: AdminVendor[] }) {
+  const router = useRouter();
+  const params = useSearchParams();
+  const raw = params.get("tab") || "home";
+  const alias = ALIASES[raw];
+  const tab: AdminTab = alias?.tab || (NAV.some(n => n.id === raw) ? raw as AdminTab : "home");
+  const param = (k: string) => alias?.extra?.[k] || params.get(k) || undefined;
 
-  const pendingVendors = allVendors.filter(v => v.status === "pending").length;
-  const totalAlerts = pendingVendors + orderCounts.pending + pendingTopUps;
+  const navigate: AdminNavigate = useCallback((next, extra = {}) => {
+    const q = new URLSearchParams({ tab: next, ...extra });
+    router.push(`/admin?${q.toString()}`);
+    document.getElementById("admin-main")?.scrollTo({ top: 0 });
+  }, [router]);
+
+  const counts = useAlertCounts(allVendors);
+  const badge: Partial<Record<AdminTab, number>> = { vendors: counts.applications, money: counts.topUps, orders: counts.pendingOrders };
+  const label = NAV.find(n => n.id === tab)!.label;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50" style={{ fontFamily: "'Inter', sans-serif" }}>
-      {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-20 lg:hidden backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />}
-
-      <aside className={`fixed inset-y-0 left-0 z-30 w-64 bg-[#062c24] text-white flex flex-col justify-between shadow-2xl transition-transform duration-300 lg:translate-x-0 lg:static shrink-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+    <div className="min-h-screen bg-slate-50 text-slate-900 lg:flex">
+      {/* Desktop sidebar */}
+      <aside className="hidden lg:flex w-60 shrink-0 bg-[#062c24] text-white flex-col justify-between sticky top-0 h-screen">
         <div>
-          <div className="p-8 flex items-center justify-between lg:justify-start gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center font-black text-[#062c24]">P</div>
-              <span className="font-black text-lg tracking-tight uppercase">Pacak HQ</span>
+          <div className="px-5 py-5 flex items-center gap-3">
+            <div className="w-9 h-9 bg-emerald-400 rounded-xl flex items-center justify-center font-extrabold text-[#062c24]">P</div>
+            <div>
+              <p className="text-[15px] font-bold leading-tight">Pacak Khemah</p>
+              <p className="text-xs text-emerald-200">Admin</p>
             </div>
-            <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-white/50 hover:text-white"><i className="fas fa-times"></i></button>
           </div>
-          
-          {/* Updated Navigation using Categories */}
-          <nav className="space-y-6 px-4 py-4">
-            {NAV_CATEGORIES.map(category => {
-              const categoryItems = NAV_ITEMS.filter(item => item.category === category);
-              if (categoryItems.length === 0) return null;
-
-              return (
-                <div key={category}>
-                  <p className="px-4 text-[9px] font-black text-emerald-500/60 uppercase tracking-[0.2em] mb-2">
-                    {category}
-                  </p>
-                  <div className="space-y-1">
-                    {categoryItems.map(item => (
-                      <button
-                        key={item.id}
-                        onClick={() => { setActiveView(item.id); setSidebarOpen(false); }}
-                        className={`w-full flex items-center justify-between gap-4 px-4 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all ${
-                          activeView === item.id 
-                            ? "bg-white/10 border-l-4 border-emerald-500 text-white" 
-                            : "text-emerald-100/70 hover:bg-white/5 hover:text-white border-l-4 border-transparent"
-                        }`}
-                      >
-                        <span className="flex items-center gap-3">
-                          <i className={`fas ${item.icon} w-5 text-center`}></i> 
-                          {item.label}
-                        </span>
-                        {item.id === "vendors" && pendingVendors > 0 && (
-                          <span className="bg-amber-400 text-[#062c24] text-[8px] font-black px-1.5 py-0.5 rounded-full text-center min-w-[20px]">
-                            {pendingVendors}
-                          </span>
-                        )}
-                        {item.id === "finance" && pendingTopUps > 0 && (
-                          <span className="bg-amber-400 text-[#062c24] text-[8px] font-black px-1.5 py-0.5 rounded-full text-center min-w-[20px]">
-                            {pendingTopUps}
-                          </span>
-                        )}
-                        {item.id === "orders" && orderCounts.pending > 0 && (
-                          <span className="bg-red-400 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full text-center min-w-[20px]">
-                            {orderCounts.pending}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+          <nav aria-label="Admin" className="px-3 flex flex-col gap-1">
+            {NAV.map(n => (
+              <button key={n.id} type="button" onClick={() => navigate(n.id)} aria-current={tab === n.id ? "page" : undefined}
+                className={`min-h-11 px-3 rounded-xl text-sm flex items-center gap-3 ${tab === n.id ? "bg-white/15 font-bold text-white" : "font-semibold text-emerald-100 hover:bg-white/10"}`}>
+                <i className={`fas ${n.icon} w-5 text-center`} aria-hidden="true"></i>
+                <span className="flex-1 text-left">{n.label}</span>
+                {!!badge[n.id] && <span className="min-w-6 h-6 px-1.5 rounded-full bg-amber-400 text-[#062c24] text-xs font-bold flex items-center justify-center">{badge[n.id]}</span>}
+              </button>
+            ))}
           </nav>
         </div>
-        
-        <div className="p-6 border-t border-white/10 shrink-0">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-8 h-8 rounded-full bg-emerald-900 flex items-center justify-center text-[10px] font-bold">A</div>
-            <div className="overflow-hidden">
-              <p className="text-[10px] font-bold text-emerald-100 truncate">{user.email}</p>
-              <p className="text-[8px] text-emerald-500 uppercase font-black">Super Admin</p>
-            </div>
+        <div className="px-5 py-4 border-t border-white/10 flex flex-col gap-2">
+          <p className="text-xs text-emerald-100 truncate">{user.email}</p>
+          <div className="flex gap-2">
+            <Link href="/directory" target="_blank" className="flex-1 min-h-10 rounded-xl bg-white/10 hover:bg-white/20 text-[13px] font-semibold flex items-center justify-center">View site</Link>
+            <button type="button" onClick={() => signOut(auth)} className="flex-1 min-h-10 rounded-xl bg-white/10 hover:bg-red-600 text-[13px] font-semibold">Log out</button>
           </div>
-          <button onClick={() => signOut(auth)} className="w-full bg-red-500/20 text-red-300 py-2 rounded-lg text-[9px] font-black uppercase hover:bg-red-500 hover:text-white transition-all">Logout</button>
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col h-screen overflow-hidden w-full">
-        <header className="bg-white/80 backdrop-blur-md h-16 lg:h-20 flex items-center justify-between px-4 lg:px-8 border-b border-slate-200 shrink-0">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden relative w-10 h-10 bg-white border border-slate-200 rounded-xl text-slate-500 flex items-center justify-center">
-              <i className="fas fa-bars"></i>
-              {totalAlerts > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[7px] font-black rounded-full flex items-center justify-center">{totalAlerts}</span>}
-            </button>
-            <h2 className="text-lg lg:text-xl font-black text-[#062c24] uppercase tracking-tight">{PAGE_TITLES[activeView]}</h2>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Notification Bell */}
-            {totalAlerts > 0 && (
-              <button onClick={() => setActiveView(pendingVendors > 0 ? "vendors" : "orders")} 
-                className="relative w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-500 hover:bg-amber-50 hover:text-amber-600 transition-colors">
-                <i className="fas fa-bell text-sm"></i>
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center animate-pulse">{totalAlerts}</span>
-              </button>
-            )}
-            <Link href="/directory" target="_blank" className="px-3 py-2 lg:px-4 bg-slate-100 text-slate-500 rounded-xl text-[9px] lg:text-[10px] font-bold uppercase hover:bg-emerald-50 hover:text-emerald-600 transition-all flex items-center gap-2">
-              <i className="fas fa-external-link-alt"></i><span className="hidden sm:inline">Directory</span>
+      <div className="flex-1 min-w-0">
+        {/* Mobile header */}
+        <header className="lg:hidden bg-white border-b border-slate-200 sticky top-0 z-40">
+          <div className="px-4 py-2.5 flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#062c24] text-emerald-300 rounded-xl flex items-center justify-center font-extrabold">P</div>
+            <p className="flex-1 text-[15px] font-bold text-[#062c24]">Admin · {label}</p>
+            <Link href="/directory" target="_blank" aria-label="View the site"
+              className="w-10 h-10 rounded-xl border border-slate-200 text-slate-700 flex items-center justify-center hover:bg-slate-100">
+              <i className="fas fa-external-link-alt text-sm" aria-hidden="true"></i>
             </Link>
+            <button type="button" onClick={() => signOut(auth)} aria-label="Log out"
+              className="w-10 h-10 rounded-xl border border-slate-200 text-slate-700 flex items-center justify-center hover:bg-slate-100">
+              <i className="fas fa-right-from-bracket text-sm" aria-hidden="true"></i>
+            </button>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 lg:p-8" style={{ scrollbarWidth: "thin" }}>
-          {activeView === "dashboard" && <DashboardTab allVendors={allVendors} onNavigate={setActiveView} />}
-          {activeView === "finance" && <FinanceTab />}
-          {activeView === "vendors" && <VendorsTab allVendors={allVendors} />}
-          {activeView === "prospects" && <ProspectsTab allVendors={allVendors} />}
-          {activeView === "orders" && <OrdersTab />} {/* Added Orders tab render */}
-          {activeView === "campsites" && <CampsitesTab />}
-          {activeView === "content" && <ContentTab />}
-          {activeView === "settings" && <AdminSettingsTab />}
-        </div>
-      </main>
+        <main id="admin-main" className="max-w-xl lg:max-w-5xl mx-auto px-4 lg:px-8 pt-4 lg:pt-8 pb-28 lg:pb-12">
+          {tab === "home" && <AdminHome allVendors={allVendors} counts={counts} onNavigate={navigate} />}
+          {tab === "vendors" && <VendorsTab key={param("view") || "v"} allVendors={allVendors} initialView={param("view")} initialSearch={param("q")} />}
+          {tab === "orders" && <OrdersTab key={param("status") || "o"} initialStatus={param("status")} />}
+          {tab === "money" && <FinanceTab allVendors={allVendors} />}
+          {tab === "site" && <SiteTab key={param("section") || "s"} initialSection={param("section")} />}
+          {tab === "settings" && <AdminSettingsTab key={param("section") || "st"} initialSection={param("section")} />}
+        </main>
+
+        {/* Mobile bottom nav */}
+        <nav aria-label="Admin" className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200">
+          <div className="max-w-xl mx-auto grid grid-cols-6">
+            {NAV.map(n => (
+              <button key={n.id} type="button" onClick={() => navigate(n.id)} aria-current={tab === n.id ? "page" : undefined}
+                className={`relative min-h-[58px] flex flex-col items-center justify-center gap-1 text-xs ${tab === n.id ? "text-[#062c24] font-bold" : "text-slate-600 font-semibold"}`}>
+                {tab === n.id && <span className="absolute top-0 left-3 right-3 h-[3px] rounded-b bg-[#062c24]" aria-hidden="true"></span>}
+                <i className={`fas ${n.icon} text-lg`} aria-hidden="true"></i>
+                {n.label}
+                {!!badge[n.id] && <span className="absolute top-1.5 right-[18%] min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-[11px] font-bold flex items-center justify-center">{badge[n.id]! > 9 ? "9+" : badge[n.id]}</span>}
+              </button>
+            ))}
+          </div>
+        </nav>
+      </div>
     </div>
   );
 }
 
-export default function AdminPage() {
+function AdminPageInner() {
   const [user, setUser] = useState<User | null>(null);
-  const [allVendors, setAllVendors] = useState<any[]>([]);
+  const [allVendors, setAllVendors] = useState<AdminVendor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [accessDenied, setAccessDenied] = useState(false);
+  const [denied, setDenied] = useState(false);
 
   useEffect(() => {
+    let stopVendors: (() => void) | null = null;
     const unsub = onAuthStateChanged(auth, async (u) => {
-      if (u && u.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
-        setUser(u);
-        setAccessDenied(false);
-        // Start vendor listener
-        onSnapshot(collection(db, "vendors"), snap => {
-          setAllVendors(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      stopVendors?.(); stopVendors = null;
+      if (u && await isAdminEmail(u.email)) {
+        setUser(u); setDenied(false);
+        stopVendors = onSnapshot(collection(db, "vendors"), snap => {
+          setAllVendors(snap.docs.map(d => ({ id: d.id, ...d.data() } as AdminVendor)));
         });
       } else {
-        if (u) { setAccessDenied(true); await signOut(auth); }
+        if (u) { setDenied(true); await signOut(auth); }
         setUser(null);
       }
       setLoading(false);
     });
-    return () => unsub();
+    return () => { unsub(); stopVendors?.(); };
   }, []);
 
   if (loading) return (
-    <div className="fixed inset-0 bg-[#062c24] flex items-center justify-center">
-      <div className="text-white font-black uppercase text-sm animate-pulse">Loading...</div>
+    <div className="fixed inset-0 bg-[#062c24] flex items-center justify-center" role="status">
+      <i className="fas fa-spinner fa-spin text-2xl text-emerald-300" aria-hidden="true"></i>
+      <span className="sr-only">Loading</span>
     </div>
   );
-
-  if (!user) return <AdminGate onError={accessDenied} />;
+  if (!user) return <AdminGate denied={denied} />;
   return <AdminShell user={user} allVendors={allVendors} />;
+}
+
+export default function AdminPage() {
+  return <Suspense fallback={null}><AdminPageInner /></Suspense>;
 }

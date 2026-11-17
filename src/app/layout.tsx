@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
+import SiteNotice from "@/components/SiteNotice";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -110,6 +111,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
       </head>
       <body className={inter.className}>
+        <SiteNotice />
         {children}
 
         {/* AdSense — lazy: only loads after the page is idle */}

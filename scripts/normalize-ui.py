@@ -6,6 +6,7 @@ Brings Tailwind classes in line with the shared kit (components/ui/kit.tsx):
 - body greys dark enough to read (slate-300/400 text become slate-500/600)
 - no all-caps or letter-spaced labels; font-black becomes font-bold
 - one corner radius family
+- headings in sentence case (overrides the global uppercase)
 
 Usage: python3 scripts/normalize-ui.py FILE [FILE...]
 """
@@ -23,6 +24,9 @@ RULES = [
     (TOKEN_EDGE + r'uppercase' + TOKEN_END, ''),
     (TOKEN_EDGE + r'tracking-(widest|wider|tighter)' + TOKEN_END, ''),
     (r'rounded-\[(2\.5rem|2rem|1\.5rem)\]', 'rounded-2xl'),
+    # globals.css makes h1-h6 uppercase; dashboards use sentence case
+    (r'<(h[1-6]) className=', r'<\1 style={{ textTransform: "none" }} className='),
+    (r'text-\[6px\]', 'text-xs'),
 ]
 
 def normalize(src: str) -> str:

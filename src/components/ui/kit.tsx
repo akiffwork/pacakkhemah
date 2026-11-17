@@ -327,3 +327,60 @@ export function Chip({ children, tone = "neutral" }: { children: ReactNode; tone
   const cls = { good: "bg-emerald-100 text-emerald-800", warn: "bg-amber-100 text-amber-800", danger: "bg-red-100 text-red-800", info: "bg-blue-100 text-blue-800", neutral: "bg-slate-200 text-slate-700", violet: "bg-violet-100 text-violet-800" }[tone];
   return <span className={`text-xs font-bold px-2.5 py-1 rounded-lg whitespace-nowrap ${cls}`}>{children}</span>;
 }
+
+// ── Confirm sheet (replaces window.confirm / prompt) ───────────────────────
+
+/**
+ * Asks before something important. Optional reason box, and optional typed
+ * confirmation for things that cannot be undone.
+ */
+export function ConfirmSheet({ title, body, confirmLabel, tone = "primary", reason, typeToConfirm, busy, onConfirm, onClose }: {
+  title: string;
+  body?: ReactNode;
+  confirmLabel: string;
+  tone?: "primary" | "danger";
+  reason?: { label: string; placeholder?: string; required?: boolean; initial?: string };
+  typeToConfirm?: string;
+  busy?: boolean;
+  onConfirm: (reason: string) => void;
+  onClose: () => void;
+}) {
+  const [text, setText] = useState(reason?.initial || "");
+  const [typed, setTyped] = useState("");
+  const blocked = !!busy || (!!reason?.required && !text.trim()) || (!!typeToConfirm && typed.trim() !== typeToConfirm);
+  return (
+    <BottomSheet title={title} onClose={onClose}>
+      {body && <div className="text-sm leading-relaxed text-slate-700 -mt-1 flex flex-col gap-2">{body}</div>}
+      {reason && (
+        <label className="flex flex-col gap-1.5">
+          <span className={labelCls}>{reason.label}{reason.required ? "" : " (optional)"}</span>
+          <textarea rows={2} value={text} onChange={e => setText(e.target.value)} placeholder={reason.placeholder}
+            className={`${inputCls} py-2.5 resize-none`} />
+        </label>
+      )}
+      {typeToConfirm && (
+        <label className="flex flex-col gap-1.5">
+          <span className={labelCls}>Type <b className="text-slate-900">{typeToConfirm}</b> to confirm</span>
+          <input value={typed} onChange={e => setTyped(e.target.value)} className={inputCls} autoComplete="off" />
+        </label>
+      )}
+      <button type="button" disabled={blocked} onClick={() => onConfirm(text.trim())}
+        className={tone === "danger" ? "min-h-13 w-full rounded-2xl bg-red-700 text-white text-[15px] font-bold hover:bg-red-800 disabled:opacity-50" : primaryBtn}>
+        {busy ? "Working" : confirmLabel}
+      </button>
+      <button type="button" onClick={onClose} className={secondaryBtn}>Cancel</button>
+    </BottomSheet>
+  );
+}
+
+/** Search box with the icon and label the dashboards use. */
+export function SearchInput({ id, value, onChange, placeholder }: { id: string; value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <div className="relative">
+      <label htmlFor={id} className="sr-only">{placeholder}</label>
+      <i className="fas fa-search absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-sm" aria-hidden="true"></i>
+      <input id={id} type="search" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        className="w-full min-h-11 bg-white border border-slate-300 rounded-xl pl-10 pr-3 text-base text-slate-900 placeholder:text-slate-500" />
+    </div>
+  );
+}

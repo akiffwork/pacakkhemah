@@ -1,479 +1,315 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+// Admin › Settings: payments and credits, site info, social links, defaults
+// for new shops, admin access, and data tools.
 
-type SiteSettings = {
-  siteName: string;
-  tagline: string;
-  contactEmail: string;
-  contactWhatsApp: string;
-  maintenanceMode: boolean;
-  maintenanceMessage: string;
-};
+import { useEffect, useRef, useState } from "react";
+import { collection, deleteField, doc, getDoc, getDocs, limit, query, setDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
+import { db, storage } from "@/lib/firebase";
+import { DEFAULT_ACCOUNT_NAME, DEFAULT_ADMIN_WHATSAPP, DEFAULT_PACKAGES, DEFAULT_QR, type CreditPackage } from "@/lib/credits";
+import { DEFAULT_POLICIES, DEFAULT_SITE, type DefaultPolicies, type SiteSettings } from "@/lib/siteSettings";
+import { OWNER_EMAIL, loadAdminEmails, saveAdminEmails } from "@/lib/adminAccess";
+import {
+  Card, Choice, ConfirmSheet, Field, H2, NumberInput, PageHeader, Segments, SwitchRow, Toast, hintCls, inputCls, primaryBtn, smallBtn, useToast,
+} from "@/components/ui/kit";
 
-type SocialLinks = {
-  instagram: string;
-  tiktok: string;
-  facebook: string;
-  threads: string;
-  whatsapp: string;
-};
+type Section = "payments" | "site" | "social" | "defaults" | "admins" | "data";
+type Social = { instagram: string; tiktok: string; facebook: string; threads: string; whatsapp: string };
+type Payments = { packages: CreditPackage[]; startingCredits: number; accountName: string; adminWhatsApp: string; qrImageUrl: string };
+type Referral = { rewardCredits: number; enabled: boolean };
 
-type AdminEmails = string[];
+const SECTIONS: { key: Section; label: string }[] = [
+  { key: "payments", label: "Payments and credits" },
+  { key: "site", label: "Site info" },
+  { key: "social", label: "Social links" },
+  { key: "defaults", label: "New shop defaults" },
+  { key: "admins", label: "Admin access" },
+  { key: "data", label: "Data" },
+];
+const EMPTY_SOCIAL: Social = { instagram: "", tiktok: "", facebook: "", threads: "", whatsapp: "" };
+const SOCIAL_FIELDS: { key: keyof Social; label: string; placeholder: string }[] = [
+  { key: "instagram", label: "Instagram", placeholder: "https://instagram.com/yourpage" },
+  { key: "tiktok", label: "TikTok", placeholder: "https://tiktok.com/@yourpage" },
+  { key: "facebook", label: "Facebook", placeholder: "https://facebook.com/yourpage" },
+  { key: "threads", label: "Threads", placeholder: "https://threads.net/@yourpage" },
+  { key: "whatsapp", label: "WhatsApp channel", placeholder: "https://whatsapp.com/channel/..." },
+];
 
-type DefaultPolicies = {
-  securityDeposit: number;
-  securityDepositType: "fixed" | "percentage";
-  cancellationHours: number;
-  damagePolicy: string;
-};
-
-const DEFAULT_SETTINGS: SiteSettings = {
-  siteName: "Pacak Khemah",
-  tagline: "Pacak. Rehat. Ulang.",
-  contactEmail: "hello@pacakkhemah.com",
-  contactWhatsApp: "60123456789",
-  maintenanceMode: false,
-  maintenanceMessage: "We're currently performing maintenance. Please check back soon!",
-};
-
-const DEFAULT_SOCIAL: SocialLinks = {
-  instagram: "",
-  tiktok: "",
-  facebook: "",
-  threads: "",
-  whatsapp: "",
-};
-
-const DEFAULT_POLICIES: DefaultPolicies = {
-  securityDeposit: 50,
-  securityDepositType: "fixed",
-  cancellationHours: 48,
-  damagePolicy: "Customer is responsible for any damage or loss of equipment during the rental period.",
-};
-
-export default function AdminSettingsTab() {
-  const [activeSection, setActiveSection] = useState<"site" | "social" | "admins" | "policies" | "referral" | "danger">("site");
-  const [settings, setSettings] = useState<SiteSettings>(DEFAULT_SETTINGS);
-  const [social, setSocial] = useState<SocialLinks>(DEFAULT_SOCIAL);
-  const [admins, setAdmins] = useState<AdminEmails>(["akiff.work@gmail.com"]);
-  const [policies, setPolicies] = useState<DefaultPolicies>(DEFAULT_POLICIES);
-  const [referralConfig, setReferralConfig] = useState({ rewardCredits: 5, enabled: true });
-  const [newAdmin, setNewAdmin] = useState("");
+export default function AdminSettingsTab({ initialSection }: { initialSection?: string }) {
+  const [section, setSection] = useState<Section>(SECTIONS.some(s => s.key === initialSection) ? initialSection as Section : "payments");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const { toast, show } = useToast();
+
+  const [pay, setPay] = useState<Payments>({ packages: DEFAULT_PACKAGES, startingCredits: 10, accountName: DEFAULT_ACCOUNT_NAME, adminWhatsApp: DEFAULT_ADMIN_WHATSAPP, qrImageUrl: "" });
+  const [oldKey, setOldKey] = useState(false);
+  const [referral, setReferral] = useState<Referral>({ rewardCredits: 5, enabled: true });
+  const [site, setSite] = useState<SiteSettings>(DEFAULT_SITE);
+  const [social, setSocial] = useState<Social>(EMPTY_SOCIAL);
+  const [policies, setPolicies] = useState<DefaultPolicies>(DEFAULT_POLICIES);
+  const [admins, setAdmins] = useState<string[]>([]);
+  const [newAdmin, setNewAdmin] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [danger, setDanger] = useState<"clear" | "reset" | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    loadSettings();
+    (async () => {
+      try {
+        const get = (id: string) => getDoc(doc(db, "settings", id)).then(s => (s.exists() ? s.data() : null)).catch(() => null);
+        const [p, r, si, so, po, ad] = await Promise.all([get("payment_config"), get("referral_config"), get("site"), get("social_links"), get("default_policies"), loadAdminEmails()]);
+        if (p) {
+          setPay(cur => ({ ...cur, ...p, packages: p.packages?.length ? p.packages : DEFAULT_PACKAGES }));
+          setOldKey(!!p.secretKey);
+        }
+        if (r) setReferral(cur => ({ ...cur, ...r }));
+        if (si) setSite({ ...DEFAULT_SITE, ...si });
+        if (so) setSocial({ ...EMPTY_SOCIAL, ...so });
+        if (po) setPolicies({ ...DEFAULT_POLICIES, ...po });
+        setAdmins(ad);
+      } finally { setLoading(false); }
+    })();
   }, []);
 
-  async function loadSettings() {
-    try {
-      const [siteSnap, socialSnap, adminsSnap, policiesSnap, referralSnap] = await Promise.all([
-        getDoc(doc(db, "settings", "site")),
-        getDoc(doc(db, "settings", "social_links")),
-        getDoc(doc(db, "settings", "admin_emails")),
-        getDoc(doc(db, "settings", "default_policies")),
-        getDoc(doc(db, "settings", "referral_config")),
-      ]);
-      
-      if (siteSnap.exists()) setSettings({ ...DEFAULT_SETTINGS, ...siteSnap.data() });
-      if (socialSnap.exists()) setSocial({ ...DEFAULT_SOCIAL, ...socialSnap.data() });
-      if (adminsSnap.exists() && adminsSnap.data().emails) setAdmins(adminsSnap.data().emails);
-      if (policiesSnap.exists()) setPolicies({ ...DEFAULT_POLICIES, ...policiesSnap.data() });
-      if (referralSnap.exists()) setReferralConfig({ rewardCredits: 5, enabled: true, ...referralSnap.data() });
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function saveAll() {
+  async function save(fn: () => Promise<unknown>, msg = "Saved") {
     setSaving(true);
+    try { await fn(); show(msg); }
+    catch (e) { console.error(e); show("Could not save. Please try again.", "error"); }
+    finally { setSaving(false); }
+  }
+
+  const savePayments = () => save(async () => {
+    const packages = pay.packages.filter(p => p.credits > 0 && p.price > 0).sort((a, b) => a.credits - b.credits);
+    if (!packages.length) throw new Error("No packages");
+    await setDoc(doc(db, "settings", "payment_config"), {
+      packages, startingCredits: pay.startingCredits, accountName: pay.accountName.trim(),
+      adminWhatsApp: pay.adminWhatsApp.replace(/\D/g, ""), qrImageUrl: pay.qrImageUrl || "",
+    }, { merge: true });
+    await setDoc(doc(db, "settings", "referral_config"), referral, { merge: true });
+  });
+
+  async function uploadQr(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith("image/") || file.size > 5 * 1024 * 1024) { show("Use an image under 5 MB", "error"); return; }
+    setUploading(true);
     try {
-      await Promise.all([
-        setDoc(doc(db, "settings", "site"), settings),
-        setDoc(doc(db, "settings", "social_links"), social),
-        setDoc(doc(db, "settings", "admin_emails"), { emails: admins }),
-        setDoc(doc(db, "settings", "default_policies"), policies),
-        setDoc(doc(db, "settings", "referral_config"), referralConfig),
-      ]);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (e) {
-      console.error(e);
-      alert("Failed to save settings");
-    } finally {
-      setSaving(false);
+      const r = storageRef(storage, `site/payment-qr-${Date.now()}.${(file.name.split(".").pop() || "png").toLowerCase()}`);
+      await uploadBytes(r, file, { contentType: file.type });
+      const url = await getDownloadURL(r);
+      setPay(p => ({ ...p, qrImageUrl: url }));
+      show("QR uploaded. Save to use it.");
+    } catch (e) { console.error(e); show("Could not upload the QR", "error"); }
+    finally { setUploading(false); }
+  }
+
+  async function exportData() {
+    const [vendors, txs, settings] = await Promise.all([
+      getDocs(collection(db, "vendors")), getDocs(collection(db, "transactions")), getDocs(collection(db, "settings")),
+    ]);
+    const data = {
+      exportedAt: new Date().toISOString(),
+      vendors: vendors.docs.map(d => ({ id: d.id, ...d.data() })),
+      transactions: txs.docs.map(d => ({ id: d.id, ...d.data() })),
+      settings: Object.fromEntries(settings.docs.map(d => [d.id, d.data()])),
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `pacakkhemah-export-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function clearTransactions() {
+    for (;;) {
+      const snap = await getDocs(query(collection(db, "transactions"), limit(400)));
+      if (snap.empty) break;
+      const b = writeBatch(db); snap.docs.forEach(d => b.delete(d.ref)); await b.commit();
     }
   }
 
-  function addAdmin() {
-    if (!newAdmin || !newAdmin.includes("@")) return alert("Enter a valid email");
-    if (admins.includes(newAdmin.toLowerCase())) return alert("Email already added");
-    setAdmins([...admins, newAdmin.toLowerCase()]);
-    setNewAdmin("");
+  async function resetSettings() {
+    await Promise.all([
+      setDoc(doc(db, "settings", "site"), DEFAULT_SITE),
+      setDoc(doc(db, "settings", "social_links"), EMPTY_SOCIAL),
+      setDoc(doc(db, "settings", "default_policies"), DEFAULT_POLICIES),
+      setDoc(doc(db, "settings", "referral_config"), { rewardCredits: 5, enabled: true }),
+    ]);
+    setSite(DEFAULT_SITE); setSocial(EMPTY_SOCIAL); setPolicies(DEFAULT_POLICIES); setReferral({ rewardCredits: 5, enabled: true });
   }
 
-  function removeAdmin(email: string) {
-    if (admins.length <= 1) return alert("Must have at least one admin");
-    setAdmins(admins.filter(a => a !== email));
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <i className="fas fa-spinner fa-spin text-2xl text-slate-300"></i>
-      </div>
-    );
-  }
-
-  const sections = [
-    { id: "site", label: "Site Info", icon: "fa-globe" },
-    { id: "social", label: "Social Links", icon: "fa-share-nodes" },
-    { id: "admins", label: "Admin Access", icon: "fa-user-shield" },
-    { id: "policies", label: "Default Policies", icon: "fa-file-contract" },
-    { id: "referral", label: "Referral Program", icon: "fa-gift" },
-    { id: "danger", label: "Danger Zone", icon: "fa-exclamation-triangle" },
-  ] as const;
+  const saveButton = (onClick: () => void, label = "Save") => (
+    <button type="button" onClick={onClick} disabled={saving || loading} className={primaryBtn}>{saving ? "Saving" : label}</button>
+  );
 
   return (
-    <div className="space-y-6">
-      {/* Section Tabs */}
-      <div className="flex flex-wrap gap-2">
-        {sections.map(sec => (
-          <button
-            key={sec.id}
-            onClick={() => setActiveSection(sec.id)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase transition-all ${
-              activeSection === sec.id
-                ? sec.id === "danger" ? "bg-red-500 text-white" : "bg-[#062c24] text-white"
-                : "bg-white text-slate-500 hover:bg-slate-100 border border-slate-200"
-            }`}
-          >
-            <i className={`fas ${sec.icon}`}></i>
-            {sec.label}
-          </button>
-        ))}
-      </div>
+    <div className="flex flex-col gap-4">
+      <PageHeader title="Settings" subtitle="How the platform works" />
+      <Segments label="Settings sections" value={section} onChange={setSection} items={SECTIONS} />
+      {loading && <p className="text-sm text-slate-600" role="status">Loading settings</p>}
 
-      {/* Site Info */}
-      {activeSection === "site" && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-100 p-6">
-            <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Basic Information</h3>
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Site Name</label>
-                <input
-                  value={settings.siteName}
-                  onChange={e => setSettings({ ...settings, siteName: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none"
-                />
+      {!loading && section === "payments" && (
+        <>
+          {oldKey && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex flex-col gap-2">
+              <p className="text-sm font-bold text-red-900">The old ToyyibPay secret key is still saved</p>
+              <p className="text-[13px] text-red-900">Anyone can read it. It is no longer used, so remove it, then change the key in ToyyibPay.</p>
+              <button type="button" className={`${smallBtn} self-start`} onClick={() => save(async () => { await updateDoc(doc(db, "settings", "payment_config"), { secretKey: deleteField(), categoryCode: deleteField(), isSandbox: deleteField() }); setOldKey(false); }, "Old key removed")}>Remove the old key</button>
+            </div>
+          )}
+          <Card>
+            <H2>Credit packages</H2>
+            <p className={hintCls}>What vendors can buy in Settings › Account › Credits.</p>
+            {pay.packages.map((p, i) => (
+              <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                <Field id={`pk-c-${i}`} label="Credits"><NumberInput id={`pk-c-${i}`} value={p.credits} min={1} onChange={n => setPay(s => ({ ...s, packages: s.packages.map((x, j) => j === i ? { ...x, credits: n } : x) }))} /></Field>
+                <Field id={`pk-p-${i}`} label="Price"><NumberInput id={`pk-p-${i}`} value={p.price} min={1} suffix="RM" onChange={n => setPay(s => ({ ...s, packages: s.packages.map((x, j) => j === i ? { ...x, price: n } : x) }))} /></Field>
+                <button type="button" aria-label={`Remove the ${p.credits} credits package`} disabled={pay.packages.length <= 1}
+                  onClick={() => setPay(s => ({ ...s, packages: s.packages.filter((_, j) => j !== i) }))}
+                  className="w-11 h-11 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-40"><i className="fas fa-trash" aria-hidden="true"></i></button>
               </div>
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Tagline</label>
-                <input
-                  value={settings.tagline}
-                  onChange={e => setSettings({ ...settings, tagline: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none"
-                />
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Contact Email</label>
-                <input
-                  type="email"
-                  value={settings.contactEmail}
-                  onChange={e => setSettings({ ...settings, contactEmail: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none"
-                />
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">WhatsApp Number</label>
-                <input
-                  value={settings.contactWhatsApp}
-                  onChange={e => setSettings({ ...settings, contactWhatsApp: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none"
-                  placeholder="60123456789"
-                />
+            ))}
+            {pay.packages.length < 6 && <button type="button" className={`${smallBtn} self-start`} onClick={() => setPay(s => ({ ...s, packages: [...s.packages, { credits: 0, price: 0 }] }))}>+ Add a package</button>}
+            <Field id="start-credits" label="Free credits for a new shop" hint="Given when a vendor signs up.">
+              <NumberInput id="start-credits" value={pay.startingCredits} onChange={n => setPay(s => ({ ...s, startingCredits: n }))} />
+            </Field>
+          </Card>
+          <Card>
+            <H2>Bank QR</H2>
+            <p className={hintCls}>Vendors scan this to pay for credits.</p>
+            <div className="flex items-start gap-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={pay.qrImageUrl || DEFAULT_QR} alt="Payment QR" className="w-28 h-28 object-contain rounded-xl border border-slate-200 bg-white" />
+              <div className="flex flex-col gap-2">
+                <button type="button" className={smallBtn} disabled={uploading} onClick={() => fileRef.current?.click()}>{uploading ? "Uploading" : "Upload a new QR"}</button>
+                {pay.qrImageUrl && <button type="button" className={smallBtn} onClick={() => setPay(s => ({ ...s, qrImageUrl: "" }))}>Use the built-in QR</button>}
+                <input ref={fileRef} type="file" accept="image/*" className="sr-only" onChange={e => { uploadQr(e.target.files?.[0]); e.target.value = ""; }} />
               </div>
             </div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-slate-100 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-black text-[#062c24] uppercase">Maintenance Mode</h3>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={settings.maintenanceMode}
-                  onChange={e => setSettings({ ...settings, maintenanceMode: e.target.checked })}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
-              </label>
-            </div>
-            {settings.maintenanceMode && (
-              <div className="bg-red-50 border border-red-200 p-4 rounded-xl">
-                <p className="text-xs text-red-600 font-bold mb-3">
-                  <i className="fas fa-exclamation-triangle mr-2"></i>
-                  Site is currently in maintenance mode!
-                </p>
-                <textarea
-                  value={settings.maintenanceMessage}
-                  onChange={e => setSettings({ ...settings, maintenanceMessage: e.target.value })}
-                  className="w-full bg-white border border-red-200 p-3 rounded-xl text-sm outline-none resize-none"
-                  rows={2}
-                  placeholder="Maintenance message..."
-                />
-              </div>
+            <Field id="acct-name" label="Account name shown to vendors"><input id="acct-name" value={pay.accountName} onChange={e => setPay(s => ({ ...s, accountName: e.target.value }))} className={inputCls} /></Field>
+            <Field id="admin-wa" label="WhatsApp for receipts" hint="Vendors send their top-up request here. Country code first, e.g. 60123456789.">
+              <input id="admin-wa" inputMode="tel" value={pay.adminWhatsApp} onChange={e => setPay(s => ({ ...s, adminWhatsApp: e.target.value }))} className={inputCls} />
+            </Field>
+          </Card>
+          <Card>
+            <H2>Vendor referrals</H2>
+            <SwitchRow title="Reward vendors who invite other vendors" hint="Given when you approve the invited shop" checked={referral.enabled} onChange={on => setReferral(r => ({ ...r, enabled: on }))} />
+            {referral.enabled && (
+              <Field id="ref-reward" label="Credits per approved shop"><NumberInput id="ref-reward" value={referral.rewardCredits} min={1} onChange={n => setReferral(r => ({ ...r, rewardCredits: n }))} /></Field>
             )}
-          </div>
-        </div>
+          </Card>
+          {saveButton(savePayments)}
+        </>
       )}
 
-      {/* Social Links */}
-      {activeSection === "social" && (
-        <div className="bg-white rounded-2xl border border-slate-100 p-6">
-          <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Social Media Links</h3>
-          <div className="space-y-4">
-            {[
-              { key: "instagram", label: "Instagram", icon: "fa-instagram", placeholder: "https://instagram.com/yourpage" },
-              { key: "tiktok", label: "TikTok", icon: "fa-tiktok", placeholder: "https://tiktok.com/@yourpage" },
-              { key: "facebook", label: "Facebook", icon: "fa-facebook", placeholder: "https://facebook.com/yourpage" },
-              { key: "threads", label: "Threads", icon: "fa-threads", placeholder: "https://threads.net/@yourpage" },
-              { key: "whatsapp", label: "WhatsApp Channel", icon: "fa-whatsapp", placeholder: "https://wa.me/60123456789" },
-            ].map(s => (
-              <div key={s.key} className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-500">
-                  <i className={`fab ${s.icon}`}></i>
-                </div>
-                <div className="flex-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">{s.label}</label>
-                  <input
-                    value={social[s.key as keyof SocialLinks]}
-                    onChange={e => setSocial({ ...social, [s.key]: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg text-sm outline-none"
-                    placeholder={s.placeholder}
-                  />
-                </div>
+      {!loading && section === "site" && (
+        <>
+          <Card>
+            <H2>Site info</H2>
+            <Field id="site-name" label="Site name"><input id="site-name" value={site.siteName} onChange={e => setSite(s => ({ ...s, siteName: e.target.value }))} className={inputCls} /></Field>
+            <Field id="site-tag" label="Tagline" hint="Under the logo on the homepage."><input id="site-tag" value={site.tagline} onChange={e => setSite(s => ({ ...s, tagline: e.target.value }))} className={inputCls} /></Field>
+            <Field id="site-email" label="Contact email" hint="Shown on the About page."><input id="site-email" type="email" value={site.contactEmail} onChange={e => setSite(s => ({ ...s, contactEmail: e.target.value }))} className={inputCls} /></Field>
+            <Field id="site-wa" label="Contact WhatsApp" hint="Shown on the About page. Country code first."><input id="site-wa" inputMode="tel" value={site.contactWhatsApp} onChange={e => setSite(s => ({ ...s, contactWhatsApp: e.target.value }))} className={inputCls} /></Field>
+          </Card>
+          <Card>
+            <H2>Maintenance notice</H2>
+            <SwitchRow title="Show a maintenance notice" hint="A yellow bar on every customer page. The vendor dashboard and admin are not affected." checked={site.maintenanceMode} onChange={on => setSite(s => ({ ...s, maintenanceMode: on }))} />
+            {site.maintenanceMode && (
+              <Field id="maint-msg" label="Message"><textarea id="maint-msg" rows={2} value={site.maintenanceMessage} onChange={e => setSite(s => ({ ...s, maintenanceMessage: e.target.value }))} className={`${inputCls} py-2.5 resize-none`} /></Field>
+            )}
+          </Card>
+          {saveButton(() => save(() => setDoc(doc(db, "settings", "site"), site)))}
+        </>
+      )}
+
+      {!loading && section === "social" && (
+        <>
+          <Card>
+            <H2>Social links</H2>
+            <p className={hintCls}>Shown in the homepage footer. Leave a field empty to hide it.</p>
+            {SOCIAL_FIELDS.map(f => (
+              <Field key={f.key} id={`soc-${f.key}`} label={f.label}>
+                <input id={`soc-${f.key}`} type="url" value={social[f.key]} placeholder={f.placeholder} onChange={e => setSocial(s => ({ ...s, [f.key]: e.target.value }))} className={inputCls} />
+              </Field>
+            ))}
+          </Card>
+          {saveButton(() => save(() => setDoc(doc(db, "settings", "social_links"), social)))}
+        </>
+      )}
+
+      {!loading && section === "defaults" && (
+        <>
+          <Card>
+            <H2>New shop defaults</H2>
+            <p className={hintCls}>What a new shop starts with. Vendors can change these in their own settings. Existing shops are not changed.</p>
+            <Choice label="Deposit type" value={policies.securityDepositType} onChange={t => setPolicies(p => ({ ...p, securityDepositType: t }))}
+              options={[{ value: "fixed", label: "Fixed amount" }, { value: "percentage", label: "Percent of rental" }]} />
+            <Field id="def-dep" label="Security deposit"><NumberInput id="def-dep" value={policies.securityDeposit} suffix={policies.securityDepositType === "fixed" ? "RM" : "%"} onChange={n => setPolicies(p => ({ ...p, securityDeposit: n }))} /></Field>
+            <Field id="def-cancel" label="Cancel at least this many hours before pickup" hint="Added to the shop's rules. Use 0 to leave it out.">
+              <NumberInput id="def-cancel" value={policies.cancellationHours} suffix="hours" onChange={n => setPolicies(p => ({ ...p, cancellationHours: n }))} />
+            </Field>
+            <Field id="def-damage" label="Damage rule" hint="Added to the shop's rules and the rental agreement.">
+              <textarea id="def-damage" rows={3} value={policies.damagePolicy} onChange={e => setPolicies(p => ({ ...p, damagePolicy: e.target.value }))} className={`${inputCls} py-2.5 resize-none`} />
+            </Field>
+          </Card>
+          {saveButton(() => save(() => setDoc(doc(db, "settings", "default_policies"), policies)))}
+        </>
+      )}
+
+      {!loading && section === "admins" && (
+        <>
+          <Card>
+            <H2>Admin access</H2>
+            <p className={hintCls}>These Google accounts can open this admin panel and approve credits. Only add people you trust.</p>
+            <div className="flex items-center justify-between gap-3 border border-slate-200 rounded-xl px-3.5 py-2.5">
+              <span className="text-sm font-semibold truncate">{OWNER_EMAIL}</span><span className="text-xs text-slate-600 shrink-0">Owner, always an admin</span>
+            </div>
+            {admins.map(e => (
+              <div key={e} className="flex items-center justify-between gap-3 border border-slate-200 rounded-xl px-3.5 py-2">
+                <span className="text-sm font-semibold truncate">{e}</span>
+                <button type="button" className={smallBtn} onClick={() => setAdmins(a => a.filter(x => x !== e))}>Remove</button>
               </div>
             ))}
-          </div>
-        </div>
+            <div className="flex gap-2">
+              <label htmlFor="new-admin" className="sr-only">Email to add</label>
+              <input id="new-admin" type="email" value={newAdmin} onChange={e => setNewAdmin(e.target.value)} placeholder="name@gmail.com" className={inputCls} />
+              <button type="button" className={smallBtn} disabled={!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newAdmin.trim())}
+                onClick={() => { const e = newAdmin.trim().toLowerCase(); if (!admins.includes(e) && e !== OWNER_EMAIL) setAdmins(a => [...a, e]); setNewAdmin(""); }}>Add</button>
+            </div>
+          </Card>
+          {saveButton(() => save(() => saveAdminEmails(admins), "Admin list saved"))}
+        </>
       )}
 
-      {/* Admin Access */}
-      {activeSection === "admins" && (
-        <div className="bg-white rounded-2xl border border-slate-100 p-6">
-          <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Admin Email Access</h3>
-          <p className="text-xs text-slate-500 mb-4">Only these email addresses can access the admin panel.</p>
-          
-          <div className="flex gap-2 mb-4">
-            <input
-              type="email"
-              value={newAdmin}
-              onChange={e => setNewAdmin(e.target.value)}
-              className="flex-1 bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none"
-              placeholder="Enter email address..."
-              onKeyDown={e => e.key === "Enter" && addAdmin()}
-            />
-            <button
-              onClick={addAdmin}
-              className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 rounded-xl text-xs font-bold"
-            >
-              <i className="fas fa-plus"></i>
-            </button>
+      {!loading && section === "data" && (
+        <>
+          <Card>
+            <H2>Export</H2>
+            <p className={hintCls}>Download all shops, transactions and settings as a JSON file.</p>
+            <button type="button" className={`${smallBtn} self-start`} onClick={() => exportData().catch(() => show("Could not export", "error"))}><i className="fas fa-download mr-1.5" aria-hidden="true"></i>Download export</button>
+          </Card>
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex flex-col gap-3">
+            <H2>Danger zone</H2>
+            <p className="text-[13px] text-red-900">These cannot be undone. Download an export first.</p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={`${smallBtn} text-red-800 border-red-300`} onClick={() => setDanger("clear")}>Delete all transactions</button>
+              <button type="button" className={`${smallBtn} text-red-800 border-red-300`} onClick={() => setDanger("reset")}>Reset settings to defaults</button>
+            </div>
           </div>
-
-          <div className="space-y-2">
-            {admins.map((email, i) => (
-              <div key={email} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-xs font-black">
-                    {email.charAt(0).toUpperCase()}
-                  </div>
-                  <span className="text-sm font-bold text-[#062c24]">{email}</span>
-                  {i === 0 && <span className="text-[8px] font-black text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full uppercase">Primary</span>}
-                </div>
-                <button
-                  onClick={() => removeAdmin(email)}
-                  className="text-slate-400 hover:text-red-500 transition-colors"
-                  disabled={admins.length <= 1}
-                >
-                  <i className="fas fa-trash text-xs"></i>
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
+        </>
       )}
 
-      {/* Default Policies */}
-      {activeSection === "policies" && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-100 p-6">
-            <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">Default Rental Policies</h3>
-            <p className="text-xs text-slate-500 mb-4">These defaults apply to new vendors. Vendors can customize their own policies.</p>
-            
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Security Deposit</label>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    value={policies.securityDeposit}
-                    onChange={e => setPolicies({ ...policies, securityDeposit: Number(e.target.value) })}
-                    className="flex-1 bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none"
-                  />
-                  <select
-                    value={policies.securityDepositType}
-                    onChange={e => setPolicies({ ...policies, securityDepositType: e.target.value as "fixed" | "percentage" })}
-                    className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none"
-                  >
-                    <option value="fixed">RM (Fixed)</option>
-                    <option value="percentage">% of Total</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Cancellation Notice (Hours)</label>
-                <input
-                  type="number"
-                  value={policies.cancellationHours}
-                  onChange={e => setPolicies({ ...policies, cancellationHours: Number(e.target.value) })}
-                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Default Damage Policy</label>
-              <textarea
-                value={policies.damagePolicy}
-                onChange={e => setPolicies({ ...policies, damagePolicy: e.target.value })}
-                className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm outline-none resize-none"
-                rows={3}
-              />
-            </div>
-          </div>
-        </div>
+      {danger === "clear" && (
+        <ConfirmSheet title="Delete all transactions?" confirmLabel="Delete all transactions" tone="danger" typeToConfirm="DELETE" busy={saving}
+          body={<p>The whole credit history goes, including purchases, bonuses and refunds. Vendors keep their current credit balance.</p>}
+          onClose={() => setDanger(null)} onConfirm={() => save(clearTransactions, "All transactions deleted").then(() => setDanger(null))} />
       )}
-
-      {/* Referral Program */}
-      {activeSection === "referral" && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-100 p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-sm font-black text-[#062c24] uppercase">
-                <i className="fas fa-gift mr-2 text-purple-500"></i>
-                Vendor Referral Program
-              </h3>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={referralConfig.enabled}
-                  onChange={e => setReferralConfig({ ...referralConfig, enabled: e.target.checked })}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
-              </label>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase mb-2 block">Credits Per Successful Referral</label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={referralConfig.rewardCredits}
-                    onChange={e => setReferralConfig({ ...referralConfig, rewardCredits: Number(e.target.value) || 5 })}
-                    className="w-32 bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-black text-center outline-none focus:border-purple-500"
-                  />
-                  <span className="text-xs text-slate-400 font-bold">credits</span>
-                </div>
-                <p className="text-[10px] text-slate-400 mt-2">
-                  This is the number of credits awarded to the referrer when the referred vendor is approved.
-                </p>
-              </div>
-
-              <div className="bg-purple-50 border border-purple-100 rounded-xl p-4">
-                <p className="text-[10px] font-black text-purple-700 uppercase mb-2">
-                  <i className="fas fa-info-circle mr-1"></i> How It Works
-                </p>
-                <div className="space-y-1.5 text-[10px] text-purple-600">
-                  <p>1. Vendor A shares their referral link</p>
-                  <p>2. Vendor B registers using the link (code auto-captured)</p>
-                  <p>3. Admin approves Vendor B → Vendor A auto-receives <span className="font-black">{referralConfig.rewardCredits} credits</span></p>
-                  <p>4. If auto-reward fails, admin can manually reward from Vendors tab</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      {danger === "reset" && (
+        <ConfirmSheet title="Reset settings?" confirmLabel="Reset settings" tone="danger" typeToConfirm="RESET" busy={saving}
+          body={<p>Site info, social links, new shop defaults and referral settings go back to their defaults. Payments, admins and site content are not changed.</p>}
+          onClose={() => setDanger(null)} onConfirm={() => save(resetSettings, "Settings reset").then(() => setDanger(null))} />
       )}
-
-      {/* Danger Zone */}
-      {activeSection === "danger" && (
-        <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-6">
-          <h3 className="text-sm font-black text-red-600 uppercase mb-4">
-            <i className="fas fa-exclamation-triangle mr-2"></i>
-            Danger Zone
-          </h3>
-          <p className="text-xs text-red-600 mb-6">These actions are irreversible. Please be careful.</p>
-          
-          <div className="space-y-4">
-            <div className="bg-white border border-red-200 rounded-xl p-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-[#062c24]">Export All Data</p>
-                <p className="text-xs text-slate-500">Download all vendors, transactions, and settings as JSON</p>
-              </div>
-              <button className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg text-xs font-bold">
-                <i className="fas fa-download mr-2"></i>Export
-              </button>
-            </div>
-            
-            <div className="bg-white border border-red-200 rounded-xl p-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-[#062c24]">Clear All Transactions</p>
-                <p className="text-xs text-slate-500">Delete all transaction history (cannot be undone)</p>
-              </div>
-              <button className="bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-lg text-xs font-bold">
-                <i className="fas fa-trash mr-2"></i>Clear
-              </button>
-            </div>
-            
-            <div className="bg-white border border-red-200 rounded-xl p-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-[#062c24]">Reset All Settings</p>
-                <p className="text-xs text-slate-500">Reset all settings to default values</p>
-              </div>
-              <button className="bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-lg text-xs font-bold">
-                <i className="fas fa-rotate-left mr-2"></i>Reset
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Save Button */}
-      <div className="sticky bottom-4 flex justify-end">
-        <button
-          onClick={saveAll}
-          disabled={saving}
-          className={`px-8 py-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-lg transition-all ${
-            saved ? "bg-emerald-500 text-white" : "bg-[#062c24] text-white hover:bg-emerald-800"
-          } disabled:opacity-50`}
-        >
-          {saving ? <><i className="fas fa-spinner fa-spin mr-2"></i>Saving...</> : saved ? "✓ Saved!" : "Save All Settings"}
-        </button>
-      </div>
+      <Toast toast={toast} />
     </div>
   );
 }
+
