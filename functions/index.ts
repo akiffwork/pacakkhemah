@@ -12,6 +12,8 @@ const db = getFirestore();
 
 // Credit top-ups (ToyyibPay), verified on the server
 export { createTopUpBill, confirmTopUp, toyyibpayCallback } from "./topup";
+// Customer lookups (my bookings, review links); orders can't be listed from the browser
+export { lookupBookingsByPhone, lookupOrderByReviewToken } from "./lookups";
 
 // Helper: send data-only push (no "notification" key = no browser auto-display = no duplicates)
 async function sendPush(token: string, title: string, body: string, extraData: Record<string, string> = {}) {

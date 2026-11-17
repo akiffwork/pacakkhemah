@@ -2,7 +2,7 @@
 // functions/index.ts
 // Deploy with: firebase deploy --only functions
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onOrderCreated = exports.onReviewCreated = exports.onAgreementSigned = exports.onNewOrder = exports.toyyibpayCallback = exports.confirmTopUp = exports.createTopUpBill = void 0;
+exports.onOrderCreated = exports.onReviewCreated = exports.onAgreementSigned = exports.onNewOrder = exports.lookupOrderByReviewToken = exports.lookupBookingsByPhone = exports.toyyibpayCallback = exports.confirmTopUp = exports.createTopUpBill = void 0;
 const firestore_1 = require("firebase-functions/v2/firestore");
 const app_1 = require("firebase-admin/app");
 const firestore_2 = require("firebase-admin/firestore");
@@ -14,6 +14,10 @@ var topup_1 = require("./topup");
 Object.defineProperty(exports, "createTopUpBill", { enumerable: true, get: function () { return topup_1.createTopUpBill; } });
 Object.defineProperty(exports, "confirmTopUp", { enumerable: true, get: function () { return topup_1.confirmTopUp; } });
 Object.defineProperty(exports, "toyyibpayCallback", { enumerable: true, get: function () { return topup_1.toyyibpayCallback; } });
+// Customer lookups (my bookings, review links); orders can't be listed from the browser
+var lookups_1 = require("./lookups");
+Object.defineProperty(exports, "lookupBookingsByPhone", { enumerable: true, get: function () { return lookups_1.lookupBookingsByPhone; } });
+Object.defineProperty(exports, "lookupOrderByReviewToken", { enumerable: true, get: function () { return lookups_1.lookupOrderByReviewToken; } });
 // Helper: send data-only push (no "notification" key = no browser auto-display = no duplicates)
 async function sendPush(token, title, body, extraData = {}) {
     await (0, messaging_1.getMessaging)().send({
