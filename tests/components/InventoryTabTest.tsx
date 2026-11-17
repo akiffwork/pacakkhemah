@@ -25,6 +25,7 @@ jest.mock('firebase/firestore', () => ({
   collection: jest.fn((_db, ...path: string[]) => ({ path: path.join('/') })),
   doc: jest.fn((_db, ...path: string[]) => ({ path: path.join('/') })),
   query: jest.fn((c) => c),
+  orderBy: jest.fn(),
   where: jest.fn(),
   onSnapshot: jest.fn((target: { path: string }, cb: (snap: unknown) => void) => {
     if (target.path === 'gear') cb({ docs: gear.map(g => ({ id: g.id, data: () => g })) });
@@ -39,8 +40,10 @@ jest.mock('firebase/firestore', () => ({
 }));
 jest.mock('firebase/storage', () => ({ getStorage: jest.fn(), ref: jest.fn(), uploadBytes: jest.fn(), getDownloadURL: jest.fn() }));
 jest.mock('@/components/GearFlyerModal', () => ({ __esModule: true, default: () => null }));
+jest.mock('@/hooks/useVendorAutosave', () => ({ useVendorAutosave: () => ({ state: 'idle', save: jest.fn(), flush: jest.fn(), retry: jest.fn() }) }));
 
 import InventoryTab from '@/components/InventoryTab';
+import PromotionsTab from '@/components/PromotionsTab';
 
 function dump(name: string, container: HTMLElement) {
   if (process.env.DUMP_HTML) writeFileSync(`${process.env.DUMP_HTML}/${name}.html`, container.innerHTML);
@@ -83,16 +86,22 @@ describe('InventoryTab', () => {
     expect(updateDoc).toHaveBeenCalledWith({ path: 'vendors/v1' }, { gear_count: 5 });
   });
 
-  test('discounts screen groups and describes discounts', () => {
-    const { container } = render(<InventoryTab vendorId="v1" />);
-    fireEvent.click(screen.getByRole('button', { name: /Discounts · 2 active/ }));
-    dump('discounts', container);
-    const dlg = screen.getByRole('dialog', { name: 'Discounts' });
-    expect(within(dlg).getByText('Active · 2')).toBeInTheDocument();
-    expect(within(dlg).getByText('Ended · 1')).toBeInTheDocument();
-    expect(within(dlg).getByText('10% off all items with code CAMP10')).toBeInTheDocument();
-    expect(within(dlg).getByText('Book 3 or more nights, get 15% off all items')).toBeInTheDocument();
-    fireEvent.click(within(dlg).getByRole('button', { name: /New/ }));
+  test('Promotions shortcut opens Promotions', () => {
+    const open = jest.fn();
+    render(<InventoryTab vendorId="v1" onOpenPromotions={open} />);
+    fireEvent.click(screen.getByRole('button', { name: /Promotions · 2 active discounts/ }));
+    expect(open).toHaveBeenCalled();
+  });
+
+  test('Promotions groups and describes discounts', () => {
+    const { container } = render(<PromotionsTab vendorId="v1" vendorName="Kuantan Camp Gear" />);
+    dump('promotions', container);
+    expect(screen.getByRole('tab', { name: 'Discounts · 2 active' })).toBeInTheDocument();
+    expect(screen.getByText('Active · 2')).toBeInTheDocument();
+    expect(screen.getByText('Ended · 1')).toBeInTheDocument();
+    expect(screen.getByText('10% off all items with code CAMP10')).toBeInTheDocument();
+    expect(screen.getByText('Book 3 or more nights, get 15% off all items')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /New discount/ }));
     fireEvent.click(screen.getByRole('radio', { name: /Longer stays/ }));
     dump('newdiscount', container);
     expect(screen.getByText('Customers will see')).toBeInTheDocument();

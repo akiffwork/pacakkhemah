@@ -165,25 +165,25 @@ export default function FoodPartnersTab({ vendorId }: { vendorId: string }) {
   return (
     <div className="max-w-2xl mx-auto px-4 pt-6 pb-28">
       {toast && (
-        <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[600] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[11px] font-black uppercase ${toast.ok ? "bg-emerald-600" : "bg-red-500"}`}>
+        <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[600] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-xs font-bold  ${toast.ok ? "bg-emerald-600" : "bg-red-500"}`}>
           <i className={`fas ${toast.ok ? "fa-check-circle" : "fa-exclamation-circle"}`}></i>{toast.msg}
         </div>
       )}
 
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h2 className="text-lg font-black text-[#062c24] uppercase">Food Partners</h2>
-          <p className="text-[10px] text-slate-400 font-medium mt-0.5">Featured food vendors shown on your shop page</p>
+          <h2 style={{ textTransform: "none" }} className="text-lg font-bold text-[#062c24] ">Food partners</h2>
+          <p className="text-xs text-slate-600 font-medium mt-0.5">Featured food vendors shown on your shop page</p>
         </div>
         <button onClick={openNew}
-          className="flex items-center gap-2 bg-[#062c24] text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-emerald-800 transition-colors shadow-sm">
-          <i className="fas fa-plus text-[9px]"></i> Add
+          className="flex items-center gap-2 bg-[#062c24] text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-emerald-800 transition-colors shadow-sm">
+          <i className="fas fa-plus text-xs"></i> Add
         </button>
       </div>
 
       <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 mb-5 flex gap-3">
         <i className="fas fa-info-circle text-amber-500 mt-0.5 flex-shrink-0"></i>
-        <p className="text-[10px] text-amber-700 font-medium leading-relaxed">
+        <p className="text-xs text-amber-700 font-medium leading-relaxed">
           Food partners appear as a suggestion section on your shop page. Customers order directly via WhatsApp — you are not involved in the transaction.
         </p>
       </div>
@@ -195,8 +195,8 @@ export default function FoodPartnersTab({ vendorId }: { vendorId: string }) {
           <div className="w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-3">
             <i className="fas fa-utensils text-orange-300 text-2xl"></i>
           </div>
-          <p className="text-sm font-black text-slate-400 uppercase mb-1">No food partners yet</p>
-          <p className="text-[10px] text-slate-300 font-medium">Add one to show food delivery options on your shop</p>
+          <p className="text-sm font-bold text-slate-600 mb-1">No food partners yet</p>
+          <p className="text-xs text-slate-500 font-medium">Add one to show food delivery options on your shop</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -208,24 +208,24 @@ export default function FoodPartnersTab({ vendorId }: { vendorId: string }) {
                   : <div className="w-full h-full flex items-center justify-center text-2xl">🍱</div>
                 }
                 {p.items?.length > 1 && (
-                  <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[7px] font-black px-1">+{p.items.length - 1}</span>
+                  <span className="absolute bottom-0 right-0 bg-black/60 text-white text-xs font-bold px-1">+{p.items.length - 1}</span>
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-black text-[#062c24] uppercase truncate">{p.name}</p>
-                {p.description && <p className="text-[10px] text-slate-400 truncate mt-0.5">{p.description}</p>}
-                <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                <p className="text-sm font-bold text-[#062c24] truncate">{p.name}</p>
+                {p.description && <p className="text-xs text-slate-600 truncate mt-0.5">{p.description}</p>}
+                <p className="text-xs text-slate-600 mt-0.5 flex items-center gap-1">
                   <i className="fab fa-whatsapp text-emerald-500"></i> {p.whatsapp}
                 </p>
               </div>
               <div className="flex flex-col gap-1.5 flex-shrink-0">
                 <button onClick={() => openEdit(p)}
                   className="w-8 h-8 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 transition-colors">
-                  <i className="fas fa-pen text-[10px]"></i>
+                  <i className="fas fa-pen text-xs"></i>
                 </button>
                 <button onClick={() => remove(p)}
                   className="w-8 h-8 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center text-slate-500 hover:bg-red-50 hover:text-red-500 transition-colors">
-                  <i className="fas fa-trash text-[10px]"></i>
+                  <i className="fas fa-trash text-xs"></i>
                 </button>
               </div>
             </div>
@@ -238,34 +238,34 @@ export default function FoodPartnersTab({ vendorId }: { vendorId: string }) {
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowForm(false)} />
           <div className="relative bg-white rounded-t-[2rem] max-h-[92vh] flex flex-col shadow-2xl z-10">
             <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100 flex-shrink-0">
-              <p className="text-sm font-black text-[#062c24] uppercase">{editing ? "Edit Food Partner" : "Add Food Partner"}</p>
+              <p className="text-sm font-bold text-[#062c24] ">{editing ? "Edit Food Partner" : "Add Food Partner"}</p>
               <button onClick={() => setShowForm(false)}
                 className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 hover:bg-red-50 hover:text-red-500 transition-colors">
-                <i className="fas fa-times text-[11px]"></i>
+                <i className="fas fa-times text-xs"></i>
               </button>
             </div>
 
             <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4" style={{ scrollbarWidth: "none" }}>
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block">Food Vendor Name *</label>
+                <label className="text-xs font-bold text-slate-500 mb-1.5 block">Food Vendor Name *</label>
                 <input value={fpName} onChange={e => setFpName(e.target.value)} placeholder="e.g. Nasi Lemak Pak Teh" className={inputCls} />
-              </div>
+ </div>
 
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block">WhatsApp Number *</label>
+                <label className="text-xs font-bold text-slate-500 mb-1.5 block">WhatsApp Number *</label>
                 <input value={fpWhatsapp} onChange={e => setFpWhatsapp(e.target.value)} placeholder="e.g. 60123456789" inputMode="numeric" className={inputCls} />
-                <p className="text-[9px] text-slate-400 mt-1">Digits only, include country code (60 for Malaysia)</p>
+ <p className="text-xs text-slate-600 mt-1">Digits only, include country code (60 for Malaysia)</p>
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block">Delivery Schedule / Description</label>
+                <label className="text-xs font-bold text-slate-500 mb-1.5 block">Delivery Schedule / Description</label>
                 <input value={fpDescription} onChange={e => setFpDescription(e.target.value)} placeholder="e.g. Delivery on Friday & Saturday, 8am–12pm" className={inputCls} />
-              </div>
+ </div>
 
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Food Photos & Menu Names *</label>
-                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${totalItems >= MAX_ITEMS ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
+                  <label className="text-xs font-bold text-slate-500 ">Food Photos & Menu Names *</label>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${totalItems >= MAX_ITEMS ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
                     {totalItems}/{MAX_ITEMS}
                   </span>
                 </div>
@@ -275,17 +275,17 @@ export default function FoodPartnersTab({ vendorId }: { vendorId: string }) {
                       <img src={item.image} alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
                       <div className="flex-1 flex flex-col gap-1 min-w-0">
                         <input value={item.menuName} onChange={e => updateExistingName(i, e.target.value)}
-                          placeholder="Menu name (e.g. Nasi Lemak)" className="w-full bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold outline-none focus:border-emerald-400" />
+                          placeholder="Menu name (e.g. Nasi Lemak)" className="w-full bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold outline-none focus:border-emerald-400" />
                         <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">
-                          <span className="text-[10px] font-bold text-slate-400">RM</span>
+                          <span className="text-xs font-bold text-slate-600">RM</span>
                           <input type="number" min="0" step="0.50"
                             value={item.price ?? ""} onChange={e => updateExistingPrice(i, e.target.value)}
-                            placeholder="Price (optional)" className="flex-1 text-[11px] font-semibold outline-none w-full" />
+                            placeholder="Price (optional)" className="flex-1 text-xs font-semibold outline-none w-full" />
                         </div>
                       </div>
                       <button onClick={() => removeExisting(i)}
-                        className="w-7 h-7 bg-white border border-slate-200 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-200 transition-colors flex-shrink-0">
-                        <i className="fas fa-times text-[9px]"></i>
+                        className="w-7 h-7 bg-white border border-slate-200 rounded-lg flex items-center justify-center text-slate-600 hover:text-red-500 hover:border-red-200 transition-colors flex-shrink-0">
+                        <i className="fas fa-times text-xs"></i>
                       </button>
                     </div>
                   ))}
@@ -294,35 +294,35 @@ export default function FoodPartnersTab({ vendorId }: { vendorId: string }) {
                       <img src={item.preview} alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
                       <div className="flex-1 flex flex-col gap-1 min-w-0">
                         <input value={item.menuName} onChange={e => updatePendingName(i, e.target.value)}
-                          placeholder="Menu name (e.g. Mee Goreng)" className="w-full bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold outline-none focus:border-emerald-400" />
+                          placeholder="Menu name (e.g. Mee Goreng)" className="w-full bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold outline-none focus:border-emerald-400" />
                         <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">
-                          <span className="text-[10px] font-bold text-slate-400">RM</span>
+                          <span className="text-xs font-bold text-slate-600">RM</span>
                           <input type="number" min="0" step="0.50"
                             value={item.price ?? ""} onChange={e => updatePendingPrice(i, e.target.value)}
-                            placeholder="Price (optional)" className="flex-1 text-[11px] font-semibold outline-none w-full" />
+                            placeholder="Price (optional)" className="flex-1 text-xs font-semibold outline-none w-full" />
                         </div>
                       </div>
                       <button onClick={() => removePending(i)}
-                        className="w-7 h-7 bg-white border border-slate-200 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-200 transition-colors flex-shrink-0">
-                        <i className="fas fa-times text-[9px]"></i>
+                        className="w-7 h-7 bg-white border border-slate-200 rounded-lg flex items-center justify-center text-slate-600 hover:text-red-500 hover:border-red-200 transition-colors flex-shrink-0">
+                        <i className="fas fa-times text-xs"></i>
                       </button>
                     </div>
                   ))}
                   {totalItems < MAX_ITEMS && (
                     <button onClick={() => fileInputRef.current?.click()}
-                      className="w-full h-12 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center gap-2 text-[10px] font-black text-slate-400 uppercase hover:border-emerald-300 hover:text-emerald-500 transition-colors">
+                      className="w-full h-12 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center gap-2 text-xs font-bold text-slate-600 hover:border-emerald-300 hover:text-emerald-500 transition-colors">
                       <i className="fas fa-camera text-sm"></i> Add Photo
                     </button>
                   )}
                   <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileChange} />
-                  <p className="text-[9px] text-slate-400">Each image max {MAX_FILE_MB}MB · {MAX_ITEMS} photos max</p>
+                  <p className="text-xs text-slate-600">Each image max {MAX_FILE_MB}MB · {MAX_ITEMS} photos max</p>
                 </div>
               </div>
             </div>
 
             <div className="px-6 pb-8 pt-3 border-t border-slate-100 flex-shrink-0">
               <button onClick={save} disabled={saving}
-                className={`w-full py-4 rounded-2xl font-black uppercase text-sm tracking-widest transition-all shadow-lg ${saving ? "bg-slate-200 text-slate-400" : "bg-[#062c24] text-white hover:bg-emerald-800"}`}>
+                className={`w-full py-4 rounded-2xl font-bold  text-sm  transition-all shadow-lg ${saving ? "bg-slate-200 text-slate-600" : "bg-[#062c24] text-white hover:bg-emerald-800"}`}>
                 {saving ? <><i className="fas fa-spinner fa-spin mr-2"></i>Saving…</> : editing ? "Save Changes" : "Add Food Partner"}
               </button>
             </div>

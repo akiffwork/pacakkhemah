@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
+import { BottomSheet } from "@/components/ui/kit";
 import {
   type Order, type DepositOutcome, getPayment, pickupGaps, formatShortDate,
   SKIP_REASONS, CANCEL_REASONS, KEEP_REASONS,
@@ -10,24 +11,7 @@ import { customerLabel } from "./OrderCard";
 const primaryBtn = "min-h-13 w-full rounded-2xl bg-[#062c24] text-white text-[15px] font-bold hover:bg-[#0a4135] disabled:opacity-50";
 const secondaryBtn = "min-h-13 w-full rounded-2xl border border-slate-300 bg-white text-slate-700 text-[15px] font-semibold hover:bg-slate-50";
 
-export function BottomSheet({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-[600] bg-slate-900/60 flex items-end md:items-center justify-center" onClick={onClose}>
-      <div role="dialog" aria-modal="true" aria-label={title}
-        onClick={e => e.stopPropagation()}
-        className="bg-white w-full max-w-md rounded-t-3xl md:rounded-3xl px-5 pt-3 pb-7 max-h-[92vh] overflow-y-auto flex flex-col gap-4 shadow-2xl">
-        <div className="w-10 h-1 rounded-full bg-slate-300 self-center md:hidden" aria-hidden="true"></div>
-        <div className="flex items-start justify-between gap-3">
-          <h2 style={{ textTransform: "none" }} className="text-2xl font-extrabold text-[#062c24] leading-tight">{title}</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="w-11 h-11 -mr-2 -mt-1 shrink-0 rounded-full text-slate-600 hover:bg-slate-100 flex items-center justify-center">
-            <i className="fas fa-times" aria-hidden="true"></i>
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
+export { BottomSheet };
 
 function ReasonChips({ reasons, value, onChange, label }: { reasons: string[]; value: string; onChange: (v: string) => void; label: string }) {
   return (

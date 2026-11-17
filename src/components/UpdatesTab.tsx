@@ -281,12 +281,12 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
       <div className="bg-white rounded-2xl border border-slate-100 p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-black text-[#062c24] uppercase">Updates & Announcements</h2>
-            <p className="text-xs text-slate-400 mt-1">Post updates that appear on your shop page</p>
+            <h2 style={{ textTransform: "none" }} className="text-lg font-bold text-[#062c24] ">Posts</h2>
+            <p className="text-xs text-slate-600 mt-1">Post updates that appear on your shop page</p>
           </div>
           <button
             onClick={openNewPost}
-            className="flex items-center gap-2 bg-[#062c24] text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-emerald-800 transition-colors"
+            className="flex items-center gap-2 bg-[#062c24] text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-emerald-800 transition-colors"
           >
             <i className="fas fa-plus"></i>
             New Post
@@ -300,7 +300,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
               <i className="fas fa-info-circle text-blue-500 text-sm"></i>
             </div>
             <div className="text-xs text-blue-700">
-              <p className="font-bold mb-1">How Updates Work</p>
+              <p className="font-bold mb-1">How posts work</p>
               <ul className="space-y-1 text-blue-600">
                 <li>• Posts appear in the "Updates" tab on your shop page</li>
                 <li>• Pinned posts always show first</li>
@@ -313,8 +313,8 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
 
       {/* Posts List */}
       <div className="bg-white rounded-2xl border border-slate-100 p-6">
-        <h3 className="text-sm font-black text-[#062c24] uppercase mb-4">
-          Your Posts ({posts.length})
+        <h3 style={{ textTransform: "none" }} className="text-sm font-bold text-[#062c24] mb-4">
+          Your posts ({posts.length})
         </h3>
 
         {loading ? (
@@ -329,10 +329,10 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
         ) : posts.length === 0 ? (
           <div className="text-center py-12 bg-slate-50 rounded-xl">
             <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <i className="fas fa-bullhorn text-slate-300 text-2xl"></i>
+              <i className="fas fa-bullhorn text-slate-500 text-2xl"></i>
             </div>
-            <p className="text-sm font-bold text-slate-400">No posts yet</p>
-            <p className="text-xs text-slate-300 mt-1 mb-4">Create your first update to engage customers</p>
+            <p className="text-sm font-bold text-slate-600">No posts yet</p>
+            <p className="text-xs text-slate-500 mt-1 mb-4">Create your first update to engage customers</p>
             <button
               onClick={openNewPost}
               className="text-xs font-bold text-emerald-600 hover:text-emerald-700"
@@ -353,7 +353,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
               >
                 {/* Pin badge */}
                 {post.pinned && (
-                  <div className="flex items-center gap-1.5 text-[9px] font-black text-amber-600 uppercase mb-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-600 mb-2">
                     <i className="fas fa-thumbtack"></i> Pinned
                   </div>
                 )}
@@ -370,7 +370,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
 
                 {/* Footer */}
                 <div className="flex items-center justify-between">
-                  <p className="text-[9px] font-bold text-slate-400">
+                  <p className="text-xs font-bold text-slate-600">
                     {formatTimeAgo(post.createdAt)}
                   </p>
                   <div className="flex items-center gap-2">
@@ -379,7 +379,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
                       className={`p-2 rounded-lg text-xs transition-colors ${
                         post.pinned
                           ? "text-amber-500 hover:bg-amber-100"
-                          : "text-slate-400 hover:bg-slate-100"
+                          : "text-slate-600 hover:bg-slate-100"
                       }`}
                       title={post.pinned ? "Unpin" : "Pin"}
                     >
@@ -387,7 +387,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
                     </button>
                     <button
                       onClick={() => openEditPost(post)}
-                      className="p-2 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 text-xs transition-colors"
+                      className="p-2 rounded-lg text-slate-600 hover:text-blue-500 hover:bg-blue-50 text-xs transition-colors"
                       title="Edit"
                     >
                       <i className="fas fa-pen"></i>
@@ -395,7 +395,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
                     <button
                       onClick={() => deletePost(post.id)}
                       disabled={deleting === post.id}
-                      className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 text-xs transition-colors disabled:opacity-50"
+                      className="p-2 rounded-lg text-slate-600 hover:text-red-500 hover:bg-red-50 text-xs transition-colors disabled:opacity-50"
                       title="Delete"
                     >
                       <i className={`fas ${deleting === post.id ? "fa-spinner fa-spin" : "fa-trash"}`}></i>
@@ -416,12 +416,12 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
               <i className="fas fa-book-open text-sm"></i>
             </div>
             <div>
-              <h3 className="text-sm font-black text-[#062c24] uppercase">My Articles</h3>
-              <p className="text-[9px] text-slate-400">Published to Camping Guide — shareable by link</p>
+              <h3 style={{ textTransform: "none" }} className="text-sm font-bold text-[#062c24] ">My articles</h3>
+              <p className="text-xs text-slate-600">Published to Camping Guide — shareable by link</p>
             </div>
           </div>
           <button onClick={openNewArticle}
-            className="flex items-center gap-2 bg-[#062c24] text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase hover:bg-emerald-800 transition-colors">
+            className="flex items-center gap-2 bg-[#062c24] text-white px-3 py-2 rounded-xl text-xs font-bold hover:bg-emerald-800 transition-colors">
             <i className="fas fa-plus"></i> Write
           </button>
         </div>
@@ -430,8 +430,8 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
           {articles.length === 0 ? (
             <div className="p-8 text-center">
               <i className="fas fa-book-open text-3xl text-slate-200 mb-3 block"></i>
-              <p className="text-sm font-bold text-slate-400">No articles yet</p>
-              <p className="text-[10px] text-slate-300 mt-1">Write a guide or tip to share with campers</p>
+              <p className="text-sm font-bold text-slate-600">No articles yet</p>
+              <p className="text-xs text-slate-500 mt-1">Write a guide or tip to share with campers</p>
             </div>
           ) : articles.map(a => (
             <div key={a.id} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
@@ -440,14 +440,14 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
                   <img src={a.coverImage} className="w-10 h-10 rounded-lg object-cover shrink-0" alt="" />
                 ) : (
                   <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                    <i className="fas fa-book-open text-slate-300 text-xs"></i>
+                    <i className="fas fa-book-open text-slate-500 text-xs"></i>
                   </div>
                 )}
                 <div className="min-w-0">
                   <p className="font-bold text-[#062c24] text-xs truncate">{a.title}</p>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="text-[8px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{a.category}</span>
-                    <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${a.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                    <span className="text-xs text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">{a.category}</span>
+                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${a.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
                       {a.status}
                     </span>
                   </div>
@@ -456,16 +456,16 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
               <div className="flex items-center gap-1.5 shrink-0">
                 {a.status === "published" && (
                   <a href={`/guide/${a.slug}`} target="_blank" rel="noreferrer"
-                    className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors text-xs">
+                    className="p-2 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors text-xs">
                     <i className="fas fa-external-link-alt"></i>
                   </a>
                 )}
                 <button onClick={() => openEditArticle(a)}
-                  className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors text-xs">
+                  className="p-2 text-slate-600 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors text-xs">
                   <i className="fas fa-pen"></i>
                 </button>
                 <button onClick={() => deleteVendorArticle(a.id)}
-                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors text-xs">
+                  className="p-2 text-slate-600 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors text-xs">
                   <i className="fas fa-trash"></i>
                 </button>
               </div>
@@ -479,18 +479,18 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl my-4">
             <div className="flex items-center justify-between p-5 border-b border-slate-100">
-              <h3 className="font-black text-[#062c24] uppercase text-base">
+              <h3 style={{ textTransform: "none" }} className="font-bold text-[#062c24] text-base">
                 {editingArticle ? "Edit Article" : "Write Article"}
               </h3>
               <button onClick={() => { setArticleModal(false); setEditingArticle(null); }}
-                className="w-9 h-9 rounded-full bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center">
+                className="w-9 h-9 rounded-full bg-slate-100 text-slate-600 hover:text-slate-600 flex items-center justify-center">
                 <i className="fas fa-times"></i>
               </button>
             </div>
 
             <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Title *</label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Title *</label>
                 <input value={articleForm.title}
                   onChange={e => setArticleForm(f => ({ ...f, title: e.target.value, slug: toSlug(e.target.value) }))}
                   placeholder="e.g. How to Setup a Vidalido Tent"
@@ -498,7 +498,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
               </div>
 
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Category</label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Category</label>
                 <select value={articleForm.category}
                   onChange={e => setArticleForm(f => ({ ...f, category: e.target.value }))}
                   className="w-full border border-slate-200 rounded-xl p-2.5 text-sm outline-none focus:border-emerald-400">
@@ -509,7 +509,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
               </div>
 
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">YouTube URL (optional)</label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">YouTube URL (optional)</label>
                 <input value={articleForm.videoUrl}
                   onChange={e => setArticleForm(f => ({ ...f, videoUrl: e.target.value }))}
                   placeholder="https://youtube.com/watch?v=..."
@@ -517,7 +517,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
               </div>
 
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Cover Image (optional)</label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Cover Image (optional)</label>
                 {(articleForm.coverImage || articleImageFile) ? (
                   <div className="relative inline-block">
                     <img src={articleImageFile ? URL.createObjectURL(articleImageFile) : articleForm.coverImage}
@@ -529,8 +529,8 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
                   </div>
                 ) : (
                   <label className="flex items-center gap-2 p-4 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-emerald-300 hover:bg-emerald-50/30 transition-colors">
-                    <i className="fas fa-image text-slate-300"></i>
-                    <span className="text-xs font-bold text-slate-400">Upload cover image</span>
+                    <i className="fas fa-image text-slate-500"></i>
+                    <span className="text-xs font-bold text-slate-600">Upload cover image</span>
                     <input type="file" accept="image/*" className="hidden"
                       onChange={e => e.target.files?.[0] && setArticleImageFile(e.target.files[0])} />
                   </label>
@@ -538,7 +538,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
               </div>
 
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Excerpt * <span className="text-slate-300 normal-case font-normal">(short summary)</span></label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Excerpt * <span className="text-slate-500 normal-case font-normal">(short summary)</span></label>
                 <textarea value={articleForm.excerpt}
                   onChange={e => setArticleForm(f => ({ ...f, excerpt: e.target.value }))}
                   rows={2} placeholder="1-2 sentence summary..."
@@ -546,7 +546,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
               </div>
 
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase mb-1 block">Content *</label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Content *</label>
                 <Suspense fallback={<div className="h-40 border border-slate-200 rounded-xl animate-pulse bg-slate-50" />}>
                   <RichTextEditor
                     value={articleForm.content}
@@ -558,7 +558,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
               </div>
 
               <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
-                <p className="text-[9px] font-bold text-emerald-700">
+                <p className="text-xs font-bold text-emerald-700">
                   <i className="fas fa-info-circle mr-1"></i>
                   Your article will be published immediately to the Camping Guide section.
                 </p>
@@ -568,7 +568,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
             <div className="p-5 border-t border-slate-100">
               <button onClick={saveVendorArticle}
                 disabled={!articleForm.title.trim() || !articleForm.excerpt.trim() || articleSaving}
-                className="w-full bg-[#062c24] text-white py-3.5 rounded-xl text-xs font-black uppercase disabled:opacity-50 hover:bg-emerald-800 transition-colors">
+                className="w-full bg-[#062c24] text-white py-3.5 rounded-xl text-xs font-bold disabled:opacity-50 hover:bg-emerald-800 transition-colors">
                 {articleSaving ? <><i className="fas fa-spinner fa-spin mr-2"></i>Publishing...</> : editingArticle ? "Update Article" : "Publish Article"}
               </button>
             </div>
@@ -582,12 +582,12 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
           <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl">
             {/* Modal Header */}
             <div className="flex items-center justify-between p-5 border-b border-slate-100">
-              <h3 className="text-base font-black text-[#062c24] uppercase">
+              <h3 style={{ textTransform: "none" }} className="text-base font-bold text-[#062c24] ">
                 {editingPost ? "Edit Post" : "New Post"}
               </h3>
               <button
                 onClick={() => { setShowModal(false); resetForm(); }}
-                className="w-9 h-9 rounded-full bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center"
+                className="w-9 h-9 rounded-full bg-slate-100 text-slate-600 hover:text-slate-600 flex items-center justify-center"
               >
                 <i className="fas fa-times"></i>
               </button>
@@ -597,7 +597,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
             <div className="p-5 space-y-4">
               {/* Content */}
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase mb-1.5 block">
+                <label className="text-xs font-bold text-slate-500 mb-1.5 block">
                   What's New? <span className="text-red-400">*</span>
                 </label>
                 <textarea
@@ -611,7 +611,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
 
               {/* Image */}
               <div>
-                <label className="text-[9px] font-black text-slate-500 uppercase mb-1.5 block">
+                <label className="text-xs font-bold text-slate-500 mb-1.5 block">
                   Image (Optional)
                 </label>
                 {imagePreview ? (
@@ -626,8 +626,8 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
                   </div>
                 ) : (
                   <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-emerald-300 hover:bg-emerald-50/50 transition-colors">
-                    <i className="fas fa-image text-slate-300"></i>
-                    <span className="text-xs font-bold text-slate-400">Click to upload image</span>
+                    <i className="fas fa-image text-slate-500"></i>
+                    <span className="text-xs font-bold text-slate-600">Click to upload image</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -642,7 +642,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
               <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl">
                 <div>
                   <p className="text-xs font-bold text-slate-700">Pin this post</p>
-                  <p className="text-[10px] text-slate-400">Pinned posts appear first on your shop</p>
+                  <p className="text-xs text-slate-600">Pinned posts appear first on your shop</p>
                 </div>
                 <input
                   type="checkbox"
@@ -658,7 +658,7 @@ export default function UpdatesTab({ vendorId, vendorName, vendorSlug }: Updates
               <button
                 onClick={savePost}
                 disabled={!content.trim() || saving}
-                className="w-full bg-[#062c24] text-white py-3.5 rounded-xl text-xs font-black uppercase disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-800 transition-colors"
+                className="w-full bg-[#062c24] text-white py-3.5 rounded-xl text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-800 transition-colors"
               >
                 {saving ? (
                   <><i className="fas fa-spinner fa-spin mr-2"></i>Saving...</>

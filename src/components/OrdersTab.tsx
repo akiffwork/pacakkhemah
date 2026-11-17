@@ -14,12 +14,18 @@ import {
 } from "@/lib/orderFlow";
 import { type MsgKind, type MsgLang, buildMessage, whatsappUrl } from "@/lib/orderMessages";
 import OrderCard from "@/components/orders/OrderCard";
+import AgreementsView from "@/components/orders/AgreementsView";
+import { PageHeader, SummaryStrip, Segments, Toast, useToast } from "@/components/ui/kit";
 import OrderDetail, { type DetailHandlers, type UnlinkedAgreement } from "@/components/orders/OrderDetail";
 import { PaidSheet, SkipSheet, CancelSheet, SettleSheet, ConflictSheet } from "@/components/orders/OrderSheets";
 
 type OrdersTabProps = {
   vendorId: string;
   vendorName: string;
+  /** Open this order's detail on load (from Home, Calendar or a link). */
+  initialOrderId?: string | null;
+  initialView?: "agreements";
+  onOpenCalendar?: (orderId: string) => void;
 };
 
 type Sheet =
@@ -37,23 +43,22 @@ const SEGMENTS: { key: Group; label: string }[] = [
 
 const LANG_KEY = "pk_order_msg_lang";
 
-export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
+export default function OrdersTab({ vendorId, vendorName, initialOrderId, initialView, onOpenCalendar }: OrdersTabProps) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [segment, setSegment] = useState<Group>("action");
+  const [segment, setSegment] = useState<Group | "agreements">(initialView || "action");
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialOrderId || null);
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [busy, setBusy] = useState(false);
   const [lang, setLangState] = useState<MsgLang>("en");
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [unlinkedAgreements, setUnlinkedAgreements] = useState<UnlinkedAgreement[]>([]);
-  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [generatingInvoice, setGeneratingInvoice] = useState(false);
   // Re-evaluate "today" every few minutes so urgency stays right on a long-open tab
   const [now, setNow] = useState(() => new Date());
 
-  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); }
+  const { toast, show: showToast } = useToast();
 
   useEffect(() => {
     try { const saved = localStorage.getItem(LANG_KEY); if (saved === "bm" || saved === "en") setLangState(saved); } catch { /* ignore */ }
@@ -95,7 +100,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
 
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return sortForGroup(orders, segment, now);
+    if (!term) return segment === "agreements" ? [] : sortForGroup(orders, segment, now);
     const match = (o: Order) =>
       (o.customerName || "").toLowerCase().includes(term) ||
       (o.customerPhone || "").includes(term) ||
@@ -441,33 +446,20 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
     onLinkParent: linkToParentOrder,
     onUnlinkParent: unlinkParentOrder,
     onSelect: setSelectedId,
+    onOpenCalendar: (order) => onOpenCalendar?.(order.id),
   };
 
   const counts: Record<Group, number> = { action: summary.action, waiting: summary.waiting, done: summary.done };
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div>
-        <h2 className="text-3xl font-black text-[#062c24] uppercase">Orders</h2>
-        <p className="text-xs font-semibold text-slate-600">Every order shows the one thing to do next</p>
-      </div>
+    <div className="flex flex-col gap-4 pb-24">
+      <PageHeader title="Orders" subtitle="Every order shows the one thing to do next" />
 
-      {/* Summary */}
-      <div className="bg-[#062c24] rounded-2xl px-4 py-3.5 grid grid-cols-3 gap-2 text-white">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[22px] font-bold leading-tight">{summary.action}</span>
-          <span className="text-xs text-emerald-100">Need action</span>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[22px] font-bold leading-tight">{summary.waiting}</span>
-          <span className="text-xs text-emerald-100">Waiting on customer</span>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[22px] font-bold leading-tight">RM {summary.toCollect.toLocaleString()}</span>
-          <span className="text-xs text-emerald-100">To collect</span>
-        </div>
-      </div>
+      <SummaryStrip items={[
+        { value: summary.action, label: "Need action" },
+        { value: summary.waiting, label: "Waiting on customer" },
+        { value: `RM ${summary.toCollect.toLocaleString()}`, label: "To collect" },
+      ]} />
 
       {/* Search */}
       <div className="relative">
@@ -480,18 +472,16 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
 
       {/* Segments */}
       {!search.trim() && (
-        <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }} role="tablist" aria-label="Order groups">
-          {SEGMENTS.map(s => (
-            <button key={s.key} type="button" role="tab" aria-selected={segment === s.key} onClick={() => setSegment(s.key)}
-              className={`min-h-11 px-3.5 rounded-xl text-[13px] font-semibold whitespace-nowrap ${
-                segment === s.key ? "bg-[#062c24] text-white" : "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50"
-              }`}>
-              {s.label}{s.key !== "done" || counts[s.key] ? ` · ${counts[s.key]}` : ""}
-            </button>
-          ))}
-        </div>
+        <Segments label="Order groups" value={segment} onChange={setSegment}
+          items={[
+            ...SEGMENTS.map(sg => ({ key: sg.key as Group | "agreements", label: `${sg.label}${sg.key !== "done" || counts[sg.key] ? ` · ${counts[sg.key]}` : ""}` })),
+            { key: "agreements" as const, label: unlinkedAgreements.length ? `Agreements · ${unlinkedAgreements.length} to link` : "Agreements" },
+          ]} />
       )}
 
+      {segment === "agreements" && !search.trim() ? (
+        <AgreementsView vendorId={vendorId} onOpenOrder={(id) => setSelectedId(id)} toast={showToast} />
+      ) : (<>
       {/* List */}
       {loading ? (
         <div className="space-y-3">
@@ -524,7 +514,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
 
           {orders.length === 0 && !search.trim() && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mt-5 text-left">
-              <h3 className="text-sm font-extrabold text-[#062c24] mb-3">How an order moves</h3>
+              <h3 style={{ textTransform: "none" }} className="text-sm font-extrabold text-[#062c24] mb-3">How an order moves</h3>
               <ol className="flex flex-col gap-2.5 text-[13px] text-slate-700">
                 {[
                   ["New", "A customer books through your shop. Confirm or decline."],
@@ -558,6 +548,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
           ))}
         </div>
       )}
+      </>)}
 
       {/* Order detail */}
       {selectedOrder && (
@@ -612,16 +603,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
         />
       )}
 
-      {/* Toast */}
-      {toast && (
-        <div role="status" className={`fixed bottom-24 left-1/2 -translate-x-1/2 z-[700] max-w-[90vw] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[13px] font-semibold ${
-          toast.type === "success" ? "bg-emerald-700" : "bg-red-700"
-        }`} style={{ animation: "toastIn 0.3s ease-out" }}>
-          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`} aria-hidden="true"></i>
-          {toast.msg}
-        </div>
-      )}
-      <style>{`@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
+      <Toast toast={toast} />
     </div>
   );
 }
