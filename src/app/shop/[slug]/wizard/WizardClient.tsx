@@ -146,7 +146,7 @@ export default function WizardClient({ slug }: { slug: string }) {
 
         setGear(
           gearSnap.docs
-            .filter(d => !d.data().deleted)
+            .filter(d => !d.data().deleted && !d.data().paused)
             .map(d => ({ id: d.id, type: d.data().type, specs: d.data().specs }))
         );
 

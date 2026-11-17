@@ -439,7 +439,7 @@ function ShopPageContent({
         // Parallelize weeklyOff instead of awaiting serially after
         getDoc(doc(db, "vendors", vendorId, "settings", "weeklyOff")).catch(() => null),
       ]);
-      setAllGear(gearSnap.docs.map(d => ({ ...d.data(), id: d.id } as GearItem)).filter(g => !g.deleted));
+      setAllGear(gearSnap.docs.map(d => ({ ...d.data(), id: d.id } as GearItem)).filter(g => !g.deleted && !(g as { paused?: boolean }).paused));
       setAvailRules(availSnap.docs.map(d => d.data() as AvailRule));
       setWeeklyOff(weeklyOffSnap?.exists() ? weeklyOffSnap.data() as Record<number, boolean> : {});
       setDiscounts(discSnap.docs.map(d => ({ ...d.data(), id: d.id } as Discount)).filter(d => !d.deleted));

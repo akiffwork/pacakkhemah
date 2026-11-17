@@ -1,1480 +1,297 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { db } from "@/lib/firebase";
-import { auth } from "@/lib/firebase";
-import {
-  collection, query, where, onSnapshot,
-  addDoc, updateDoc, doc,
-} from "firebase/firestore";
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDocs, writeBatch } from "firebase/firestore";
 import GearFlyerModal from "@/components/GearFlyerModal";
+import ItemEditor from "@/components/inventory/ItemEditor";
+import DiscountsScreen from "@/components/inventory/DiscountsScreen";
+import { BottomSheet } from "@/components/orders/OrderSheets";
+import {
+  type GearItem, type Discount,
+  categoryOf, usedCategories, itemStatus, needsAttention, itemPriceLine, matchesSearch, discountState,
+} from "@/lib/inventory";
 
 type InventoryTabProps = { vendorId: string };
 
-type GearVariant = {
-  id: string;
-  color?: { label: string; hex: string };
-  size?: string;
-  price: number;
-  stock: number;
-};
+type VendorBits = { services?: { setup?: { enabled?: boolean } }; pickup?: string[]; gear_count?: number };
 
-type GearItem = {
-  id: string; 
-  name: string; 
-  price: number; 
-  stock: number;
-  img?: string; 
-  images?: string[]; // Multiple images support
-  desc?: string; 
-  category?: string;
-  type?: string; 
-  inc?: string[]; // Text-based includes (legacy)
-  linkedItems?: { itemId: string; qty: number; variantId?: string; variantLabel?: string; variantColor?: string }[]; // Linked add-on items for packages
-  deleted?: boolean;
-  hasVariants?: boolean;
-  variants?: GearVariant[];
-  setup?: {
-    available: boolean;
-    fee: number;
-    description: string;
-  };
-  specs?: {
-    size?: string;
-    maxPax?: number;
-    puRating?: string;
-    layers?: string;
-    weight?: string;
-    tentType?: string;
-  };
-  pickupLocation?: string;
-  pricingTiers?: { nights: number; label: string; price: number }[];
-};
-
-type Discount = {
-  id: string;
-  type: string;
-  discount_percent: number;
-  discount_fixed?: number;
-  trigger_nights?: number;
-  code?: string;
-  appliesTo?: { type: "all" | "specific"; itemIds?: string[] };
-  is_public?: boolean;
-  deleted?: boolean;
-  maxUses?: number | null;
-  usedCount?: number;
-  usedBy?: { phone: string; name?: string; date: string; orderId?: string }[];
-  validFrom?: string | null;
-  validUntil?: string | null;
-  // min_spend
-  min_spend?: number;
-  // quantity_bundle
-  min_qty?: number;
-  bundle_category?: string;
-  // free_item
-  freeItemId?: string;
-  freeItemQty?: number;
-  free_trigger?: string;
-  free_trigger_nights?: number;
-  free_trigger_spend?: number;
-  free_trigger_qty?: number;
-  free_trigger_category?: string;
-};
-
-function discountStatus(d: Discount): "active" | "expired" | "not_started" | "maxed" {
-  const now = new Date();
-  if (d.maxUses != null && (d.usedCount ?? 0) >= d.maxUses) return "maxed";
-  if (d.validUntil && now > new Date(d.validUntil)) return "expired";
-  if (d.validFrom && now < new Date(d.validFrom)) return "not_started";
-  return "active";
-}
-
-const inputCls = "w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 focus:bg-white transition-all";
-const labelCls = "text-[9px] font-black text-slate-400 uppercase mb-1.5 block";
-const helperCls = "text-[10px] text-slate-400 mt-1";
+const statusDot = { live: "bg-emerald-700", warn: "bg-amber-600", blocked: "bg-red-700", paused: "bg-slate-400" };
+const statusText = { live: "text-emerald-800", warn: "text-amber-800", blocked: "text-red-800", paused: "text-slate-600" };
+const rowBorder = { live: "border-slate-200", warn: "border-amber-300", blocked: "border-red-300", paused: "border-slate-200" };
 
 export default function InventoryTab({ vendorId }: InventoryTabProps) {
   const [allGear, setAllGear] = useState<GearItem[]>([]);
-  const [allDiscounts, setAllDiscounts] = useState<Discount[]>([]);
-  const [showGearModal, setShowGearModal] = useState(false);
-  const [showDiscModal, setShowDiscModal] = useState(false);
-  const [editingGear, setEditingGear] = useState<GearItem | null>(null);
-  const [editingDisc, setEditingDisc] = useState<Discount | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [discounts, setDiscounts] = useState<Discount[]>([]);
+  const [vendor, setVendor] = useState<VendorBits>({});
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<string>("all");
+  const [editing, setEditing] = useState<GearItem | "new" | null>(null);
+  const [showDiscounts, setShowDiscounts] = useState(false);
   const [showFlyer, setShowFlyer] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState<{ item: GearItem; upcoming: number | null } | null>(null);
+  const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
-  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
 
-  // Gear form state
-  const [gearName, setGearName] = useState("");
-  const [gearDesc, setGearDesc] = useState("");
-  const [gearPrice, setGearPrice] = useState("");
-  const [gearStock, setGearStock] = useState("");
-  const [gearCat, setGearCat] = useState("");
-  const [gearType, setGearType] = useState("addon");
-  const [gearImages, setGearImages] = useState<string[]>([]); // Multiple images
-  const [gearInc, setGearInc] = useState<string[]>([]); // Text includes
-  const [linkedItems, setLinkedItems] = useState<{ itemId: string; qty: number; variantId?: string; variantLabel?: string; variantColor?: string }[]>([]);
-  const [pendingFiles, setPendingFiles] = useState<File[]>([]); // Files to upload
-  
-  // NEW: Setup service form state
-  const [setupAvailable, setSetupAvailable] = useState(false);
-  const [setupFee, setSetupFee] = useState("");
-  const [setupDesc, setSetupDesc] = useState("");
+  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); }
 
-  // Specs form state
-  const [specSize, setSpecSize] = useState("");
-  const [specMaxPax, setSpecMaxPax] = useState("");
-  const [specPuRating, setSpecPuRating] = useState("");
-  const [specLayers, setSpecLayers] = useState("");
-  const [specWeight, setSpecWeight] = useState("");
-  const [specTentType, setSpecTentType] = useState("");
-  const [gearPickup, setGearPickup] = useState("");
-
-  // Pricing tiers form state
-  const [pricingTiers, setPricingTiers] = useState<{ nights: number; label: string; price: number }[]>([]);
-
-  // Variant form state
-  const [hasVariants, setHasVariants] = useState(false);
-  const [variants, setVariants] = useState<GearVariant[]>([]);
-
-  // Discount form state
-  const [discType, setDiscType] = useState("nightly_discount");
-  const [discPercent, setDiscPercent] = useState("");
-  const [discFixed, setDiscFixed] = useState("");
-  const [discTrigger, setDiscTrigger] = useState("");
-  const [discCode, setDiscCode] = useState("");
-  const [discPublic, setDiscPublic] = useState(true);
-  const [discAppliesTo, setDiscAppliesTo] = useState<"all" | "specific">("all");
-  const [discSelectedItems, setDiscSelectedItems] = useState<string[]>([]);
-  const [discMaxUses, setDiscMaxUses] = useState("");
-  const [discValidFrom, setDiscValidFrom] = useState("");
-  const [discValidUntil, setDiscValidUntil] = useState("");
-  const [discMinSpend, setDiscMinSpend] = useState("");
-  const [discMinQty, setDiscMinQty] = useState("");
-  const [discBundleCategory, setDiscBundleCategory] = useState("");
-  const [discFreeItemId, setDiscFreeItemId] = useState("");
-  const [discFreeItemQty, setDiscFreeItemQty] = useState("1");
-  const [discFreeTrigger, setDiscFreeTrigger] = useState("always");
-  const [discFreeTriggerNights, setDiscFreeTriggerNights] = useState("");
-  const [discFreeTriggerSpend, setDiscFreeTriggerSpend] = useState("");
-  const [discFreeTriggerQty, setDiscFreeTriggerQty] = useState("");
-  const [discFreeTriggerCategory, setDiscFreeTriggerCategory] = useState("");
-
-  // Real-time listeners
   useEffect(() => {
-    const gearUnsub = onSnapshot(
-      query(collection(db, "gear"), where("vendorId", "==", vendorId)),
-      snap => setAllGear(snap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted)),
-      (error) => console.error("Gear listener error:", error)
-    );
-    const discUnsub = onSnapshot(
-      collection(db, "vendors", vendorId, "discounts"),
-      snap => setAllDiscounts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Discount)).filter(d => !d.deleted)),
-      (error) => console.error("Discounts listener error:", error)
-    );
-    return () => { gearUnsub(); discUnsub(); };
+    const gearUnsub = onSnapshot(query(collection(db, "gear"), where("vendorId", "==", vendorId)),
+      snap => { setAllGear(snap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted)); setLoading(false); },
+      e => { console.error("Gear listener error:", e); setLoading(false); });
+    const discUnsub = onSnapshot(collection(db, "vendors", vendorId, "discounts"),
+      snap => setDiscounts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Discount)).filter(d => !d.deleted)),
+      e => console.error("Discounts listener error:", e));
+    const vendorUnsub = onSnapshot(doc(db, "vendors", vendorId), snap => setVendor((snap.data() || {}) as VendorBits));
+    return () => { gearUnsub(); discUnsub(); vendorUnsub(); };
   }, [vendorId]);
 
-  const categories = Array.from(new Set(allGear.map(g => g.category || (g.type === "package" ? "Packages" : "Add-ons")))).sort();
-  const addons = allGear.filter(g => g.type !== "package");
-  const [showIssuesFor, setShowIssuesFor] = useState<string | null>(null);
+  // Keep vendors/{id}.gear_count in step: the welcome tour and the shop-setup
+  // checklist read it, and nothing else maintained it.
+  useEffect(() => {
+    if (loading) return;
+    const live = allGear.filter(g => !g.paused).length;
+    if (vendor.gear_count !== live) updateDoc(doc(db, "vendors", vendorId), { gear_count: live }).catch(() => {});
+  }, [allGear, loading, vendor.gear_count, vendorId]);
 
-  function getItemIssues(g: GearItem): { issue: string; icon: string; critical: boolean }[] {
-    const issues: { issue: string; icon: string; critical: boolean }[] = [];
-    if (!g.images?.length && !g.img) issues.push({ issue: "No photos", icon: "fa-camera", critical: false });
-    if (!g.price || g.price <= 0) issues.push({ issue: "No price", icon: "fa-tag", critical: true });
-    if ((g.stock || 0) <= 0 && !g.hasVariants) issues.push({ issue: "Zero stock", icon: "fa-box-open", critical: true });
-    if (g.hasVariants && g.variants?.some(v => !v.price || v.price <= 0)) issues.push({ issue: "Variant missing price", icon: "fa-palette", critical: false });
-    if (g.hasVariants && g.variants?.some(v => v.stock <= 0)) issues.push({ issue: "Variant zero stock", icon: "fa-palette", critical: true });
-    return issues;
-  }
+  const cats = useMemo(() => usedCategories(allGear), [allGear]);
+  const attention = allGear.filter(needsAttention);
+  const pausedCount = allGear.filter(g => g.paused).length;
+  const activeDiscounts = discounts.filter(d => discountState(d).state === "active").length;
 
-  // --- GEAR ACTIONS ---
-  function openAddGear() {
-    setEditingGear(null);
-    setGearName(""); setGearDesc(""); setGearPrice("");
-    setGearStock(""); setGearCat(""); setGearType("addon");
-    setGearImages([]); setGearInc([]); setLinkedItems([]);
-    setPendingFiles([]);
-    setSetupAvailable(false); setSetupFee(""); setSetupDesc("");
-    setSpecSize(""); setSpecMaxPax(""); setSpecPuRating(""); setSpecLayers(""); setSpecWeight(""); setSpecTentType("");
-    setGearPickup("");
-    setHasVariants(false); setVariants([]);
-    setPricingTiers([]);
-    setShowGearModal(true);
-  }
+  const visible = useMemo(() => allGear
+    .filter(g => matchesSearch(g, search))
+    .filter(g => filter === "all" ? true : filter === "attention" ? needsAttention(g) : filter === "paused" ? !!g.paused : categoryOf(g).toLowerCase() === filter.toLowerCase())
+    .sort((a, b) => a.name.localeCompare(b.name)), [allGear, search, filter]);
 
-  function openEditGear(g: GearItem) {
-    setEditingGear(g);
-    setGearName(g.name); setGearDesc(g.desc || "");
-    setGearPrice(String(g.price)); setGearStock(String(g.stock));
-    setGearCat(g.category || (g.type === "package" ? "Packages" : "Add-ons"));
-    setGearType(g.type || "addon");
-    setGearImages(g.images || (g.img ? [g.img] : [])); // Support legacy single img
-    setGearInc(g.inc || []);
-    setLinkedItems(g.linkedItems || []);
-    setPendingFiles([]);
-    // Setup fields
-    setSetupAvailable(g.setup?.available || false);
-    setSetupFee(String(g.setup?.fee || ""));
-    setSetupDesc(g.setup?.description || "");
-    // Specs fields
-    setSpecSize(g.specs?.size || "");
-    setSpecMaxPax(g.specs?.maxPax ? String(g.specs.maxPax) : "");
-    setSpecPuRating(g.specs?.puRating || "");
-    setSpecLayers(g.specs?.layers || "");
-    setSpecWeight(g.specs?.weight || "");
-    setSpecTentType(g.specs?.tentType || "");
-    setGearPickup(g.pickupLocation || "");
-    setHasVariants(g.hasVariants || false);
-    setVariants(g.variants || []);
-    setPricingTiers(g.pricingTiers || []);
-    setShowGearModal(true);
-  }
+  const grouped = useMemo(() => {
+    const order = usedCategories(visible);
+    return order.map(c => ({ cat: c, items: visible.filter(g => categoryOf(g) === c) }));
+  }, [visible]);
 
-  async function saveGear() {
-    if (!gearName.trim()) return showToast("Please enter item name", "error");
-    setUploading(true);
+  async function setPaused(ids: string[], paused: boolean) {
+    setBusy(true);
     try {
-      const storage = getStorage();
-      
-      // Upload new files
-      const newUrls: string[] = [];
-      for (const file of pendingFiles) {
-        const snap = await uploadBytes(ref(storage, `gear/${vendorId}/${Date.now()}_${file.name}`), file);
-        newUrls.push(await getDownloadURL(snap.ref));
-      }
-      
-      const allImages = [...gearImages, ...newUrls];
-
-      // Calculate stock and price from variants if enabled
-      const cleanVariants = hasVariants ? variants.filter(v => v.stock > 0 || v.color?.label || v.size) : [];
-      const variantStock = cleanVariants.length > 0 ? cleanVariants.reduce((s, v) => s + v.stock, 0) : null;
-      const pricedVariants = cleanVariants.filter(v => v.price > 0);
-      const variantMinPrice = pricedVariants.length > 0 ? Math.min(...pricedVariants.map(v => v.price)) : null;
-      
-      const data: any = {
-        vendorId, 
-        owner_uid: auth.currentUser?.uid,
-        category: gearCat || (gearType === "package" ? "Packages" : "Add-ons"), 
-        type: gearType,
-        name: gearName, 
-        desc: gearDesc,
-        price: variantMinPrice ?? (Number(gearPrice) || 0), 
-        stock: variantStock ?? (Number(gearStock) || 0),
-        img: allImages[0] || "",
-        images: allImages,
-        inc: gearInc.filter(Boolean), 
-        deleted: false,
-        hasVariants: hasVariants && cleanVariants.length > 0,
-        variants: hasVariants && cleanVariants.length > 0 ? cleanVariants : [],
-      };
-      
-      // Add linked items for packages
-      if (gearType === "package" && linkedItems.length > 0) {
-        data.linkedItems = linkedItems
-          .filter(li => li.itemId && li.qty > 0)
-          .map(li => ({
-            itemId: li.itemId,
-            qty: li.qty,
-            ...(li.variantId ? { variantId: li.variantId, variantLabel: li.variantLabel, variantColor: li.variantColor } : {}),
-          }));
-      }
-      
-      // Add setup service data
-      data.setup = {
-        available: setupAvailable,
-        fee: Number(setupFee) || 0,
-        description: setupDesc,
-      };
-
-      // Add specs data (only non-empty values)
-      const specs: any = {};
-      if (specSize.trim()) specs.size = specSize.trim();
-      if (specMaxPax && Number(specMaxPax) > 0) specs.maxPax = Number(specMaxPax);
-      if (specPuRating.trim()) specs.puRating = specPuRating.trim();
-      if (specLayers.trim()) specs.layers = specLayers.trim();
-      if (specWeight.trim()) specs.weight = specWeight.trim();
-      if (specTentType.trim()) specs.tentType = specTentType.trim();
-      data.specs = specs;
-      if (gearPickup.trim()) data.pickupLocation = gearPickup.trim();
-      data.pricingTiers = pricingTiers.filter(t => t.price > 0).sort((a, b) => a.nights - b.nights);
-      
-      if (editingGear) {
-        await updateDoc(doc(db, "gear", editingGear.id), data);
-      } else {
-        await addDoc(collection(db, "gear"), data);
-      }
-      setShowGearModal(false);
-      showToast(editingGear ? "Item updated!" : "Item added!");
-    } catch (e) { 
-      console.error(e); 
-      showToast("Error saving item", "error"); 
-    } finally { 
-      setUploading(false); 
-    }
+      const batch = writeBatch(db);
+      ids.forEach(id => batch.update(doc(db, "gear", id), { paused }));
+      await batch.commit();
+      showToast(`${ids.length} item${ids.length === 1 ? "" : "s"} ${paused ? "paused" : "live again"}`);
+      setSelected([]); setSelectMode(false);
+    } catch (e) { console.error(e); showToast("Could not update the items", "error"); }
+    finally { setBusy(false); }
   }
 
-  async function deleteGear(id: string) {
-    if (!confirm("Remove this item?")) return;
+  async function duplicate(item: GearItem) {
     try {
-      await updateDoc(doc(db, "gear", id), { deleted: true });
-      showToast("Item removed!");
-    } catch { showToast("Failed to remove item", "error"); }
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id, ...rest } = item;
+      await addDoc(collection(db, "gear"), { ...rest, name: `${item.name} (copy)`, paused: true, deleted: false });
+      setEditing(null);
+      showToast("Copy created. It is paused until you check it.");
+    } catch (e) { console.error(e); showToast("Could not duplicate the item", "error"); }
   }
 
-  const MAX_FILE_MB = 5;
-  const MAX_FILE_SIZE = MAX_FILE_MB * 1024 * 1024;
-
-  function handleFileSelect(files: FileList | null) {
-    if (!files) return;
-    const allowed: File[] = [];
-    const rejected: string[] = [];
-    for (const file of Array.from(files)) {
-      if (file.size > MAX_FILE_SIZE) {
-        rejected.push(file.name);
-      } else {
-        allowed.push(file);
-      }
-    }
-    if (rejected.length > 0) {
-      showToast(`${rejected.length} file${rejected.length > 1 ? "s" : ""} exceeded ${MAX_FILE_MB}MB limit`, "error");
-    }
-    const newFiles = allowed.slice(0, 5 - gearImages.length - pendingFiles.length);
-    if (newFiles.length > 0) setPendingFiles(prev => [...prev, ...newFiles]);
-  }
-
-  function removeImage(index: number) {
-    setGearImages(prev => prev.filter((_, i) => i !== index));
-  }
-
-  function removePendingFile(index: number) {
-    setPendingFiles(prev => prev.filter((_, i) => i !== index));
-  }
-
-  function addLinkedItem() {
-    setLinkedItems(prev => [...prev, { itemId: "", qty: 1 }]);
-  }
-
-  function updateLinkedItem(index: number, field: string, value: string | number) {
-    setLinkedItems(prev => prev.map((li, i) => {
-      if (i !== index) return li;
-      if (field === "qty") return { ...li, qty: Number(value) };
-      if (field === "itemId") return { itemId: String(value), qty: li.qty }; // reset variant when item changes
-      if (field === "variantId") {
-        const item = addons.find(a => a.id === li.itemId);
-        const variant = item?.variants?.find(v => v.id === value);
-        return {
-          ...li,
-          variantId: String(value) || undefined,
-          variantLabel: variant ? [variant.color?.label, variant.size].filter(Boolean).join(", ") : undefined,
-          variantColor: variant?.color?.hex || undefined,
-        };
-      }
-      return { ...li, [field]: value };
-    }));
-  }
-
-  function removeLinkedItem(index: number) {
-    setLinkedItems(prev => prev.filter((_, i) => i !== index));
-  }
-
-  function addVariant() {
-    setVariants(prev => [...prev, {
-      id: `v${Date.now()}`,
-      color: { label: "", hex: "#062c24" },
-      size: "",
-      price: Number(gearPrice) || 0,
-      stock: 1,
-    }]);
-  }
-
-  function updateVariant(index: number, updates: Partial<GearVariant>) {
-    setVariants(prev => prev.map((v, i) => i === index ? { ...v, ...updates } : v));
-  }
-
-  function updateVariantColor(index: number, field: "label" | "hex", value: string) {
-    setVariants(prev => prev.map((v, i) =>
-      i === index ? { ...v, color: { ...v.color!, [field]: value } } : v
-    ));
-  }
-
-  function removeVariant(index: number) {
-    setVariants(prev => prev.filter((_, i) => i !== index));
-  }
-
-  // --- DISCOUNT ACTIONS ---
-  function resetDiscForm() {
-    setDiscPercent(""); setDiscFixed(""); setDiscTrigger(""); setDiscCode(""); setDiscPublic(true);
-    setDiscAppliesTo("all"); setDiscSelectedItems([]);
-    setDiscMaxUses(""); setDiscValidFrom(""); setDiscValidUntil("");
-    setDiscMinSpend(""); setDiscMinQty(""); setDiscBundleCategory("");
-    setDiscFreeItemId(""); setDiscFreeItemQty("1"); setDiscFreeTrigger("always");
-    setDiscFreeTriggerNights(""); setDiscFreeTriggerSpend(""); setDiscFreeTriggerQty(""); setDiscFreeTriggerCategory("");
-  }
-
-  function openAddDisc() {
-    setEditingDisc(null);
-    setDiscType("nightly_discount");
-    resetDiscForm();
-    setShowDiscModal(true);
-  }
-
-  function openEditDisc(d: Discount) {
-    setEditingDisc(d);
-    setDiscType(d.type);
-    setDiscPercent(d.discount_percent ? String(d.discount_percent) : "");
-    setDiscFixed(d.discount_fixed ? String(d.discount_fixed) : "");
-    setDiscTrigger(String(d.trigger_nights || ""));
-    setDiscCode(d.code || ""); setDiscPublic(d.is_public !== false);
-    setDiscAppliesTo(d.appliesTo?.type || "all");
-    setDiscSelectedItems(d.appliesTo?.itemIds || []);
-    setDiscMaxUses(d.maxUses != null ? String(d.maxUses) : "");
-    setDiscValidFrom(d.validFrom || "");
-    setDiscValidUntil(d.validUntil || "");
-    setDiscMinSpend(d.min_spend ? String(d.min_spend) : "");
-    setDiscMinQty(d.min_qty ? String(d.min_qty) : "");
-    setDiscBundleCategory(d.bundle_category || "");
-    setDiscFreeItemId(d.freeItemId || "");
-    setDiscFreeItemQty(String(d.freeItemQty ?? 1));
-    setDiscFreeTrigger(d.free_trigger || "always");
-    setDiscFreeTriggerNights(d.free_trigger_nights ? String(d.free_trigger_nights) : "");
-    setDiscFreeTriggerSpend(d.free_trigger_spend ? String(d.free_trigger_spend) : "");
-    setDiscFreeTriggerQty(d.free_trigger_qty ? String(d.free_trigger_qty) : "");
-    setDiscFreeTriggerCategory(d.free_trigger_category || "");
-    setShowDiscModal(true);
-  }
-
-  async function saveDisc() {
-    const base: any = {
-      type: discType,
-      deleted: false,
-      maxUses: discMaxUses ? Number(discMaxUses) : null,
-      validFrom: discValidFrom || null,
-      validUntil: discValidUntil || null,
-    };
-
-    if (discType === "free_item") {
-      Object.assign(base, {
-        freeItemId: discFreeItemId,
-        freeItemQty: Number(discFreeItemQty) || 1,
-        free_trigger: discFreeTrigger,
-        free_trigger_nights: discFreeTrigger === "min_nights" ? Number(discFreeTriggerNights) : null,
-        free_trigger_spend: discFreeTrigger === "min_spend" ? Number(discFreeTriggerSpend) : null,
-        free_trigger_qty: discFreeTrigger === "min_qty" ? Number(discFreeTriggerQty) : null,
-        free_trigger_category: discFreeTrigger === "min_qty" ? (discFreeTriggerCategory || null) : null,
-        discount_percent: 0,
-      });
-    } else if (discType === "min_spend") {
-      Object.assign(base, {
-        min_spend: Number(discMinSpend),
-        discount_percent: discPercent ? Number(discPercent) : 0,
-        discount_fixed: discFixed ? Number(discFixed) : null,
-        is_public: discPublic,
-      });
-    } else if (discType === "quantity_bundle") {
-      Object.assign(base, {
-        min_qty: Number(discMinQty),
-        bundle_category: discBundleCategory || null,
-        discount_percent: Number(discPercent),
-        is_public: discPublic,
-        appliesTo: { type: discAppliesTo, itemIds: discAppliesTo === "specific" ? discSelectedItems : [] },
-      });
-    } else {
-      // nightly_discount + promo_code
-      Object.assign(base, {
-        discount_percent: Number(discPercent),
-        is_public: discPublic,
-        appliesTo: { type: discAppliesTo, itemIds: discAppliesTo === "specific" ? discSelectedItems : [] },
-        trigger_nights: discType === "nightly_discount" ? Number(discTrigger) : null,
-        code: discType === "promo_code" ? discCode.toUpperCase() : null,
-      });
-    }
-
-    if (!editingDisc) { base.usedCount = 0; base.usedBy = []; }
+  async function askDelete(item: GearItem) {
+    setDeleting({ item, upcoming: null });
     try {
-      if (editingDisc) {
-        await updateDoc(doc(db, "vendors", vendorId, "discounts", editingDisc.id), base);
-      } else {
-        await addDoc(collection(db, "vendors", vendorId, "discounts"), base);
-      }
-      setShowDiscModal(false);
-      showToast(editingDisc ? "Discount updated!" : "Discount added!");
-    } catch { showToast("Failed to save discount", "error"); }
+      const snap = await getDocs(query(collection(db, "orders"), where("vendorId", "==", vendorId)));
+      const today = new Date().toISOString().slice(0, 10);
+      const upcoming = snap.docs.map(d => d.data()).filter(o =>
+        !o.deleted && (o.status === "pending" || o.status === "confirmed" || o.status === "conflict") &&
+        (o.bookingDates?.end || "") >= today &&
+        (o.items || []).some((i: { id?: string }) => i.id === item.id)).length;
+      setDeleting({ item, upcoming });
+    } catch { setDeleting({ item, upcoming: 0 }); }
   }
 
-  async function deleteDisc() {
-    if (!editingDisc || !confirm("Delete rule?")) return;
+  async function confirmDelete() {
+    if (!deleting) return;
+    setBusy(true);
     try {
-      await updateDoc(doc(db, "vendors", vendorId, "discounts", editingDisc.id), { deleted: true });
-      setShowDiscModal(false);
-      showToast("Discount deleted!");
-    } catch { showToast("Failed to delete discount", "error"); }
+      await updateDoc(doc(db, "gear", deleting.item.id), { deleted: true });
+      setDeleting(null); setEditing(null);
+      showToast("Item deleted");
+    } catch { showToast("Could not delete the item", "error"); }
+    finally { setBusy(false); }
   }
 
-  function toggleDiscountItem(itemId: string) {
-    setDiscSelectedItems(prev => 
-      prev.includes(itemId) 
-        ? prev.filter(id => id !== itemId) 
-        : [...prev, itemId]
-    );
-  }
-
-  // Get item name by ID
-  function getItemName(itemId: string): string {
-    return allGear.find(g => g.id === itemId)?.name || "Unknown";
-  }
+  const chips: { key: string; label: string; tone?: "warn" }[] = [
+    { key: "all", label: `All · ${allGear.length}` },
+    ...(attention.length ? [{ key: "attention", label: `Needs attention · ${attention.length}`, tone: "warn" as const }] : []),
+    ...cats.map(c => ({ key: c, label: `${c} · ${allGear.filter(g => categoryOf(g) === c).length}` })),
+    ...(pausedCount ? [{ key: "paused", label: `Paused · ${pausedCount}` }] : []),
+  ];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-2xl border border-slate-100 p-6">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h2 className="text-lg font-black text-[#062c24] uppercase">Inventory</h2>
-            <p className="text-xs text-slate-400 mt-1">Manage your gear, packages, and pricing</p>
-          </div>
-          <div className="flex gap-2 w-full md:w-auto">
-            <button onClick={() => setShowFlyer(true)}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-red-50 text-red-500 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-red-100 transition-all border border-red-100">
-              <i className="fas fa-file-pdf"></i> Flyer
-            </button>
-            <button onClick={openAddDisc}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-indigo-50 text-indigo-600 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-indigo-100 transition-all border border-indigo-100">
-              <i className="fas fa-tags"></i> Discounts
-            </button>
-            <button onClick={openAddGear}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-[#062c24] text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-emerald-800 transition-all">
-              <i className="fas fa-plus"></i> Add Item
-            </button>
-          </div>
+    <div className="flex flex-col gap-3.5 pb-24">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-3xl font-black text-[#062c24] uppercase">Inventory</h2>
+          <p className="text-xs font-semibold text-slate-600">Your gear, packages and discounts</p>
         </div>
+        <button type="button" onClick={() => setEditing("new")} className="min-h-11 px-4 rounded-xl bg-[#062c24] text-white text-sm font-bold flex items-center gap-2 hover:bg-[#0a4135] shrink-0">
+          <i className="fas fa-plus" aria-hidden="true"></i>Add item
+        </button>
       </div>
 
-      {/* Active Discounts */}
-      {allDiscounts.length > 0 && (
-        <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
-          {allDiscounts.map(d => {
-            const status = discountStatus(d);
-            const statusColors = { active: "bg-emerald-100 text-emerald-600", expired: "bg-red-100 text-red-500", not_started: "bg-amber-100 text-amber-600", maxed: "bg-slate-100 text-slate-500" };
-            const statusLabels = { active: "Active", expired: "Expired", not_started: "Upcoming", maxed: "Maxed" };
-            return (
-              <div key={d.id} onClick={() => openEditDisc(d)}
-                className={`flex-shrink-0 bg-gradient-to-br from-indigo-50 to-purple-50 border px-4 py-3 rounded-xl cursor-pointer min-w-[130px] hover:border-indigo-300 transition-all ${status === "active" ? "border-indigo-100" : "border-slate-200 opacity-70"}`}>
-                <div className="flex items-center justify-between gap-2 mb-0.5">
-                  <p className="text-sm font-black text-indigo-600">
-                    {d.type === "free_item" ? "🎁 Free Item"
-                      : d.discount_fixed ? `RM${d.discount_fixed} OFF`
-                      : `${d.discount_percent}% OFF`}
-                  </p>
-                  <span className={`text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase ${statusColors[status]}`}>{statusLabels[status]}</span>
-                </div>
-                <p className="text-[9px] text-indigo-400 font-medium">
-                  {d.type === "promo_code" ? `Code: ${d.code}`
-                    : d.type === "nightly_discount" ? `${d.trigger_nights}+ nights`
-                    : d.type === "min_spend" ? `Spend RM${d.min_spend}+`
-                    : d.type === "quantity_bundle" ? `${d.min_qty}+ items`
-                    : d.type === "free_item" ? (allGear.find(g => g.id === d.freeItemId)?.name || "Item")
-                    : ""}
-                </p>
-                {(d.maxUses != null || d.validUntil) && (
-                  <p className="text-[8px] text-purple-400 mt-1">
-                    {d.maxUses != null ? `${d.usedCount ?? 0}/${d.maxUses} uses` : ""}
-                    {d.maxUses != null && d.validUntil ? " · " : ""}
-                    {d.validUntil ? `Until ${new Date(d.validUntil).toLocaleDateString("en-MY", { day: "numeric", month: "short" })}` : ""}
-                  </p>
-                )}
-              </div>
-            );
-          })}
-          <button onClick={openAddDisc}
-            className="flex-shrink-0 bg-white border-2 border-dashed border-slate-200 px-4 py-3 rounded-xl text-[10px] font-black text-slate-400 hover:border-indigo-300 hover:text-indigo-500 transition-all flex items-center gap-2">
-            <i className="fas fa-plus"></i> Add Discount
+      <div className="flex gap-2">
+        <button type="button" onClick={() => setShowDiscounts(true)} className="flex-1 min-h-11 px-3.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-[13px] font-semibold flex items-center justify-between hover:bg-slate-50">
+          <span>Discounts{discounts.length ? ` · ${activeDiscounts} active` : ""}</span>
+          <i className="fas fa-chevron-right text-slate-500" aria-hidden="true"></i>
+        </button>
+        <button type="button" onClick={() => setShowFlyer(true)} className="min-h-11 px-3.5 rounded-xl border border-slate-300 bg-white text-slate-700 text-[13px] font-semibold hover:bg-slate-50">Flyer</button>
+        {allGear.length > 0 && (
+          <button type="button" onClick={() => { setSelectMode(m => !m); setSelected([]); }} aria-pressed={selectMode}
+            className={`min-h-11 px-3.5 rounded-xl text-[13px] font-semibold ${selectMode ? "bg-slate-800 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}>
+            {selectMode ? "Done" : "Select"}
           </button>
-        </div>
+        )}
+      </div>
+
+      {allGear.length > 0 && (
+        <>
+          <div className="relative">
+            <label htmlFor="inv-search" className="sr-only">Search items</label>
+            <i className="fas fa-search absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-sm" aria-hidden="true"></i>
+            <input id="inv-search" type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items"
+              className="w-full min-h-11 bg-white border border-slate-300 rounded-xl pl-10 pr-3 text-base text-slate-900 placeholder:text-slate-500" />
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+            {chips.map(c => (
+              <button key={c.key} type="button" aria-pressed={filter === c.key} onClick={() => setFilter(c.key)}
+                className={`min-h-10 px-3.5 rounded-xl text-[13px] whitespace-nowrap ${filter === c.key ? "bg-[#062c24] text-white font-bold"
+                  : c.tone === "warn" ? "bg-amber-100 border border-amber-300 text-amber-900 font-bold" : "bg-white border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50"}`}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
-      {/* Inventory Grid */}
-      <div className="space-y-6">
-        {categories.map(cat => {
-          const items = allGear.filter(g => (g.category || (g.type === "package" ? "Packages" : "Add-ons")) === cat);
-          if (!items.length) return null;
-          return (
-            <div key={cat} className="bg-white p-6 rounded-2xl border border-slate-100">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 pb-2 border-b border-slate-100">
-                {cat} <span className="text-slate-300 ml-2">({items.length})</span>
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      {loading ? (
+        <div className="flex flex-col gap-2">
+          {[1, 2, 3].map(i => <div key={i} className="h-[88px] bg-white rounded-2xl border border-slate-200 animate-pulse" />)}
+        </div>
+      ) : allGear.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center flex flex-col items-center gap-2">
+          <div className="w-14 h-14 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-700" aria-hidden="true"><i className="fas fa-campground text-xl"></i></div>
+          <p className="text-sm font-bold text-slate-800">No items yet</p>
+          <p className="text-[13px] text-slate-600">Add your first tent or item. You only need a photo, a name, a price and how many you own.</p>
+          <button type="button" onClick={() => setEditing("new")} className="mt-2 min-h-11 px-4 rounded-xl bg-[#062c24] text-white text-sm font-bold">Add your first item</button>
+        </div>
+      ) : visible.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center">
+          <p className="text-sm font-bold text-slate-800">No items match</p>
+          <p className="text-[13px] text-slate-600 mt-1">Try a different search or filter.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {grouped.map(({ cat, items }) => (
+            <div key={cat} className="flex flex-col gap-2">
+              <h3 style={{ textTransform: "none" }} className="text-[15px] font-extrabold text-slate-600">{cat} · {items.length}</h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
                 {items.map(g => {
-                  const issues = getItemIssues(g);
-                  const hasCritical = issues.some(i => i.critical);
+                  const st = itemStatus(g);
+                  const cover = g.images?.[0] || g.img;
+                  const isSel = selected.includes(g.id);
                   return (
-                  <div key={g.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-all group relative">
-                    <div className="w-14 h-14 rounded-xl bg-white p-0.5 shadow-sm overflow-hidden flex-shrink-0 relative">
-                      <img src={g.images?.[0] || g.img || "/pacak-khemah.png"} className="w-full h-full object-cover rounded-lg" alt={g.name} />
-                      {g.setup?.available && (
-                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                          <i className="fas fa-tools text-white text-[6px]"></i>
+                    <button key={g.id} type="button"
+                      onClick={() => selectMode ? setSelected(s => isSel ? s.filter(x => x !== g.id) : [...s, g.id]) : setEditing(g)}
+                      aria-pressed={selectMode ? isSel : undefined}
+                      className={`text-left rounded-2xl border p-3 flex items-center gap-3 hover:border-slate-400 ${g.paused ? "bg-slate-50" : "bg-white"} ${isSel ? "border-[#062c24] ring-2 ring-emerald-200" : rowBorder[st.kind]}`}>
+                      {selectMode && (
+                        <span className={`w-6 h-6 rounded-md border-2 shrink-0 flex items-center justify-center ${isSel ? "bg-[#062c24] border-[#062c24] text-white" : "border-slate-400 bg-white"}`} aria-hidden="true">
+                          {isSel && <i className="fas fa-check text-xs"></i>}
                         </span>
                       )}
-                      {/* Issue indicator on thumbnail */}
-                      {issues.length > 0 && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setShowIssuesFor(showIssuesFor === g.id ? null : g.id); }}
-                          className={`absolute -bottom-1 -left-1 w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-black shadow-sm ${
-                            hasCritical ? "bg-red-500 text-white animate-pulse" : "bg-amber-400 text-white"
-                          }`}
-                          title={`${issues.length} issue${issues.length > 1 ? "s" : ""}`}
-                        >
-                          {issues.length}
-                        </button>
+                      {cover ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={cover} alt="" className={`w-16 h-16 rounded-xl object-cover shrink-0 ${g.paused ? "opacity-60" : ""}`} />
+                      ) : (
+                        <span className="w-16 h-16 rounded-xl bg-amber-50 border border-dashed border-amber-500 text-amber-800 flex items-center justify-center shrink-0" aria-hidden="true"><i className="fas fa-camera"></i></span>
                       )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-xs font-black text-[#062c24] truncate">{g.name}</h4>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">RM{g.price}</span>
-                        <span className="text-[9px] font-bold text-slate-400">Stock: {g.stock}</span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        {g.linkedItems && g.linkedItems.length > 0 && (
-                          <p className="text-[8px] text-purple-500">
-                            <i className="fas fa-link mr-1"></i>{g.linkedItems.length} linked
-                          </p>
-                        )}
-                        {g.setup?.available && (
-                          <p className="text-[8px] text-blue-500">
-                            <i className="fas fa-tools mr-1"></i>Setup +RM{g.setup.fee}
-                          </p>
-                        )}
-                        {g.pickupLocation && (
-                          <p className="text-[8px] text-emerald-600">
-                            <i className="fas fa-map-marker-alt mr-1"></i>{g.pickupLocation}
-                          </p>
-                        )}
-                      </div>
-                      {/* Issue details dropdown */}
-                      {showIssuesFor === g.id && issues.length > 0 && (
-                        <div className="mt-2 bg-white border border-slate-200 rounded-lg p-2 space-y-1 shadow-md">
-                          {issues.map((issue, i) => (
-                            <div key={i} className={`flex items-center gap-1.5 text-[9px] font-bold ${issue.critical ? "text-red-600" : "text-amber-600"}`}>
-                              <i className={`fas ${issue.icon} w-3 text-center`}></i>
-                              {issue.issue}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => openEditGear(g)}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-white text-slate-400 hover:text-emerald-600 shadow-sm transition-all">
-                        <i className="fas fa-pen text-[10px]"></i>
-                      </button>
-                      <button onClick={() => deleteGear(g.id)}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-white text-slate-400 hover:text-red-500 shadow-sm transition-all">
-                        <i className="fas fa-trash text-[10px]"></i>
-                      </button>
-                    </div>
-                  </div>
+                      <span className="flex-1 min-w-0 flex flex-col gap-0.5">
+                        <span className={`text-[15px] font-bold truncate ${g.paused ? "text-slate-600" : "text-slate-900"}`}>{g.name}</span>
+                        <span className="text-[13px] text-slate-600 truncate">{itemPriceLine(g)}</span>
+                        <span className={`text-xs font-bold flex items-center gap-1.5 ${statusText[st.kind]}`}>
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${statusDot[st.kind]}`} aria-hidden="true"></span>
+                          <span className="truncate">{st.label}</span>
+                        </span>
+                      </span>
+                      {!selectMode && <i className="fas fa-chevron-right text-slate-400 shrink-0" aria-hidden="true"></i>}
+                    </button>
                   );
                 })}
               </div>
             </div>
-          );
-        })}
-        
-        {allGear.length === 0 && (
-          <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center">
-            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <i className="fas fa-box-open text-slate-300 text-2xl"></i>
-            </div>
-            <p className="text-sm font-bold text-slate-400">No items yet</p>
-            <p className="text-xs text-slate-300 mt-1 mb-4">Add your first gear or package</p>
-            <button onClick={openAddGear} className="text-xs font-bold text-emerald-600 hover:text-emerald-700">
-              <i className="fas fa-plus mr-1"></i> Add First Item
-            </button>
-          </div>
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {/* Gear Modal - Enhanced with Setup Service */}
-      {showGearModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[600] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" style={{ scrollbarWidth: "none" }}>
-            {/* Header */}
-            <div className="sticky top-0 bg-white border-b border-slate-100 p-5 flex justify-between items-center z-10">
-              <h3 className="text-lg font-black text-[#062c24] uppercase">
-                {editingGear ? "Edit Item" : "New Item"}
-              </h3>
-              <button onClick={() => setShowGearModal(false)} className="w-9 h-9 bg-slate-100 rounded-full text-slate-400 hover:text-red-500 flex items-center justify-center">
-                <i className="fas fa-times"></i>
-              </button>
-            </div>
-
-            <div className="p-5 space-y-5">
-              {/* Type Selection */}
-              <div>
-                <label className={labelCls}>Item Type *</label>
-                <select value={gearType} onChange={e => setGearType(e.target.value)} className={inputCls}>
-                  <option value="addon">Add-on / Single Item</option>
-                  <option value="package">Package (Bundle)</option>
-                </select>
-                <p className={helperCls}>
-                  {gearType === "package" 
-                    ? "Packages can include multiple add-ons with linked stock" 
-                    : "Single items like tents, chairs, tables, etc."}
-                </p>
-              </div>
-
-              {/* Category */}
-              <div>
-                <label className={labelCls}>Category</label>
-                <input 
-                  value={gearCat} 
-                  onChange={e => setGearCat(e.target.value)} 
-                  list="cat-list" 
-                  className={inputCls} 
-                  placeholder="e.g. Tents, Furniture, Lighting" 
-                />
-                <datalist id="cat-list">
-                  {categories.map(c => <option key={c} value={c} />)}
-                </datalist>
-                <p className={helperCls}>Group similar items together</p>
-              </div>
-
-              {/* Name */}
-              <div>
-                <label className={labelCls}>Item Name *</label>
-                <input value={gearName} onChange={e => setGearName(e.target.value)} className={inputCls} placeholder="e.g. Naturehike 2P Tent" />
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className={labelCls}>Description</label>
-                <textarea
-                  value={gearDesc}
-                  onChange={e => setGearDesc(e.target.value)}
-                  rows={2}
-                  className={`${inputCls} resize-none`}
-                  placeholder="Brief description for customers..."
-                />
-              </div>
-
-              {/* Stock & Price — hidden when variants enabled */}
-              {!hasVariants && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className={labelCls}>Total Stock *</label>
-                    <input type="number" value={gearStock} onChange={e => setGearStock(e.target.value)} className={inputCls} placeholder="e.g. 5" />
-                    <p className={helperCls}>How many you own</p>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Price (RM/night) *</label>
-                    <input type="number" value={gearPrice} onChange={e => setGearPrice(e.target.value)} className={inputCls} placeholder="e.g. 50" />
-                  </div>
-                </div>
-              )}
-
-              {/* Variants Toggle */}
-              <div className={`p-4 rounded-xl border transition-all ${hasVariants ? "bg-teal-50 border-teal-200" : "bg-slate-50 border-slate-100"}`}>
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <label className="text-[10px] font-black text-teal-700 uppercase flex items-center gap-2">
-                      <i className="fas fa-palette"></i> Colour / Size Variants
-                    </label>
-                    <p className="text-[9px] text-teal-600">Different colours or sizes with individual stock and pricing</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={hasVariants}
-                    onChange={e => setHasVariants(e.target.checked)}
-                    className="w-5 h-5 accent-teal-500"
-                  />
-                </div>
-
-                {hasVariants && (
-                  <div className="space-y-3 pt-3 border-t border-teal-100">
-                    {variants.length === 0 ? (
-                      <p className="text-[10px] text-teal-400 text-center py-2">No variants yet. Add your first one below.</p>
-                    ) : (
-                      variants.map((v, i) => (
-                        <div key={v.id} className="bg-white rounded-xl p-3 border border-teal-100 space-y-2.5">
-                          {/* Colour row */}
-                          <div className="flex gap-2 items-center">
-                            <input
-                              type="color"
-                              value={v.color?.hex || "#062c24"}
-                              onChange={e => updateVariantColor(i, "hex", e.target.value)}
-                              className="w-8 h-8 rounded-lg border border-slate-200 cursor-pointer p-0.5"
-                            />
-                            <input
-                              value={v.color?.label || ""}
-                              onChange={e => updateVariantColor(i, "label", e.target.value)}
-                              className="flex-1 bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-semibold outline-none focus:border-teal-400"
-                              placeholder="Colour name (e.g. Army Green)"
-                            />
-                            <button onClick={() => removeVariant(i)} className="text-red-400 hover:text-red-600 p-1">
-                              <i className="fas fa-times"></i>
-                            </button>
-                          </div>
-                          {/* Size + Price + Stock row */}
-                          <div className="grid grid-cols-3 gap-2">
-                            <div>
-                              <label className="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">Size</label>
-                              <input
-                                value={v.size || ""}
-                                onChange={e => updateVariant(i, { size: e.target.value })}
-                                className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-semibold outline-none focus:border-teal-400"
-                                placeholder="S / M / L"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">Price (RM)</label>
-                              <input
-                                type="number"
-                                value={v.price || ""}
-                                onChange={e => updateVariant(i, { price: Number(e.target.value) || 0 })}
-                                className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-semibold outline-none focus:border-teal-400"
-                                placeholder="170"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">Stock</label>
-                              <input
-                                type="number"
-                                value={v.stock || ""}
-                                onChange={e => updateVariant(i, { stock: Number(e.target.value) || 0 })}
-                                className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-semibold outline-none focus:border-teal-400"
-                                placeholder="2"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                    <button onClick={addVariant}
-                      className="w-full py-2.5 rounded-xl text-[10px] font-black uppercase border-2 border-dashed border-teal-300 text-teal-600 hover:bg-teal-50 transition-all">
-                      <i className="fas fa-plus mr-1"></i> Add Variant
-                    </button>
-
-                    {/* Auto-calculated summary */}
-                    {variants.length > 0 && (
-                      <div className="bg-teal-100/50 rounded-lg p-2.5 flex justify-between text-[10px] font-bold text-teal-700">
-                        <span>Total Stock: {variants.reduce((s, v) => s + v.stock, 0)}</span>
-                        {variants.some(v => v.price > 0) && (
-                          <span>
-                            Price: RM{Math.min(...variants.filter(v => v.price > 0).map(v => v.price))}
-                            {Math.min(...variants.filter(v => v.price > 0).map(v => v.price)) !== Math.max(...variants.filter(v => v.price > 0).map(v => v.price))
-                              ? ` – RM${Math.max(...variants.filter(v => v.price > 0).map(v => v.price))}`
-                              : ""}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Photos - Multiple */}
-              <div>
-                <label className={labelCls}>Photos (Max 5)</label>
-                <div className="grid grid-cols-5 gap-2 mb-3">
-                  {gearImages.map((url, i) => (
-                    <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-slate-100">
-                      <img src={url} className="w-full h-full object-cover" alt="" />
-                      <button 
-                        onClick={() => removeImage(i)}
-                        className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-[8px] flex items-center justify-center hover:bg-red-600"
-                      >
-                        <i className="fas fa-times"></i>
-                      </button>
-                      {i === 0 && (
-                        <span className="absolute bottom-1 left-1 bg-black/50 text-white text-[7px] px-1 rounded">Main</span>
-                      )}
-                    </div>
-                  ))}
-                  {pendingFiles.map((file, i) => (
-                    <div key={`pending-${i}`} className="relative aspect-square rounded-lg overflow-hidden bg-slate-100">
-                      <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" alt="" />
-                      <button 
-                        onClick={() => removePendingFile(i)}
-                        className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full text-[8px] flex items-center justify-center"
-                      >
-                        <i className="fas fa-times"></i>
-                      </button>
-                      <span className="absolute bottom-1 left-1 bg-blue-500 text-white text-[7px] px-1 rounded">New</span>
-                    </div>
-                  ))}
-                  {gearImages.length + pendingFiles.length < 5 && (
-                    <label className="aspect-square rounded-lg border-2 border-dashed border-slate-200 flex items-center justify-center cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 transition-all">
-                      <i className="fas fa-plus text-slate-300"></i>
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        multiple
-                        className="hidden" 
-                        onChange={e => handleFileSelect(e.target.files)}
-                      />
-                    </label>
-                  )}
-                </div>
-                <p className={helperCls}>First photo = main thumbnail. Max 5MB per file.</p>
-              </div>
-
-              {/* Pickup Location */}
-              <div>
-                <label className={labelCls}><i className="fas fa-map-marker-alt mr-1 text-emerald-500"></i>Pickup Location</label>
-                <input value={gearPickup} onChange={e => setGearPickup(e.target.value)} className={inputCls} placeholder="e.g. Kuantan Hub, Pandan Store" />
-                <p className={helperCls}>Where customer picks up this item. Leave empty to use your default shop locations.</p>
-              </div>
-
-              {/* Pricing Tiers */}
-              <div className={`p-4 rounded-xl border transition-all ${pricingTiers.length > 0 ? "bg-amber-50 border-amber-200" : "bg-slate-50 border-slate-100"}`}>
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <label className="text-[10px] font-black text-amber-700 uppercase flex items-center gap-2">
-                      <i className="fas fa-tags"></i> Duration Pricing Tiers
-                    </label>
-                    <p className="text-[9px] text-amber-600">Set flat prices per rental duration. Overrides the per-night price above.</p>
-                  </div>
-                </div>
-
-                {/* Preset quick-add buttons */}
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {[
-                    { label: "Day Trip", nights: 0 },
-                    { label: "2D1N", nights: 1 },
-                    { label: "3D2N", nights: 2 },
-                    { label: "4D3N", nights: 3 },
-                    { label: "5D4N", nights: 4 },
-                  ].map(preset => {
-                    const exists = pricingTiers.some(t => t.nights === preset.nights);
-                    return (
-                      <button
-                        key={preset.nights}
-                        type="button"
-                        disabled={exists}
-                        onClick={() => setPricingTiers(prev => [...prev, { nights: preset.nights, label: preset.label, price: 0 }].sort((a, b) => a.nights - b.nights))}
-                        className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border transition-all ${exists ? "bg-amber-100 border-amber-300 text-amber-500 cursor-not-allowed opacity-50" : "bg-white border-amber-200 text-amber-700 hover:bg-amber-100"}`}
-                      >
-                        + {preset.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Tier rows */}
-                {pricingTiers.length > 0 && (
-                  <div className="space-y-2">
-                    {pricingTiers.map((tier, idx) => (
-                      <div key={tier.nights} className="flex items-center gap-2 bg-white rounded-xl p-2.5 border border-amber-100">
-                        <div className="w-16 text-[10px] font-black text-amber-700 uppercase shrink-0">{tier.label}</div>
-                        <div className="text-[9px] text-slate-400 shrink-0">{tier.nights === 0 ? "Same day" : `${tier.nights} night${tier.nights > 1 ? "s" : ""}`}</div>
-                        <div className="flex-1 flex items-center gap-1">
-                          <span className="text-[11px] font-bold text-slate-500 shrink-0">RM</span>
-                          <input
-                            type="number"
-                            value={tier.price || ""}
-                            onChange={e => setPricingTiers(prev => prev.map((t, i) => i === idx ? { ...t, price: Number(e.target.value) } : t))}
-                            className="w-full bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-sm font-bold outline-none focus:border-amber-400"
-                            placeholder="0"
-                            min="0"
-                          />
-                        </div>
-                        <span className="text-[9px] text-slate-400 shrink-0">flat</span>
-                        <button
-                          type="button"
-                          onClick={() => setPricingTiers(prev => prev.filter((_, i) => i !== idx))}
-                          className="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-red-400 transition-colors shrink-0"
-                        >
-                          <i className="fas fa-times text-[10px]"></i>
-                        </button>
-                      </div>
-                    ))}
-                    <p className="text-[9px] text-amber-600 mt-1"><i className="fas fa-info-circle mr-1"></i>Base price (RM/night) is used when no tier matches the customer's dates.</p>
-                  </div>
-                )}
-              </div>
-
-              {/* NEW: Setup Service */}
-              <div className={`p-4 rounded-xl border transition-all ${setupAvailable ? "bg-blue-50 border-blue-200" : "bg-slate-50 border-slate-100"}`}>
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <label className="text-[10px] font-black text-blue-700 uppercase flex items-center gap-2">
-                      <i className="fas fa-tools"></i> Setup Service
-                    </label>
-                    <p className="text-[9px] text-blue-500">Offer setup for this item (delivery only)</p>
-                  </div>
-                  <input 
-                    type="checkbox" 
-                    checked={setupAvailable} 
-                    onChange={e => setSetupAvailable(e.target.checked)} 
-                    className="w-5 h-5 accent-blue-500"
-                  />
-                </div>
-                
-                {setupAvailable && (
-                  <div className="space-y-3 pt-2 border-t border-blue-100">
-                    <div>
-                      <label className="text-[9px] font-bold text-blue-600 uppercase mb-1 block">Setup Fee (RM)</label>
-                      <input 
-                        type="number" 
-                        value={setupFee} 
-                        onChange={e => setSetupFee(e.target.value)} 
-                        className="w-full bg-white border border-blue-200 p-2.5 rounded-lg text-sm font-semibold outline-none focus:border-blue-400"
-                        placeholder="e.g. 50"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-bold text-blue-600 uppercase mb-1 block">Setup Description</label>
-                      <input 
-                        value={setupDesc} 
-                        onChange={e => setSetupDesc(e.target.value)} 
-                        className="w-full bg-white border border-blue-200 p-2.5 rounded-lg text-sm font-semibold outline-none focus:border-blue-400"
-                        placeholder="e.g. Full tent pitching with groundsheet"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Specifications */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                <label className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-2 mb-3">
-                  <i className="fas fa-ruler-combined"></i> Specifications <span className="text-[8px] font-normal text-slate-400 normal-case">(optional)</span>
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Size / Dimensions</label>
-                    <input value={specSize} onChange={e => setSpecSize(e.target.value)}
-                      className="w-full bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-semibold outline-none focus:border-emerald-400"
-                      placeholder="e.g. 300×250cm" />
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Max Pax</label>
-                    <input type="number" value={specMaxPax} onChange={e => setSpecMaxPax(e.target.value)} min="0"
-                      className="w-full bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-semibold outline-none focus:border-emerald-400"
-                      placeholder="e.g. 4" />
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">PU Rating</label>
-                    <input value={specPuRating} onChange={e => setSpecPuRating(e.target.value)}
-                      className="w-full bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-semibold outline-none focus:border-emerald-400"
-                      placeholder="e.g. PU3000" />
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Layer Type</label>
-                    <select value={specLayers} onChange={e => setSpecLayers(e.target.value)}
-                      className="w-full bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-semibold outline-none focus:border-emerald-400">
-                      <option value="">Not specified</option>
-                      <option value="Single Layer">Single Layer</option>
-                      <option value="Double Layer">Double Layer</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Tent Type</label>
-                    <select value={specTentType} onChange={e => setSpecTentType(e.target.value)}
-                      className="w-full bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-semibold outline-none focus:border-emerald-400">
-                      <option value="">Not specified</option>
-                      <option value="Auto Tent">Auto Tent</option>
-                      <option value="Manual Tent">Manual Tent</option>
-                      <option value="Air Tent">Air Tent</option>
-                      <option value="Shelter">Shelter</option>
-                      <option value="Dome Tent">Dome Tent</option>
-                      <option value="Cabin Tent">Cabin Tent</option>
-                      <option value="Teepee">Teepee</option>
-                      <option value="Hammock Tent">Hammock Tent</option>
-                      <option value="Flysheet">Flysheet</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Weight</label>
-                    <input value={specWeight} onChange={e => setSpecWeight(e.target.value)}
-                      className="w-full bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-semibold outline-none focus:border-emerald-400"
-                      placeholder="e.g. 8.5kg" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Package: Linked Items */}
-              {gearType === "package" && (
-                <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
-                  <div className="flex justify-between items-center mb-3">
-                    <div>
-                      <label className="text-[10px] font-black text-purple-700 uppercase">Linked Add-ons</label>
-                      <p className="text-[9px] text-purple-500">When booked, these items' stock will reduce automatically</p>
-                    </div>
-                    <button onClick={addLinkedItem} className="text-[9px] font-bold text-purple-600 bg-white px-2 py-1 rounded-lg hover:bg-purple-100">
-                      + Link Item
-                    </button>
-                  </div>
-                  
-                  {linkedItems.length === 0 ? (
-                    <p className="text-[10px] text-purple-400 text-center py-3">No linked items. Add to sync inventory.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {linkedItems.map((li, i) => {
-                        const selectedAddon = addons.find(a => a.id === li.itemId);
-                        const hasVars = selectedAddon?.hasVariants && selectedAddon.variants && selectedAddon.variants.length > 0;
-                        return (
-                          <div key={i} className="bg-white p-2.5 rounded-lg border border-purple-100 space-y-2">
-                            <div className="flex gap-2 items-center">
-                              <select 
-                                value={li.itemId} 
-                                onChange={e => updateLinkedItem(i, "itemId", e.target.value)}
-                                className="flex-1 bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs outline-none"
-                              >
-                                <option value="">Select item...</option>
-                                {addons.map(addon => (
-                                  <option key={addon.id} value={addon.id}>{addon.name} (Stock: {addon.stock})</option>
-                                ))}
-                              </select>
-                              <input 
-                                type="number" 
-                                value={li.qty} 
-                                onChange={e => updateLinkedItem(i, "qty", e.target.value)}
-                                min="1"
-                                className="w-16 bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs text-center outline-none"
-                                placeholder="Qty"
-                              />
-                              <button onClick={() => removeLinkedItem(i)} className="text-red-400 hover:text-red-600 p-1">
-                                <i className="fas fa-times"></i>
-                              </button>
-                            </div>
-                            {/* Variant picker - shown when linked item has variants */}
-                            {hasVars && (
-                              <div className="flex items-center gap-2 pl-1">
-                                <span className="text-[8px] font-bold text-purple-500 uppercase shrink-0">Variant:</span>
-                                <div className="flex gap-1.5 flex-wrap flex-1">
-                                  {selectedAddon!.variants!.map(v => {
-                                    const label = [v.color?.label, v.size].filter(Boolean).join(", ");
-                                    const isActive = li.variantId === v.id;
-                                    return (
-                                      <button
-                                        key={v.id}
-                                        onClick={() => updateLinkedItem(i, "variantId", isActive ? "" : v.id)}
-                                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[8px] font-bold border transition-all ${
-                                          isActive ? "border-purple-600 bg-purple-600 text-white" : "border-slate-200 text-slate-600 hover:border-purple-300"
-                                        }`}
-                                      >
-                                        {v.color?.hex && <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/30" style={{ backgroundColor: v.color.hex }}></span>}
-                                        {label || `RM${v.price}`} ({v.stock})
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            )}
-                            {/* Show locked variant label */}
-                            {li.variantLabel && (
-                              <p className="text-[8px] font-bold text-teal-600 pl-1">
-                                <i className="fas fa-lock text-[7px] mr-1"></i>Locked: {li.variantLabel}
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Package: Text Includes (Legacy/Additional) */}
-              {gearType === "package" && (
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                  <div className="flex justify-between items-center mb-3">
-                    <div>
-                      <label className="text-[10px] font-black text-slate-500 uppercase">What's Included (Text)</label>
-                      <p className="text-[9px] text-slate-400">Additional items shown to customers</p>
-                    </div>
-                    <button onClick={() => setGearInc(prev => [...prev, ""])} className="text-[9px] font-bold text-emerald-600 bg-white px-2 py-1 rounded-lg hover:bg-emerald-50">
-                      + Add
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {gearInc.map((inc, i) => (
-                      <div key={i} className="flex gap-2">
-                        <input 
-                          value={inc} 
-                          onChange={e => setGearInc(prev => prev.map((v, j) => j === i ? e.target.value : v))}
-                          className="flex-1 bg-white border border-slate-200 p-2 rounded-lg text-xs outline-none"
-                          placeholder="e.g. Ground sheet, 2x Lamps"
-                        />
-                        <button onClick={() => setGearInc(prev => prev.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-600 px-2">
-                          <i className="fas fa-times"></i>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="sticky bottom-0 bg-white border-t border-slate-100 p-5">
-              <button onClick={saveGear} disabled={uploading || !gearName.trim()}
-                className="w-full bg-[#062c24] text-white py-3.5 rounded-xl font-black uppercase text-xs tracking-widest disabled:opacity-50 hover:bg-emerald-800 transition-colors">
-                {uploading ? <><i className="fas fa-spinner fa-spin mr-2"></i>Saving...</> : "Save Item"}
-              </button>
+      {/* Bulk actions */}
+      {selectMode && (
+        <div className="fixed left-0 right-0 bottom-[68px] z-40" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+          <div className="max-w-xl mx-auto px-4">
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-lg p-2.5 flex items-center gap-2">
+              <span className="text-[13px] font-semibold text-slate-700 px-1.5 flex-1">{selected.length ? `${selected.length} selected` : "Tap items to select"}</span>
+              <button type="button" disabled={!selected.length || busy} onClick={() => setPaused(selected, true)} className="min-h-11 px-3.5 rounded-xl border border-slate-300 bg-white text-slate-800 text-[13px] font-bold disabled:opacity-50">Pause</button>
+              <button type="button" disabled={!selected.length || busy} onClick={() => setPaused(selected, false)} className="min-h-11 px-3.5 rounded-xl bg-[#062c24] text-white text-[13px] font-bold disabled:opacity-50">Make live</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Discount Modal - Enhanced */}
-      {showDiscModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[600] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" style={{ scrollbarWidth: "none" }}>
-            {/* Header */}
-            <div className="flex justify-between items-center p-5 border-b border-slate-100">
-              <h3 className="text-lg font-black text-[#062c24] uppercase">Discount Rule</h3>
-              <div className="flex gap-2">
-                {editingDisc && (
-                  <button onClick={deleteDisc} className="w-9 h-9 bg-red-50 rounded-full text-red-400 hover:bg-red-500 hover:text-white flex items-center justify-center">
-                    <i className="fas fa-trash text-sm"></i>
-                  </button>
-                )}
-                <button onClick={() => setShowDiscModal(false)} className="w-9 h-9 bg-slate-100 rounded-full text-slate-400 hover:text-red-500 flex items-center justify-center">
-                  <i className="fas fa-times"></i>
-                </button>
-              </div>
-            </div>
-
-            <div className="p-5 space-y-4">
-              {/* Type */}
-              <div>
-                <label className={labelCls}>Discount Type</label>
-                <select value={discType} onChange={e => { setDiscType(e.target.value); resetDiscForm(); }} className={inputCls}>
-                  <option value="nightly_discount">Nightly Bulk Discount</option>
-                  <option value="promo_code">Promo Code</option>
-                  <option value="min_spend">Min. Spend Reward</option>
-                  <option value="quantity_bundle">Quantity Bundle Deal</option>
-                  <option value="free_item">Free Item Gift</option>
-                </select>
-                <p className={helperCls}>
-                  {discType === "nightly_discount" ? "Auto-applied when customer books X+ nights"
-                    : discType === "promo_code" ? "Customer enters code at checkout"
-                    : discType === "min_spend" ? "Auto-applied when cart total reaches a threshold"
-                    : discType === "quantity_bundle" ? "Auto-applied when customer rents X+ items"
-                    : "Auto-adds a free item to cart when conditions are met"}
-                </p>
-              </div>
-
-              {/* ── Nightly Discount ── */}
-              {discType === "nightly_discount" && (
-                <div>
-                  <label className={labelCls}>Minimum Nights</label>
-                  <input type="number" value={discTrigger} onChange={e => setDiscTrigger(e.target.value)} placeholder="e.g. 3" className={inputCls} />
-                </div>
-              )}
-
-              {/* ── Promo Code ── */}
-              {discType === "promo_code" && (
-                <div>
-                  <label className={labelCls}>Promo Code</label>
-                  <input value={discCode} onChange={e => setDiscCode(e.target.value.toUpperCase())} placeholder="e.g. CAMPING20" className={inputCls} />
-                </div>
-              )}
-
-              {/* ── Min. Spend ── */}
-              {discType === "min_spend" && (
-                <>
-                  <div>
-                    <label className={labelCls}>Minimum Spend (RM)</label>
-                    <input type="number" value={discMinSpend} onChange={e => setDiscMinSpend(e.target.value)} placeholder="e.g. 150" className={inputCls} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={labelCls}>Discount % (optional)</label>
-                      <input type="number" value={discPercent} onChange={e => { setDiscPercent(e.target.value); if (e.target.value) setDiscFixed(""); }} placeholder="e.g. 10" className={inputCls} />
-                    </div>
-                    <div>
-                      <label className={labelCls}>Or Fixed RM (optional)</label>
-                      <input type="number" value={discFixed} onChange={e => { setDiscFixed(e.target.value); if (e.target.value) setDiscPercent(""); }} placeholder="e.g. 20" className={inputCls} />
-                    </div>
-                  </div>
-                  <p className={helperCls}>Set either % or RM — not both</p>
-                </>
-              )}
-
-              {/* ── Quantity Bundle ── */}
-              {discType === "quantity_bundle" && (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={labelCls}>Minimum Items in Cart</label>
-                      <input type="number" value={discMinQty} onChange={e => setDiscMinQty(e.target.value)} placeholder="e.g. 3" className={inputCls} />
-                    </div>
-                    <div>
-                      <label className={labelCls}>Discount %</label>
-                      <input type="number" value={discPercent} onChange={e => setDiscPercent(e.target.value)} placeholder="e.g. 10" className={inputCls} />
-                    </div>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Count Items From (optional)</label>
-                    <select value={discBundleCategory} onChange={e => setDiscBundleCategory(e.target.value)} className={inputCls}>
-                      <option value="">All categories</option>
-                      {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <p className={helperCls}>Leave blank to count all items in cart</p>
-                  </div>
-                </>
-              )}
-
-              {/* ── Free Item ── */}
-              {discType === "free_item" && (
-                <>
-                  <div>
-                    <label className={labelCls}>Free Item</label>
-                    <select value={discFreeItemId} onChange={e => setDiscFreeItemId(e.target.value)} className={inputCls}>
-                      <option value="">Select an item…</option>
-                      {allGear.map(g => <option key={g.id} value={g.id}>{g.name} (RM{g.price})</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Free Quantity</label>
-                    <input type="number" min="1" value={discFreeItemQty} onChange={e => setDiscFreeItemQty(e.target.value)} placeholder="1" className={inputCls} />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Trigger Condition</label>
-                    <select value={discFreeTrigger} onChange={e => setDiscFreeTrigger(e.target.value)} className={inputCls}>
-                      <option value="always">Always (when cart is not empty)</option>
-                      <option value="min_nights">Minimum Nights</option>
-                      <option value="min_spend">Minimum Spend</option>
-                      <option value="min_qty">Minimum Items</option>
-                    </select>
-                  </div>
-                  {discFreeTrigger === "min_nights" && (
-                    <div>
-                      <label className={labelCls}>Minimum Nights</label>
-                      <input type="number" value={discFreeTriggerNights} onChange={e => setDiscFreeTriggerNights(e.target.value)} placeholder="e.g. 3" className={inputCls} />
-                    </div>
-                  )}
-                  {discFreeTrigger === "min_spend" && (
-                    <div>
-                      <label className={labelCls}>Minimum Spend (RM)</label>
-                      <input type="number" value={discFreeTriggerSpend} onChange={e => setDiscFreeTriggerSpend(e.target.value)} placeholder="e.g. 200" className={inputCls} />
-                    </div>
-                  )}
-                  {discFreeTrigger === "min_qty" && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className={labelCls}>Minimum Items</label>
-                        <input type="number" value={discFreeTriggerQty} onChange={e => setDiscFreeTriggerQty(e.target.value)} placeholder="e.g. 3" className={inputCls} />
-                      </div>
-                      <div>
-                        <label className={labelCls}>From Category (optional)</label>
-                        <select value={discFreeTriggerCategory} onChange={e => setDiscFreeTriggerCategory(e.target.value)} className={inputCls}>
-                          <option value="">Any category</option>
-                          {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* ── Discount Amount (nightly + promo) ── */}
-              {(discType === "nightly_discount" || discType === "promo_code") && (
-                <div>
-                  <label className={labelCls}>Discount Percentage (%)</label>
-                  <input type="number" value={discPercent} onChange={e => setDiscPercent(e.target.value)} placeholder="e.g. 10" className={inputCls} />
-                </div>
-              )}
-
-              {/* Validity Period — all types */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={labelCls}>Valid From (optional)</label>
-                  <input type="date" value={discValidFrom} onChange={e => setDiscValidFrom(e.target.value)} className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Valid Until (optional)</label>
-                  <input type="date" value={discValidUntil} onChange={e => setDiscValidUntil(e.target.value)} className={inputCls} />
-                </div>
-              </div>
-
-              {/* Max Uses — all types */}
-              <div>
-                <label className={labelCls}>Max Uses (optional)</label>
-                <input type="number" min="1" value={discMaxUses} onChange={e => setDiscMaxUses(e.target.value)} placeholder="Unlimited if blank" className={inputCls} />
-                {editingDisc && editingDisc.usedCount != null && (
-                  <p className={helperCls}>{editingDisc.usedCount} use{editingDisc.usedCount !== 1 ? "s" : ""} so far</p>
-                )}
-              </div>
-
-              {/* Applies To — nightly, promo, bundle */}
-              {(discType === "nightly_discount" || discType === "promo_code" || discType === "quantity_bundle") && (
-                <>
-                  <div>
-                    <label className={labelCls}>Applies To</label>
-                    <select value={discAppliesTo} onChange={e => setDiscAppliesTo(e.target.value as "all" | "specific")} className={inputCls}>
-                      <option value="all">All Items</option>
-                      <option value="specific">Specific Items Only</option>
-                    </select>
-                  </div>
-                  {discAppliesTo === "specific" && (
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 max-h-48 overflow-y-auto">
-                      <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Select Items</p>
-                      <div className="space-y-2">
-                        {allGear.map(g => (
-                          <label key={g.id} className="flex items-center gap-3 p-2 bg-white rounded-lg cursor-pointer hover:bg-emerald-50 transition-colors">
-                            <input type="checkbox" checked={discSelectedItems.includes(g.id)} onChange={() => toggleDiscountItem(g.id)} className="w-4 h-4 accent-emerald-500" />
-                            <span className="text-xs font-medium text-slate-700 flex-1">{g.name}</span>
-                            <span className="text-[9px] text-slate-400">RM{g.price}</span>
-                          </label>
-                        ))}
-                      </div>
-                      {discSelectedItems.length > 0 && <p className="text-[9px] text-emerald-600 mt-2 font-medium">{discSelectedItems.length} item(s) selected</p>}
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* Public Banner — not for free_item */}
-              {discType !== "free_item" && (
-                <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
-                  <div>
-                    <p className="text-xs font-bold text-slate-700">Show Public Banner</p>
-                    <p className="text-[9px] text-slate-400">Display on your shop page</p>
-                  </div>
-                  <input type="checkbox" checked={discPublic} onChange={e => setDiscPublic(e.target.checked)} className="w-5 h-5 accent-emerald-500" />
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-5 border-t border-slate-100">
-              <button onClick={saveDisc} disabled={
-                discType === "free_item" ? !discFreeItemId
-                  : discType === "nightly_discount" ? (!discPercent || !discTrigger)
-                  : discType === "min_spend" ? (!discMinSpend || (!discPercent && !discFixed))
-                  : discType === "quantity_bundle" ? (!discPercent || !discMinQty)
-                  : !discPercent
-              }
-                className="w-full bg-[#062c24] text-white py-3.5 rounded-xl font-black uppercase text-xs disabled:opacity-50 hover:bg-emerald-800 transition-colors">
-                Save Discount
-              </button>
-            </div>
-          </div>
-        </div>
+      {editing && (
+        <ItemEditor
+          key={editing === "new" ? "new" : editing.id}
+          vendorId={vendorId}
+          item={editing === "new" ? null : editing}
+          allGear={allGear}
+          setupEnabledForShop={!!vendor.services?.setup?.enabled}
+          pickupPoints={vendor.pickup || []}
+          onClose={() => setEditing(null)}
+          onSaved={msg => showToast(msg)}
+          onError={msg => showToast(msg, "error")}
+          onDuplicate={duplicate}
+          onDelete={askDelete}
+        />
       )}
 
-      {/* Gear Flyer Modal */}
+      {showDiscounts && <DiscountsScreen vendorId={vendorId} discounts={discounts} gear={allGear} onClose={() => setShowDiscounts(false)} onToast={showToast} />}
+
+      {deleting && (
+        <BottomSheet title={`Delete ${deleting.item.name}?`} onClose={() => setDeleting(null)}>
+          {deleting.upcoming === null ? (
+            <p className="text-sm text-slate-600">Checking upcoming bookings…</p>
+          ) : deleting.upcoming > 0 ? (
+            <div className="bg-amber-100 border border-amber-300 rounded-2xl px-3.5 py-3 text-[13px] leading-relaxed text-amber-900">
+              This item is in {deleting.upcoming} upcoming booking{deleting.upcoming === 1 ? "" : "s"}. Pausing hides it from your shop and keeps those bookings intact.
+            </div>
+          ) : (
+            <p className="text-sm text-slate-600 -mt-1">It is removed from your shop. Past orders keep their details. This cannot be undone here.</p>
+          )}
+          <div className="flex flex-col gap-2.5">
+            {!deleting.item.paused && (
+              <button type="button" disabled={busy} onClick={async () => { await setPaused([deleting.item.id], true); setDeleting(null); setEditing(null); }}
+                className="min-h-13 w-full rounded-2xl bg-[#062c24] text-white text-[15px] font-bold disabled:opacity-50">Pause instead</button>
+            )}
+            <button type="button" disabled={busy || deleting.upcoming === null} onClick={confirmDelete}
+              className="min-h-13 w-full rounded-2xl border border-red-300 bg-white text-red-800 text-[15px] font-bold disabled:opacity-50">Delete item</button>
+          </div>
+        </BottomSheet>
+      )}
+
       {showFlyer && <GearFlyerModal vendorId={vendorId} onClose={() => setShowFlyer(false)} />}
 
-      {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[500] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[10px] font-black uppercase tracking-widest ${
-          toast.type === "success" ? "bg-emerald-600" : "bg-red-500"
-        }`} style={{ animation: "toastIn 0.3s ease-out" }}>
-          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`}></i>
+        <div role="status" className={`fixed bottom-28 left-1/2 -translate-x-1/2 z-[700] max-w-[90vw] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[13px] font-semibold ${toast.type === "success" ? "bg-emerald-700" : "bg-red-700"}`}>
+          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`} aria-hidden="true"></i>
           {toast.msg}
         </div>
       )}
-      <style>{`@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
     </div>
   );
 }

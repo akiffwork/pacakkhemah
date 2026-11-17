@@ -360,7 +360,7 @@ export default function DirectoryPage() {
     try {
       const batchIds = ids.slice(0, 30);
       const gSnap = await getDocs(query(collection(db, "gear"), where("vendorId", "in", batchIds)));
-      const gear = gSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted);
+      const gear = gSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted && !(g as { paused?: boolean }).paused);
       const grouped: Record<string, GearItem[]> = {};
       gear.forEach(g => {
         if (!grouped[g.vendorId]) grouped[g.vendorId] = [];

@@ -455,7 +455,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
         getDocsFromServer(collection(db, "vendors", vendorId, "posts")),
         getDocs(query(collection(db, "reviews"), where("vendorId", "==", vendorId), where("status", "==", "published"), orderBy("createdAt", "desc"))),
       ]);
-      setAllGear(gearSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted));
+      setAllGear(gearSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted && !(g as { paused?: boolean }).paused));
       setAvailRules(availSnap.docs.map(d => d.data() as AvailRule));
       try {
         const weeklyOffSnap = await getDoc(doc(db, "vendors", vendorId, "settings", "weeklyOff"));
