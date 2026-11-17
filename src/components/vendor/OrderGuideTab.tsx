@@ -119,17 +119,17 @@ function GearPicker({
 
   return (
     <div className="mt-2">
-      <p className="text-[9px] font-black uppercase text-slate-400 mb-1">{label}</p>
+      <p className="text-xs font-bold text-slate-600 mb-1">{label}</p>
       <input
         type="text"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search gear..."
-        className="w-full text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 mb-2 outline-none focus:border-emerald-400"
+        className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 mb-2 outline-none focus:border-emerald-400"
       />
       <div className="max-h-28 overflow-y-auto space-y-1 border border-slate-100 rounded-lg p-2">
         {filtered.length === 0 && (
-          <p className="text-[9px] text-slate-300 text-center py-2">No gear found</p>
+          <p className="text-xs text-slate-500 text-center py-2">No gear found</p>
         )}
         {filtered.map((g) => (
           <label key={g.id} className="flex items-center gap-2 cursor-pointer py-0.5">
@@ -139,10 +139,10 @@ function GearPicker({
               onChange={() => toggle(g.id)}
               className="accent-emerald-600 shrink-0"
             />
-            <span className="text-[10px] font-semibold text-[#062c24] truncate flex-1">
+            <span className="text-xs font-semibold text-[#062c24] truncate flex-1">
               {g.name}
             </span>
-            <span className="text-[9px] text-slate-400 shrink-0">RM{g.price}</span>
+            <span className="text-xs text-slate-600 shrink-0">RM{g.price}</span>
           </label>
         ))}
       </div>
@@ -153,7 +153,7 @@ function GearPicker({
             return g ? (
               <span
                 key={id}
-                className="flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[9px] font-bold px-2 py-0.5 rounded-full border border-emerald-200"
+                className="flex items-center gap-1 bg-emerald-50 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full border border-emerald-200"
               >
                 {g.name}
                 <button
@@ -437,8 +437,8 @@ export default function OrderGuideTab({
       <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-black text-[#062c24] uppercase">Order Guide</h2>
-            <p className="text-[10px] text-slate-400 mt-0.5">
+            <h2 style={{ textTransform: "none" }} className="text-sm font-bold text-[#062c24] ">Order guide</h2>
+            <p className="text-xs text-slate-600 mt-0.5">
               Help customers find the right gear for their trip
             </p>
           </div>
@@ -446,11 +446,11 @@ export default function OrderGuideTab({
             <button
               onClick={saveNow}
               disabled={saving}
-              className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold  transition-all ${
                 saved
                   ? "bg-emerald-100 text-emerald-700"
                   : saving
-                  ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                  ? "bg-slate-100 text-slate-600 cursor-not-allowed"
                   : "bg-[#062c24] text-white hover:bg-emerald-800"
               }`}
             >
@@ -478,14 +478,14 @@ export default function OrderGuideTab({
         </div>
 
         {saveError && (
-          <p className="text-[10px] font-semibold text-red-500 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+          <p className="text-xs font-semibold text-red-500 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
             Save failed: {saveError}
           </p>
         )}
 
         {/* Title */}
         <div>
-          <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">
+          <label className="text-xs font-bold text-slate-600 mb-1 block">
             Wizard Title
           </label>
           <input
@@ -500,11 +500,11 @@ export default function OrderGuideTab({
         {/* Shareable link */}
         {vendorSlug && (
           <div>
-            <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">
+            <label className="text-xs font-bold text-slate-600 mb-1 block">
               Shareable Link
             </label>
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-              <span className="text-[10px] text-slate-500 font-mono truncate flex-1">
+              <span className="text-xs text-slate-500 font-mono truncate flex-1">
                 {wizardUrl}
               </span>
               <button
@@ -513,7 +513,7 @@ export default function OrderGuideTab({
                   setCopied(true);
                   setTimeout(() => setCopied(false), 2000);
                 }}
-                className="shrink-0 text-[9px] font-black text-emerald-600 hover:text-emerald-800 uppercase"
+                className="shrink-0 text-xs font-bold text-emerald-600 hover:text-emerald-800 "
               >
                 {copied ? "Copied!" : "Copy"}
               </button>
@@ -539,43 +539,43 @@ export default function OrderGuideTab({
                 className="flex items-center gap-3 p-4 cursor-pointer"
                 onClick={() => setExpandedQ(isExpanded ? null : q.id)}
               >
-                <span className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-black flex items-center justify-center shrink-0">
+                <span className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 text-xs font-bold flex items-center justify-center shrink-0">
                   {qi + 1}
                 </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-bold text-[#062c24] truncate">
                     {q.text || "(No question text)"}
                   </p>
-                  <p className="text-[9px] text-slate-400">{TYPE_LABELS[q.type]}</p>
+                  <p className="text-xs text-slate-600">{TYPE_LABELS[q.type]}</p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={(e) => { e.stopPropagation(); moveQuestion(q.id, -1); }}
                     disabled={qi === 0}
-                    className="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-[#062c24] disabled:opacity-20 transition-colors"
+                    className="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-[#062c24] disabled:opacity-20 transition-colors"
                     title="Move up"
                   >
-                    <i className="fas fa-chevron-up text-[10px]" />
+                    <i className="fas fa-chevron-up text-xs" />
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); moveQuestion(q.id, 1); }}
                     disabled={qi === config.questions.length - 1}
-                    className="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-[#062c24] disabled:opacity-20 transition-colors"
+                    className="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-[#062c24] disabled:opacity-20 transition-colors"
                     title="Move down"
                   >
-                    <i className="fas fa-chevron-down text-[10px]" />
+                    <i className="fas fa-chevron-down text-xs" />
                   </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       removeQuestion(q.id);
                     }}
-                    className="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-red-400 transition-colors"
+                    className="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-red-400 transition-colors"
                   >
-                    <i className="fas fa-trash text-[10px]" />
+                    <i className="fas fa-trash text-xs" />
                   </button>
                   <i
-                    className={`fas fa-chevron-down text-slate-300 text-[10px] transition-transform ${
+                    className={`fas fa-chevron-down text-slate-500 text-xs transition-transform ${
                       isExpanded ? "rotate-180" : ""
                     }`}
                   />
@@ -587,7 +587,7 @@ export default function OrderGuideTab({
                 <div className="border-t border-slate-100 p-4 space-y-4">
                   {/* Type selector */}
                   <div>
-                    <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">
+                    <label className="text-xs font-bold text-slate-600 mb-1 block">
                       Question Type
                     </label>
                     <select
@@ -604,7 +604,7 @@ export default function OrderGuideTab({
                               : [{ id: uid(), label: "" }],
                         });
                       }}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-semibold outline-none focus:border-emerald-400"
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold outline-none focus:border-emerald-400"
                     >
                       {(Object.keys(TYPE_LABELS) as QuestionType[]).map((t) => (
                         <option key={t} value={t}>
@@ -616,7 +616,7 @@ export default function OrderGuideTab({
 
                   {/* Question text */}
                   <div>
-                    <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">
+                    <label className="text-xs font-bold text-slate-600 mb-1 block">
                       Question Text
                     </label>
                     <input
@@ -636,7 +636,7 @@ export default function OrderGuideTab({
 
                   {/* System type info */}
                   {isSystem && (
-                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-[10px] text-blue-600 font-semibold">
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-600 font-semibold">
                       <i className="fas fa-info-circle mr-1" />
                       {q.type === "date_select"
                         ? "This shows a date picker. The selected dates are pre-filled in the shop automatically."
@@ -647,7 +647,7 @@ export default function OrderGuideTab({
                   {/* Answer options (non-system types) */}
                   {!isSystem && (
                     <div>
-                      <label className="text-[9px] font-black uppercase text-slate-400 mb-2 block">
+                      <label className="text-xs font-bold text-slate-600 mb-2 block">
                         Answer Options
                       </label>
                       <div className="space-y-2">
@@ -670,11 +670,11 @@ export default function OrderGuideTab({
                                       updateOptionLabel(q.id, o.id, e.target.value)
                                     }
                                     placeholder="Option label..."
-                                    className="flex-1 text-[10px] font-semibold text-[#062c24] outline-none"
+                                    className="flex-1 text-xs font-semibold text-[#062c24] outline-none"
                                   />
                                 )}
                                 {isReadOnly && (
-                                  <span className="flex-1 text-[10px] font-semibold text-[#062c24]">
+                                  <span className="flex-1 text-xs font-semibold text-[#062c24]">
                                     {o.label}
                                   </span>
                                 )}
@@ -685,7 +685,7 @@ export default function OrderGuideTab({
                                         isOptionExpanded ? null : `${q.id}:${o.id}`
                                       )
                                     }
-                                    className="text-[9px] font-black text-emerald-600 hover:text-emerald-800 px-2 py-1 rounded-lg bg-emerald-50"
+                                    className="text-xs font-bold text-emerald-600 hover:text-emerald-800 px-2 py-1 rounded-lg bg-emerald-50"
                                   >
                                     {(rule?.suggestedItemIds.length || 0) +
                                       (rule?.addonItemIds.length || 0)}{" "}
@@ -694,9 +694,9 @@ export default function OrderGuideTab({
                                   {!isReadOnly && (
                                     <button
                                       onClick={() => removeOption(q.id, o.id)}
-                                      className="w-5 h-5 flex items-center justify-center text-slate-300 hover:text-red-400"
+                                      className="w-5 h-5 flex items-center justify-center text-slate-500 hover:text-red-400"
                                     >
-                                      <i className="fas fa-times text-[8px]" />
+                                      <i className="fas fa-times text-xs" />
                                     </button>
                                   )}
                                 </div>
@@ -728,7 +728,7 @@ export default function OrderGuideTab({
                                       onChange={(e) => setRuleExcludePackages(q.id, o.id, e.target.checked)}
                                       className="accent-amber-500 shrink-0"
                                     />
-                                    <span className="text-[9px] font-semibold text-slate-500 leading-tight">
+                                    <span className="text-xs font-semibold text-slate-500 leading-tight">
                                       Exclude packages from recommendations when this answer is chosen
                                     </span>
                                   </label>
@@ -741,9 +741,9 @@ export default function OrderGuideTab({
                       {q.type !== "yes_no" && (
                         <button
                           onClick={() => addOption(q.id)}
-                          className="mt-2 text-[9px] font-black text-emerald-600 hover:text-emerald-800 uppercase flex items-center gap-1"
+                          className="mt-2 text-xs font-bold text-emerald-600 hover:text-emerald-800 flex items-center gap-1"
                         >
-                          <i className="fas fa-plus text-[8px]" /> Add Option
+                          <i className="fas fa-plus text-xs" /> Add Option
                         </button>
                       )}
                     </div>
@@ -756,7 +756,7 @@ export default function OrderGuideTab({
 
         <button
           onClick={addQuestion}
-          className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-[10px] font-black uppercase text-slate-400 hover:border-emerald-300 hover:text-emerald-600 transition-colors flex items-center justify-center gap-2"
+          className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-xs font-bold text-slate-600 hover:border-emerald-300 hover:text-emerald-600 transition-colors flex items-center justify-center gap-2"
         >
           <i className="fas fa-plus" /> Add Question
         </button>
@@ -766,28 +766,28 @@ export default function OrderGuideTab({
       <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-black text-[#062c24] uppercase">Pro Tips</h3>
-            <p className="text-[10px] text-slate-400 mt-0.5">
+            <h3 style={{ textTransform: "none" }} className="text-sm font-bold text-[#062c24] ">Pro tips</h3>
+            <p className="text-xs text-slate-600 mt-0.5">
               Advice shown on the summary screen for specific answer combos
             </p>
           </div>
           <button
             onClick={addProTip}
-            className="text-[9px] font-black text-emerald-600 hover:text-emerald-800 uppercase flex items-center gap-1"
+            className="text-xs font-bold text-emerald-600 hover:text-emerald-800 flex items-center gap-1"
           >
-            <i className="fas fa-plus text-[8px]" /> Add Tip
+            <i className="fas fa-plus text-xs" /> Add Tip
           </button>
         </div>
 
         {config.proTips.length === 0 && (
-          <p className="text-[10px] text-slate-300 text-center py-2">No tips yet</p>
+          <p className="text-xs text-slate-500 text-center py-2">No tips yet</p>
         )}
 
         {config.proTips.map((tip) => (
           <div key={tip.id} className="border border-amber-200 bg-amber-50/40 rounded-xl p-4 space-y-3">
             {/* Conditions */}
             <div>
-              <p className="text-[9px] font-black uppercase text-slate-400 mb-2">Show when all match:</p>
+              <p className="text-xs font-bold text-slate-600 mb-2">Show when all match:</p>
               <div className="space-y-1.5">
                 {tip.conditions.map((cond, ci) => {
                   const q = config.questions.find(q => q.id === cond.questionId);
@@ -797,7 +797,7 @@ export default function OrderGuideTab({
                       <select
                         value={cond.questionId}
                         onChange={e => updateTipCondition(tip.id, ci, { questionId: e.target.value, optionId: "" })}
-                        className="flex-1 text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-amber-400 bg-white"
+                        className="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-amber-400 bg-white"
                       >
                         <option value="">Question…</option>
                         {config.questions.filter(q => q.text?.trim()).map(q => (
@@ -808,7 +808,7 @@ export default function OrderGuideTab({
                         value={cond.optionId}
                         onChange={e => updateTipCondition(tip.id, ci, { optionId: e.target.value })}
                         disabled={!cond.questionId}
-                        className="flex-1 text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-amber-400 bg-white disabled:opacity-40"
+                        className="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-amber-400 bg-white disabled:opacity-40"
                       >
                         <option value="">Answer…</option>
                         {opts.map(o => (
@@ -817,9 +817,9 @@ export default function OrderGuideTab({
                       </select>
                       <button
                         onClick={() => removeTipCondition(tip.id, ci)}
-                        className="w-5 h-5 flex items-center justify-center text-slate-300 hover:text-red-400 shrink-0"
+                        className="w-5 h-5 flex items-center justify-center text-slate-500 hover:text-red-400 shrink-0"
                       >
-                        <i className="fas fa-times text-[8px]" />
+                        <i className="fas fa-times text-xs" />
                       </button>
                     </div>
                   );
@@ -827,41 +827,41 @@ export default function OrderGuideTab({
               </div>
               <button
                 onClick={() => addTipCondition(tip.id)}
-                className="mt-2 text-[9px] font-black text-amber-600 hover:text-amber-800 uppercase flex items-center gap-1"
+                className="mt-2 text-xs font-bold text-amber-600 hover:text-amber-800 flex items-center gap-1"
               >
-                <i className="fas fa-plus text-[8px]" /> And…
+                <i className="fas fa-plus text-xs" /> And…
               </button>
             </div>
 
             {/* Title */}
             <div>
-              <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Tip Title</label>
+              <label className="text-xs font-bold text-slate-600 mb-1 block">Tip Title</label>
               <input
                 type="text"
                 value={tip.title}
                 onChange={e => updateProTip(tip.id, { title: e.target.value })}
                 placeholder="e.g. Gear checklist for first-timers"
-                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-semibold text-[#062c24] outline-none focus:border-amber-400 bg-white"
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-[#062c24] outline-none focus:border-amber-400 bg-white"
               />
             </div>
 
             {/* Message */}
             <div>
-              <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block">Message</label>
+              <label className="text-xs font-bold text-slate-600 mb-1 block">Message</label>
               <textarea
                 value={tip.message}
                 onChange={e => updateProTip(tip.id, { message: e.target.value })}
                 placeholder="e.g. Since you're going without a package, make sure you have a tent, sleeping bag, mat, and lighting. Comfort is key on your first trip!"
                 rows={3}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-semibold text-[#062c24] outline-none focus:border-amber-400 resize-none bg-white"
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-[#062c24] outline-none focus:border-amber-400 resize-none bg-white"
               />
             </div>
 
             <button
               onClick={() => removeProTip(tip.id)}
-              className="text-[9px] font-black text-red-400 hover:text-red-600 uppercase flex items-center gap-1"
+              className="text-xs font-bold text-red-400 hover:text-red-600 flex items-center gap-1"
             >
-              <i className="fas fa-trash text-[8px]" /> Delete tip
+              <i className="fas fa-trash text-xs" /> Delete tip
             </button>
           </div>
         ))}

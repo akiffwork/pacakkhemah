@@ -8,6 +8,9 @@ import {
 } from "@/lib/orderFlow";
 import { type MsgKind, type MsgLang, MESSAGE_LABELS } from "@/lib/orderMessages";
 import { ProgressStrip, customerLabel, toneChip } from "./OrderCard";
+import { downloadAgreement, useVendorBits, type Agreement } from "./AgreementsView";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 export type UnlinkedAgreement = {
   id: string;
@@ -32,6 +35,7 @@ export type DetailHandlers = {
   onLinkParent: (order: Order, parent: Order) => void;
   onUnlinkParent: (order: Order) => void;
   onSelect: (orderId: string) => void;
+  onOpenCalendar?: (order: Order) => void;
 };
 
 type Props = {
@@ -119,6 +123,18 @@ export default function OrderDetail({
   });
   const toggle = (k: string) => setOpen(s => ({ ...s, [k]: !s[k] }));
   const [showLinkPicker, setShowLinkPicker] = useState(false);
+  const [agreementBusy, setAgreementBusy] = useState(false);
+  const vendorBits = useVendorBits(order.vendorId || "");
+
+  async function openAgreementPdf() {
+    if (!order.agreementId) return;
+    setAgreementBusy(true);
+    try {
+      const snap = await getDoc(doc(db, "agreements", order.agreementId));
+      if (snap.exists()) await downloadAgreement({ id: snap.id, ...snap.data() } as Agreement, vendorBits);
+    } catch (e) { console.error(e); }
+    finally { setAgreementBusy(false); }
+  }
   const [showParentPicker, setShowParentPicker] = useState(false);
   const [parentSearch, setParentSearch] = useState("");
 
@@ -202,7 +218,7 @@ export default function OrderDetail({
           {/* Payment */}
           {stage !== "new" && (
             <div className={`${card} p-4 flex flex-col gap-3`}>
-              <h2 className={h2}>Payment</h2>
+              <h2 style={{ textTransform: "none" }} className={h2}>Payment</h2>
 
               {p.deposit > 0 && (
                 <div className="flex items-center gap-3">
@@ -283,6 +299,11 @@ export default function OrderDetail({
                       : "Not signed"}
                   </p>
                 </div>
+                {order.agreementSigned && order.agreementId && !order.parentOrderId && (
+                  <button type="button" disabled={agreementBusy} onClick={openAgreementPdf} className={smallBtn}>
+                    <i className="fas fa-file-pdf mr-1.5" aria-hidden="true"></i>{agreementBusy ? "Creating" : "PDF"}
+                  </button>
+                )}
                 {!agreementOk(order) && !closed && (
                   <button type="button" onClick={() => handlers.onMessage(order, "agreement")} className={smallBtn}>
                     <i className="fab fa-whatsapp mr-1.5" aria-hidden="true"></i>{order.agreementSentAt ? "Resend" : "Send link"}
@@ -397,9 +418,9 @@ export default function OrderDetail({
               ))}
             </dl>
             {!order.calendarLinked && !closed && (
-              <a href={`/calendar?order=${order.id}`} className={`${smallBtn} flex items-center justify-center`}>
+              <button type="button" onClick={() => handlers.onOpenCalendar?.(order)} className={`${smallBtn} flex items-center justify-center`}>
                 <i className="fas fa-calendar-plus mr-1.5" aria-hidden="true"></i>Block these dates on the calendar
-              </a>
+              </button>
             )}
           </Fold>
 

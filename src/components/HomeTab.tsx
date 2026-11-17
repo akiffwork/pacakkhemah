@@ -1,49 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
-
-type Order = {
-  id: string;
-  customerName?: string;
-  customerPhone?: string;
-  items: { name: string; qty: number }[];
-  totalAmount: number;
-  rentalAmount?: number;
-  bookingDates: { start: string; end: string };
-  status: string;
-  paymentStatus?: string;
-  createdAt: any;
-};
+import {
+  type Order, getNextAction, getStage, getPayment, sortForGroup, summarize, daysUntil, toMillis, formatDateRange,
+} from "@/lib/orderFlow";
+import { setupChecklist, type VendorSettings } from "@/lib/vendorSettings";
+import { SummaryStrip, SectionTitle, Chip, EmptyState, smallBtn } from "@/components/ui/kit";
+import { customerLabel, itemsSummary } from "@/components/orders/OrderCard";
 
 type HomeTabProps = {
   vendorId: string;
-  vendorData: any;
-  onNavigate: (tab: string) => void;
+  vendorData: VendorSettings & { name?: string; credits?: number; [key: string]: unknown };
+  onNavigate: (tab: string, extra?: Record<string, string>) => void;
 };
 
-function todayISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+const toneMap = { danger: "danger", warn: "warn", info: "info", neutral: "neutral", good: "good" } as const;
 
-function tomorrowISO() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function formatShortDate(str: string): string {
-  try { return new Date(str).toLocaleDateString("en-MY", { weekday: "short", day: "numeric", month: "short" }); }
-  catch { return str; }
-}
-
-function getGreeting() {
+function greeting(): string {
   const h = new Date().getHours();
-  if (h < 12) return "Selamat Pagi";
-  if (h < 18) return "Selamat Tengah Hari";
-  return "Selamat Petang";
+  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 }
 
 export default function HomeTab({ vendorId, vendorData, onNavigate }: HomeTabProps) {
@@ -51,252 +28,164 @@ export default function HomeTab({ vendorId, vendorData, onNavigate }: HomeTabPro
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, "orders"), where("vendorId", "==", vendorId));
-    const unsub = onSnapshot(q, snap => {
-      setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order)).filter(o => !(o as any).deleted));
+    const unsub = onSnapshot(query(collection(db, "orders"), where("vendorId", "==", vendorId)), snap => {
+      setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order)).filter(o => !o.deleted));
       setLoading(false);
-    }, (error) => {
-      console.error("Orders listener error:", error);
-      setLoading(false);
-    });
+    }, e => { console.error("Orders listener error:", e); setLoading(false); });
     return () => unsub();
   }, [vendorId]);
 
-  // ═══════════════════════════════════════════════════════════
-  // TODAY & THIS WEEK ANALYSIS
-  // ═══════════════════════════════════════════════════════════
-  const today = todayISO();
-  const tomorrow = tomorrowISO();
-
-  const activeOrders = orders.filter(o => o.status === "confirmed" || o.status === "pending");
-
-  const todayPickups = activeOrders.filter(o => o.bookingDates?.start === today);
-  const todayReturns = activeOrders.filter(o => o.bookingDates?.end === today);
-  const tomorrowPickups = activeOrders.filter(o => o.bookingDates?.start === tomorrow);
-  const tomorrowReturns = activeOrders.filter(o => o.bookingDates?.end === tomorrow);
-
-  const pendingOrders = orders.filter(o => o.status === "pending");
-
-  // This month revenue
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const thisMonthOrders = orders.filter(o => {
-    const d = o.createdAt?.toDate?.();
-    return d && d >= monthStart && o.status !== "cancelled";
-  });
-  const monthCompleted = thisMonthOrders.filter(o => o.status === "completed");
-  const monthConfirmed = thisMonthOrders.filter(o => o.status === "confirmed");
-  const monthRevenue = monthCompleted.reduce((s, o) => s + (o.rentalAmount ?? o.totalAmount ?? 0), 0);
-  const monthPendingRevenue = monthConfirmed.reduce((s, o) => s + (o.rentalAmount ?? o.totalAmount ?? 0), 0);
+  const summary = useMemo(() => summarize(orders, new Date()), [orders]);
+  const nextActions = useMemo(() => sortForGroup(orders, "action", new Date()).slice(0, 3), [orders]);
 
-  const credits = vendorData.credits || 0;
-  const lowCredits = credits <= 5;
+  // Gear going out and coming back, today and tomorrow
+  const movements = useMemo(() => {
+    const now = new Date();
+    const rows: { order: Order; kind: "out" | "back"; day: 0 | 1 }[] = [];
+    for (const o of orders) {
+      const st = getStage(o);
+      const ds = daysUntil(o.bookingDates?.start, now);
+      const de = daysUntil(o.bookingDates?.end, now);
+      if (st === "confirmed" && (ds === 0 || ds === 1)) rows.push({ order: o, kind: "out", day: ds as 0 | 1 });
+      if (st === "picked_up" && (de === 0 || de === 1)) rows.push({ order: o, kind: "back", day: de as 0 | 1 });
+    }
+    return rows.sort((a, b) => a.day - b.day || (a.kind === "out" ? -1 : 1));
+  }, [orders]);
+  const today = movements.filter(m => m.day === 0);
+  const tomorrow = movements.filter(m => m.day === 1);
+
+  // Rental recorded as received this month
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const monthCollected = orders.reduce((s, o) => {
+    if (o.status === "cancelled") return s;
+    const p = getPayment(o);
+    const when = toMillis(o.rentalReceivedAt) || (p.rentalReceived ? toMillis(o.completedAt) || toMillis(o.createdAt) : 0);
+    return p.rentalReceived && when >= monthStart ? s + p.rental : s;
+  }, 0);
+
+  const checklist = setupChecklist(vendorData);
+  const todo = checklist.filter(i => !i.done);
+  const credits = vendorData.credits ?? 0;
+
+  const openOrder = (id: string) => onNavigate("orders", { order: id });
 
   return (
-    <div className="space-y-5 pb-20">
-      {/* ═══════════════════════════════════════════════════════════
-          GREETING + ALERT BAR
-          ═══════════════════════════════════════════════════════════ */}
-      <div className="bg-gradient-to-br from-[#062c24] to-emerald-800 rounded-2xl p-5 text-white relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "url('/pattern-chevron.png')", backgroundSize: "200px" }}></div>
-        <div className="relative z-10">
-          <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-widest">{getGreeting()}</p>
-          <h2 className="text-lg font-black uppercase leading-tight mt-0.5">{vendorData.name}</h2>
-          {(todayPickups.length > 0 || todayReturns.length > 0) ? (
-            <p className="text-xs text-white/80 mt-2">
-              <i className="fas fa-calendar-day mr-1.5 text-emerald-400"></i>
-              Hari ini: {todayPickups.length > 0 && `${todayPickups.length} pickup`}
-              {todayPickups.length > 0 && todayReturns.length > 0 && " • "}
-              {todayReturns.length > 0 && `${todayReturns.length} return`}
-            </p>
-          ) : (
-            <p className="text-xs text-white/60 mt-2">Tiada booking untuk hari ini</p>
-          )}
-        </div>
-      </div>
-
-      {/* ═══════════════════════════════════════════════════════════
-          REVENUE SNAPSHOT
-          ═══════════════════════════════════════════════════════════ */}
+    <div className="flex flex-col gap-4 pb-24">
       <div>
-        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2.5 px-1">This Month</p>
-        <div className="grid grid-cols-3 gap-2">
-          <div className="bg-white rounded-2xl p-3 border border-slate-100">
-            <p className="text-[8px] font-black text-slate-400 uppercase">Revenue</p>
-            <p className="text-lg font-black text-emerald-600 leading-tight mt-1">RM{monthRevenue.toLocaleString()}</p>
-            <p className="text-[7px] text-slate-300 mt-0.5">{monthCompleted.length} completed</p>
-          </div>
-          <div className="bg-white rounded-2xl p-3 border border-slate-100">
-            <p className="text-[8px] font-black text-slate-400 uppercase">Pending</p>
-            <p className="text-lg font-black text-amber-600 leading-tight mt-1">RM{monthPendingRevenue.toLocaleString()}</p>
-            <p className="text-[7px] text-slate-300 mt-0.5">{monthConfirmed.length} confirmed</p>
-          </div>
-          <div className="bg-white rounded-2xl p-3 border border-slate-100">
-            <p className="text-[8px] font-black text-slate-400 uppercase">New Orders</p>
-            <p className="text-lg font-black text-[#062c24] leading-tight mt-1">{pendingOrders.length}</p>
-            <p className="text-[7px] text-slate-300 mt-0.5">awaiting action</p>
-          </div>
-        </div>
+        <p className="text-[13px] font-semibold text-slate-600">{greeting()}</p>
+        <h1 style={{ textTransform: "none" }} className="text-[28px] leading-tight font-extrabold text-[#062c24] truncate">{vendorData.name || "Your shop"}</h1>
+        <p className="text-[13px] text-slate-600 mt-0.5">
+          {loading ? "Loading today's bookings"
+            : today.length ? `Today: ${today.filter(m => m.kind === "out").length} going out, ${today.filter(m => m.kind === "back").length} coming back`
+            : "Nothing going out or coming back today"}
+        </p>
       </div>
 
-      {/* ═══════════════════════════════════════════════════════════
-          TODAY'S ACTION LIST
-          ═══════════════════════════════════════════════════════════ */}
-      {(todayPickups.length > 0 || todayReturns.length > 0 || tomorrowPickups.length > 0) && (
-        <div>
-          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2.5 px-1 flex items-center justify-between">
-            <span><i className="fas fa-bolt text-amber-500 mr-1.5"></i>Action Required</span>
-            <button onClick={() => onNavigate("calendar")} className="text-emerald-600 hover:underline normal-case font-bold">View calendar →</button>
-          </p>
-          <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden divide-y divide-slate-50">
-            {todayPickups.map(o => (
-              <div key={"p" + o.id} className="flex items-center gap-3 p-3.5">
-                <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center shrink-0">
-                  <i className="fas fa-arrow-up text-sm"></i>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[8px] font-black text-emerald-600 uppercase tracking-widest">Pickup today</p>
-                  <p className="text-sm font-black text-[#062c24] truncate">{o.customerName || "Customer"}</p>
-                  <p className="text-[10px] text-slate-400 font-bold truncate">{o.items?.map(i => `${i.name} ×${i.qty}`).join(", ")}</p>
-                </div>
-                {o.customerPhone && (
-                  <a href={`https://wa.me/${o.customerPhone}`} target="_blank" rel="noreferrer"
-                    className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center shrink-0 hover:bg-emerald-100 transition-colors">
-                    <i className="fab fa-whatsapp"></i>
-                  </a>
-                )}
-              </div>
-            ))}
-            {todayReturns.map(o => (
-              <div key={"r" + o.id} className="flex items-center gap-3 p-3.5">
-                <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center shrink-0">
-                  <i className="fas fa-arrow-down text-sm"></i>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[8px] font-black text-blue-600 uppercase tracking-widest">Return today</p>
-                  <p className="text-sm font-black text-[#062c24] truncate">{o.customerName || "Customer"}</p>
-                  <p className="text-[10px] text-slate-400 font-bold truncate">{o.items?.map(i => `${i.name} ×${i.qty}`).join(", ")}</p>
-                </div>
-                {o.customerPhone && (
-                  <a href={`https://wa.me/${o.customerPhone}`} target="_blank" rel="noreferrer"
-                    className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center shrink-0 hover:bg-emerald-100 transition-colors">
-                    <i className="fab fa-whatsapp"></i>
-                  </a>
-                )}
-              </div>
-            ))}
-            {tomorrowPickups.map(o => (
-              <div key={"tp" + o.id} className="flex items-center gap-3 p-3.5 bg-amber-50/30">
-                <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center shrink-0">
-                  <i className="fas fa-clock text-sm"></i>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[8px] font-black text-amber-600 uppercase tracking-widest">Pickup tomorrow</p>
-                  <p className="text-sm font-black text-[#062c24] truncate">{o.customerName || "Customer"}</p>
-                  <p className="text-[10px] text-slate-400 font-bold truncate">{o.items?.map(i => `${i.name} ×${i.qty}`).join(", ")}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <SummaryStrip items={[
+        { value: summary.action, label: "Need action" },
+        { value: `RM ${summary.toCollect.toLocaleString()}`, label: "To collect" },
+        { value: `RM ${monthCollected.toLocaleString()}`, label: `Received in ${now.toLocaleDateString("en-MY", { month: "long" })}` },
+      ]} />
 
-      {/* ═══════════════════════════════════════════════════════════
-          PENDING ORDERS ALERT
-          ═══════════════════════════════════════════════════════════ */}
-      {pendingOrders.length > 0 && (
-        <button onClick={() => onNavigate("orders")}
-          className="w-full bg-gradient-to-r from-amber-50 to-amber-100 border border-amber-200 rounded-2xl p-4 flex items-center gap-3 hover:shadow-md transition-all">
-          <div className="w-11 h-11 bg-amber-500 text-white rounded-xl flex items-center justify-center shrink-0">
-            <i className="fas fa-exclamation text-lg"></i>
-          </div>
-          <div className="flex-1 text-left">
-            <p className="text-sm font-black text-amber-900">{pendingOrders.length} pending order{pendingOrders.length > 1 ? "s" : ""}</p>
-            <p className="text-[10px] text-amber-700 font-bold">Tap to review and confirm</p>
-          </div>
-          <i className="fas fa-chevron-right text-amber-600 text-sm"></i>
+      {credits <= 5 && (
+        <button type="button" onClick={() => onNavigate("settings", { group: "account" })}
+          className={`text-left rounded-2xl border px-4 py-3.5 flex items-center gap-3 ${credits === 0 ? "bg-red-50 border-red-200" : "bg-amber-100 border-amber-300"}`}>
+          <i className={`fas fa-coins ${credits === 0 ? "text-red-800" : "text-amber-900"}`} aria-hidden="true"></i>
+          <span className="flex-1 flex flex-col gap-0.5">
+            <span className={`text-sm font-bold ${credits === 0 ? "text-red-900" : "text-amber-900"}`}>{credits === 0 ? "No credits left" : `${credits} credit${credits === 1 ? "" : "s"} left`}</span>
+            <span className={`text-[13px] ${credits === 0 ? "text-red-900" : "text-amber-900"}`}>{credits === 0 ? "New customers cannot send you booking requests until you top up." : "Top up so you keep receiving new booking requests."}</span>
+          </span>
+          <i className="fas fa-chevron-right text-slate-500" aria-hidden="true"></i>
         </button>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════
-          LOW CREDITS ALERT
-          ═══════════════════════════════════════════════════════════ */}
-      {lowCredits && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-center gap-3">
-          <div className="w-11 h-11 bg-red-500 text-white rounded-xl flex items-center justify-center shrink-0">
-            <i className="fas fa-coins"></i>
+      {todo.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-2.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-[15px] font-bold text-[#062c24]">Finish setting up your shop</span>
+            <span className="text-xs font-semibold text-slate-600">{checklist.length - todo.length} of {checklist.length}</span>
           </div>
-          <div className="flex-1">
-            <p className="text-sm font-black text-red-900">Credit rendah: {credits}</p>
-            <p className="text-[10px] text-red-700 font-bold">Top up untuk terima lead baru</p>
-          </div>
+          <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden"><div className="h-full bg-emerald-600" style={{ width: `${Math.round(((checklist.length - todo.length) / checklist.length) * 100)}%` }} /></div>
+          <ul className="flex flex-col">
+            {todo.slice(0, 3).map(item => (
+              <li key={item.key}>
+                <button type="button" onClick={() => item.section === "inventory" ? onNavigate("inventory") : item.group === "storefront" ? onNavigate("shop", { section: "storefront" }) : onNavigate("settings", { group: item.group, section: item.section })}
+                  className="w-full min-h-11 flex items-center gap-3 text-left text-sm text-slate-800">
+                  <span className="w-[18px] h-[18px] rounded-full border-2 border-slate-400 shrink-0" aria-hidden="true"></span>
+                  <span className="flex-1">{item.label}</span>
+                  <i className="fas fa-chevron-right text-slate-400 text-xs" aria-hidden="true"></i>
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════
-          MANAGE SHOP TILES
-          ═══════════════════════════════════════════════════════════ */}
-      <div>
-        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2.5 px-1"><i className="fas fa-tools mr-1.5"></i>Manage Shop</p>
-        <div className="grid grid-cols-3 gap-2">
-          <ShortcutTile icon="fa-boxes" color="emerald" label="Inventory" onClick={() => onNavigate("inventory")} />
-          <ShortcutTile icon="fa-store" color="blue" label="Storefront" onClick={() => onNavigate("storefront")} />
-          <ShortcutTile icon="fa-bullhorn" color="purple" label="Updates" onClick={() => onNavigate("updates")} />
-          <ShortcutTile icon="fa-file-contract" color="slate" label="Documents" onClick={() => onNavigate("documents")} />
-          <ShortcutTile icon="fa-gift" color="amber" label="Referrals" onClick={() => onNavigate("referrals")} />
-          <ShortcutTile icon="fa-cog" color="slate" label="Settings" onClick={() => onNavigate("settings")} />
-        </div>
+      <div className="flex flex-col gap-2">
+        <SectionTitle action={summary.action > 3 ? <button type="button" onClick={() => onNavigate("orders")} className="text-[13px] font-semibold text-emerald-800 underline">See all {summary.action}</button> : undefined}>
+          Next actions
+        </SectionTitle>
+        {loading ? (
+          <div className="h-20 bg-white border border-slate-200 rounded-2xl animate-pulse" />
+        ) : nextActions.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3.5 flex items-center gap-3">
+            <i className="fas fa-check-circle text-emerald-700" aria-hidden="true"></i>
+            <span className="text-sm text-slate-700">{orders.length ? "You are up to date. Nothing needs your action." : "No orders yet. They appear here when customers book through your shop."}</span>
+          </div>
+        ) : nextActions.map(o => {
+          const a = getNextAction(o, now);
+          return (
+            <button key={o.id} type="button" onClick={() => openOrder(o.id)}
+              className="text-left bg-white border border-slate-200 rounded-2xl px-4 py-3 flex items-center gap-3 hover:border-slate-400">
+              <span className="flex-1 min-w-0 flex flex-col gap-1">
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className="text-[15px] font-bold text-slate-900 truncate">{customerLabel(o)}</span>
+                  <Chip tone={toneMap[a.tone]}>{a.tag}</Chip>
+                </span>
+                <span className="text-[13px] text-slate-600 truncate">{a.reason}</span>
+              </span>
+              <span className="text-[13px] font-bold text-[#062c24] whitespace-nowrap">{a.label}</span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* ═══════════════════════════════════════════════════════════
-          QUICK STATS (bottom strip)
-          ═══════════════════════════════════════════════════════════ */}
-      <div className="bg-white rounded-2xl border border-slate-100 p-4">
-        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Quick Stats</p>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center shrink-0">
-              <i className="fas fa-star text-xs"></i>
-            </div>
-            <div>
-              <p className="text-sm font-black text-[#062c24]">{vendorData.rating?.toFixed(1) || "—"}</p>
-              <p className="text-[8px] text-slate-400 font-bold">{vendorData.reviewCount || 0} reviews</p>
-            </div>
+      <div className="flex flex-col gap-2">
+        <SectionTitle action={<button type="button" onClick={() => onNavigate("calendar")} className="text-[13px] font-semibold text-emerald-800 underline">Open calendar</button>}>
+          Gear going out and coming back
+        </SectionTitle>
+        {loading ? (
+          <div className="h-20 bg-white border border-slate-200 rounded-2xl animate-pulse" />
+        ) : movements.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3.5 text-sm text-slate-700">No pickups or returns today or tomorrow.</div>
+        ) : (
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            {[{ label: "Today", rows: today }, { label: "Tomorrow", rows: tomorrow }].filter(g => g.rows.length).map(g => (
+              <div key={g.label}>
+                <p className="px-4 pt-3 pb-1 text-xs font-bold text-slate-600">{g.label}</p>
+                {g.rows.map(({ order, kind }) => (
+                  <button key={`${order.id}-${kind}`} type="button" onClick={() => openOrder(order.id)}
+                    className="w-full text-left px-4 py-2.5 flex items-center gap-3 border-t border-slate-100 first:border-t-0 hover:bg-slate-50">
+                    <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${kind === "out" ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800"}`} aria-hidden="true">
+                      <i className={`fas ${kind === "out" ? "fa-arrow-up" : "fa-arrow-down"}`}></i>
+                    </span>
+                    <span className="flex-1 min-w-0 flex flex-col">
+                      <span className="text-sm font-semibold text-slate-900 truncate">{kind === "out" ? "Pickup" : "Return"} · {customerLabel(order)}</span>
+                      <span className="text-xs text-slate-600 truncate">{itemsSummary(order)} · {formatDateRange(order.bookingDates)}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ))}
           </div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0">
-              <i className="fas fa-coins text-xs"></i>
-            </div>
-            <div>
-              <p className="text-sm font-black text-[#062c24]">{credits}</p>
-              <p className="text-[8px] text-slate-400 font-bold">credits left</p>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
+
+      {!loading && orders.length === 0 && todo.length === 0 && (
+        <EmptyState icon="fa-campground" title="Your shop is ready" body="Share your shop link so campers can book."
+          action={<button type="button" onClick={() => onNavigate("shop")} className={smallBtn}>Go to Shop page</button>} />
+      )}
     </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════
-// SHORTCUT TILE
-// ═══════════════════════════════════════════════════════════
-function ShortcutTile({ icon, color, label, onClick }: { icon: string; color: string; label: string; onClick: () => void }) {
-  const colors: Record<string, string> = {
-    emerald: "bg-emerald-50 text-emerald-600",
-    blue: "bg-blue-50 text-blue-600",
-    purple: "bg-purple-50 text-purple-600",
-    amber: "bg-amber-50 text-amber-600",
-    slate: "bg-slate-50 text-slate-600",
-    red: "bg-red-50 text-red-600",
-  };
-  return (
-    <button onClick={onClick}
-      className="bg-white rounded-2xl border border-slate-100 p-4 flex flex-col items-center gap-2 hover:shadow-md hover:-translate-y-0.5 transition-all active:scale-95 min-h-[88px]">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${colors[color]}`}>
-        <i className={`fas ${icon} text-sm`}></i>
-      </div>
-      <span className="text-[9px] font-black text-[#062c24] uppercase">{label}</span>
-    </button>
   );
 }

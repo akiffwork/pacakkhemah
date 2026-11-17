@@ -8,23 +8,18 @@ import {
   DISCOUNT_KINDS, discountState, describeDiscount, discountMeta, discountTitle, limitsSummary,
   discountErrors, usedCategories,
 } from "@/lib/inventory";
-import { Card, Field, Section, SwitchRow, Choice, NumberInput, inputCls, hintCls, smallBtn, labelCls } from "@/components/settings/ui";
+import { Card, Field, Section, SwitchRow, Choice, NumberInput, EmptyState, SectionTitle, Chip, inputCls, hintCls, smallBtn, labelCls } from "@/components/ui/kit";
 
 type Props = {
   vendorId: string;
   discounts: Discount[];
   gear: GearItem[];
-  onClose: () => void;
   onToast: (msg: string, type?: "success" | "error") => void;
 };
 
-const stateChip = {
-  active: "bg-emerald-100 text-emerald-800",
-  upcoming: "bg-amber-100 text-amber-800",
-  ended: "bg-slate-200 text-slate-700",
-};
 
-export default function DiscountsScreen({ vendorId, discounts, gear, onClose, onToast }: Props) {
+/** Discounts grouped Active / Upcoming / Ended, shown inline in Promotions. */
+export default function DiscountsList({ vendorId, discounts, gear, onToast }: Props) {
   const [editing, setEditing] = useState<Discount | "new" | null>(null);
   const groups = useMemo(() => {
     const g = { active: [] as Discount[], upcoming: [] as Discount[], ended: [] as Discount[] };
@@ -32,56 +27,45 @@ export default function DiscountsScreen({ vendorId, discounts, gear, onClose, on
     return g;
   }, [discounts]);
 
-  if (editing) {
-    return <DiscountEditor vendorId={vendorId} discount={editing === "new" ? null : editing} gear={gear}
-      existingCodes={discounts.filter(d => d.type === "promo_code" && (editing === "new" || d.id !== editing.id)).map(d => d.code || "")}
-      onClose={() => setEditing(null)} onToast={onToast} />;
-  }
-
   return (
-    <div className="fixed inset-0 z-[500] bg-slate-50 flex flex-col" role="dialog" aria-modal="true" aria-label="Discounts">
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-xl mx-auto p-4 flex flex-col gap-3.5">
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={onClose} aria-label="Back to inventory" className="w-11 h-11 rounded-xl border border-slate-200 bg-white text-slate-700 flex items-center justify-center hover:bg-slate-100 shrink-0">
-              <i className="fas fa-chevron-left" aria-hidden="true"></i>
-            </button>
-            <h1 style={{ textTransform: "none" }} className="flex-1 text-[26px] font-extrabold text-[#062c24]">Discounts</h1>
-            <button type="button" onClick={() => setEditing("new")} className="min-h-11 px-3.5 rounded-xl bg-[#062c24] text-white text-sm font-bold flex items-center gap-1.5 hover:bg-[#0a4135]">
-              <i className="fas fa-plus" aria-hidden="true"></i>New
-            </button>
-          </div>
-          <p className={hintCls}>Repeat-customer rewards are in Settings › Booking rules › Loyalty rewards.</p>
-
-          {discounts.length === 0 && (
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center flex flex-col gap-2 items-center">
-              <p className="text-sm font-bold text-slate-800">No discounts yet</p>
-              <p className="text-[13px] text-slate-600">Promo codes, longer-stay deals and free gifts help customers choose your shop.</p>
-              <button type="button" onClick={() => setEditing("new")} className={`${smallBtn} mt-1`}>Create a discount</button>
-            </div>
-          )}
-
-          {(["active", "upcoming", "ended"] as const).map(key => groups[key].length > 0 && (
-            <div key={key} className="flex flex-col gap-2">
-              <h2 style={{ textTransform: "none" }} className="text-[15px] font-extrabold text-slate-600">{key === "active" ? "Active" : key === "upcoming" ? "Upcoming" : "Ended"} · {groups[key].length}</h2>
-              {groups[key].map(d => {
-                const st = discountState(d);
-                return (
-                  <button key={d.id} type="button" onClick={() => setEditing(d)}
-                    className={`text-left rounded-2xl border p-3.5 flex flex-col gap-1.5 hover:border-slate-400 ${key === "ended" ? "bg-slate-50 border-slate-200" : "bg-white border-slate-200"}`}>
-                    <span className="flex items-center justify-between gap-2 w-full">
-                      <span className={`text-[15px] font-bold ${key === "ended" ? "text-slate-600" : "text-slate-900"}`}>{discountTitle(d)}</span>
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${stateChip[st.state]}`}>{st.label}</span>
-                    </span>
-                    <span className={`text-[13px] ${key === "ended" ? "text-slate-600" : "text-slate-800"}`}>{describeDiscount(d, gear)}</span>
-                    <span className="text-xs text-slate-600">{discountMeta(d)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+    <div className="flex flex-col gap-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <p className={hintCls}>Promo codes, longer-stay deals, spend rewards, bundles and free gifts.</p>
+        <button type="button" onClick={() => setEditing("new")} className="min-h-11 px-3.5 rounded-xl bg-[#062c24] text-white text-sm font-bold flex items-center gap-1.5 hover:bg-[#0a4135] shrink-0">
+          <i className="fas fa-plus" aria-hidden="true"></i>New discount
+        </button>
       </div>
+
+      {discounts.length === 0 && (
+        <EmptyState icon="fa-tags" title="No discounts yet" body="Promo codes, longer-stay deals and free gifts help customers choose your shop."
+          action={<button type="button" onClick={() => setEditing("new")} className={smallBtn}>Create a discount</button>} />
+      )}
+
+      {(["active", "upcoming", "ended"] as const).map(key => groups[key].length > 0 && (
+        <div key={key} className="flex flex-col gap-2">
+          <SectionTitle>{key === "active" ? "Active" : key === "upcoming" ? "Upcoming" : "Ended"} · {groups[key].length}</SectionTitle>
+          {groups[key].map(d => {
+            const st = discountState(d);
+            return (
+              <button key={d.id} type="button" onClick={() => setEditing(d)}
+                className={`text-left rounded-2xl border p-3.5 flex flex-col gap-1.5 hover:border-slate-400 ${key === "ended" ? "bg-slate-50 border-slate-200" : "bg-white border-slate-200"}`}>
+                <span className="flex items-center justify-between gap-2 w-full">
+                  <span className={`text-[15px] font-bold ${key === "ended" ? "text-slate-600" : "text-slate-900"}`}>{discountTitle(d)}</span>
+                  <Chip tone={st.state === "active" ? "good" : st.state === "upcoming" ? "warn" : "neutral"}>{st.label}</Chip>
+                </span>
+                <span className={`text-[13px] ${key === "ended" ? "text-slate-600" : "text-slate-800"}`}>{describeDiscount(d, gear)}</span>
+                <span className="text-xs text-slate-600">{discountMeta(d)}</span>
+              </button>
+            );
+          })}
+        </div>
+      ))}
+
+      {editing && (
+        <DiscountEditor vendorId={vendorId} discount={editing === "new" ? null : editing} gear={gear}
+          existingCodes={discounts.filter(d => d.type === "promo_code" && (editing === "new" || d.id !== editing.id)).map(d => d.code || "")}
+          onClose={() => setEditing(null)} onToast={onToast} />
+      )}
     </div>
   );
 }

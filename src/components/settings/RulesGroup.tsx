@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { useState } from "react";
+import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
-  type VendorSettings, type ServicesConfig, type LoyaltyConfig, type DeliveryZone,
-  DEFAULT_LOYALTY_TIERS, DEFAULT_RULES, withServiceDefaults, extractCoords, haversineKm,
+  type VendorSettings, type ServicesConfig, type DeliveryZone,
+  DEFAULT_RULES, withServiceDefaults, extractCoords, haversineKm,
   locationSummary, depositSummary, rulesSummary, deliverySummary, setupSummary, comboSummary,
-  timeSlotsSummary, stackingSummary, loyaltySummary,
+  timeSlotsSummary, stackingSummary,
 } from "@/lib/vendorSettings";
 import { Card, Field, Section, SwitchRow, Choice, ChipsInput, NumberInput, inputCls, hintCls, smallBtn, labelCls } from "./ui";
 
@@ -23,22 +23,12 @@ type Props = {
 export default function RulesGroup({ vendorId, v, set, openSection, setOpenSection, toast }: Props) {
   const toggle = (s: string) => setOpenSection(openSection === s ? null : s);
   const services = withServiceDefaults(v.services);
-  const loyalty: LoyaltyConfig = v.loyalty || { enabled: false, tiers: DEFAULT_LOYALTY_TIERS, appliesTo: { type: "all" } };
   const rules = v.rules || [];
   const [pinDraft, setPinDraft] = useState(v.locationUrl || "");
   const [newZone, setNewZone] = useState<DeliveryZone>({ name: "", fee: 0 });
-  const [gear, setGear] = useState<{ id: string; name: string }[]>([]);
-
-  useEffect(() => {
-    if (openSection !== "loyalty") return;
-    getDocs(query(collection(db, "gear"), where("vendorId", "==", vendorId)))
-      .then(snap => setGear(snap.docs.filter(d => !d.data().deleted).map(d => ({ id: d.id, name: d.data().name }))))
-      .catch(() => {});
-  }, [vendorId, openSection]);
 
   function setServices(patch: (s: ServicesConfig) => ServicesConfig) { set({ services: patch(services) }); }
   function setDelivery(fields: Partial<ServicesConfig["delivery"]>) { setServices(s => ({ ...s, delivery: { ...s.delivery, ...fields } })); }
-  function setLoyalty(fields: Partial<LoyaltyConfig>) { set({ loyalty: { ...loyalty, ...fields } }); }
 
   async function savePin() {
     const url = pinDraft.trim();
@@ -233,52 +223,11 @@ export default function RulesGroup({ vendorId, v, set, openSection, setOpenSecti
           <SwitchRow title="Let offers combine" hint="Off: a customer gets the single best offer. On: promo codes, extended stay and bundle deals add up." checked={!!v.allow_stacking} onChange={allow_stacking => set({ allow_stacking })} />
         </Section>
 
-        {/* Loyalty */}
-        <Section id="section-loyalty" title="Loyalty rewards" summary={loyaltySummary(loyalty)} open={openSection === "loyalty"} onToggle={() => toggle("loyalty")}>
-          <SwitchRow title="Reward repeat customers" hint="A discount that grows with their number of bookings" checked={loyalty.enabled} onChange={enabled => setLoyalty({ enabled })} />
-          {loyalty.enabled && (
-            <>
-              {loyalty.tiers.map((tier, i) => (
-                <div key={tier.id} className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col gap-2">
-                  <span className="text-sm font-bold">{tier.label}</span>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field id={`tier-${tier.id}-min`} label="From booking number">
-                      <NumberInput id={`tier-${tier.id}-min`} value={tier.minBookings} min={1} onChange={n => setLoyalty({ tiers: loyalty.tiers.map((t, idx) => idx === i ? { ...t, minBookings: Math.round(n) || 1 } : t) })} />
-                    </Field>
-                    <Field id={`tier-${tier.id}-disc`} label="Discount (%)">
-                      <NumberInput id={`tier-${tier.id}-disc`} value={tier.discount} onChange={n => setLoyalty({ tiers: loyalty.tiers.map((t, idx) => idx === i ? { ...t, discount: Math.min(100, Math.round(n)) } : t) })} suffix="%" />
-                    </Field>
-                  </div>
-                </div>
-              ))}
-              <div className="flex flex-col gap-1.5">
-                <span className={labelCls}>Applies to</span>
-                <Choice label="Loyalty applies to" value={loyalty.appliesTo?.type || "all"} onChange={type => setLoyalty({ appliesTo: { type, itemIds: type === "all" ? [] : (loyalty.appliesTo?.itemIds || []) } })}
-                  options={[{ value: "all", label: "All items" }, { value: "specific", label: "Chosen items" }]} />
-              </div>
-              {loyalty.appliesTo?.type === "specific" && (
-                <div className="flex flex-col gap-1 max-h-56 overflow-y-auto">
-                  {gear.length === 0 && <p className={hintCls}>No items in your inventory yet.</p>}
-                  {gear.map(g => {
-                    const ids = loyalty.appliesTo?.itemIds || [];
-                    const on = ids.includes(g.id);
-                    return (
-                      <label key={g.id} className="flex items-center gap-3 min-h-11 px-2 rounded-lg hover:bg-slate-50 cursor-pointer">
-                        <input type="checkbox" checked={on} onChange={() => setLoyalty({ appliesTo: { type: "specific", itemIds: on ? ids.filter(x => x !== g.id) : [...ids, g.id] } })} className="w-5 h-5 accent-[#062c24]" />
-                        <span className="text-sm">{g.name}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          )}
-        </Section>
       </div>
 
       <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-3.5 flex flex-col gap-1">
-        <span className="text-sm font-bold text-emerald-900">Promo codes and item discounts</span>
-        <span className="text-[13px] text-emerald-900">These stay in the Inventory tab, next to the items they apply to.</span>
+        <span className="text-sm font-bold text-emerald-900">Discounts, referral codes and loyalty rewards</span>
+        <span className="text-[13px] text-emerald-900">These are in More › Promotions.</span>
       </div>
     </>
   );

@@ -5,14 +5,13 @@ import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDocs, writeBatch } from "firebase/firestore";
 import GearFlyerModal from "@/components/GearFlyerModal";
 import ItemEditor from "@/components/inventory/ItemEditor";
-import DiscountsScreen from "@/components/inventory/DiscountsScreen";
-import { BottomSheet } from "@/components/orders/OrderSheets";
+import { BottomSheet, PageHeader, Toast, useToast } from "@/components/ui/kit";
 import {
   type GearItem, type Discount,
   categoryOf, usedCategories, itemStatus, needsAttention, itemPriceLine, matchesSearch, discountState,
 } from "@/lib/inventory";
 
-type InventoryTabProps = { vendorId: string };
+type InventoryTabProps = { vendorId: string; onOpenPromotions?: () => void };
 
 type VendorBits = { services?: { setup?: { enabled?: boolean } }; pickup?: string[]; gear_count?: number };
 
@@ -20,7 +19,7 @@ const statusDot = { live: "bg-emerald-700", warn: "bg-amber-600", blocked: "bg-r
 const statusText = { live: "text-emerald-800", warn: "text-amber-800", blocked: "text-red-800", paused: "text-slate-600" };
 const rowBorder = { live: "border-slate-200", warn: "border-amber-300", blocked: "border-red-300", paused: "border-slate-200" };
 
-export default function InventoryTab({ vendorId }: InventoryTabProps) {
+export default function InventoryTab({ vendorId, onOpenPromotions }: InventoryTabProps) {
   const [allGear, setAllGear] = useState<GearItem[]>([]);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [vendor, setVendor] = useState<VendorBits>({});
@@ -28,15 +27,12 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<string>("all");
   const [editing, setEditing] = useState<GearItem | "new" | null>(null);
-  const [showDiscounts, setShowDiscounts] = useState(false);
   const [showFlyer, setShowFlyer] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [deleting, setDeleting] = useState<{ item: GearItem; upcoming: number | null } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
-
-  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); }
+  const { toast, show: showToast } = useToast();
 
   useEffect(() => {
     const gearUnsub = onSnapshot(query(collection(db, "gear"), where("vendorId", "==", vendorId)),
@@ -127,19 +123,14 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
 
   return (
     <div className="flex flex-col gap-3.5 pb-24">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-3xl font-black text-[#062c24] uppercase">Inventory</h2>
-          <p className="text-xs font-semibold text-slate-600">Your gear, packages and discounts</p>
-        </div>
-        <button type="button" onClick={() => setEditing("new")} className="min-h-11 px-4 rounded-xl bg-[#062c24] text-white text-sm font-bold flex items-center gap-2 hover:bg-[#0a4135] shrink-0">
+      <PageHeader title="Inventory" subtitle="Your gear and packages" action={
+        <button type="button" onClick={() => setEditing("new")} className="min-h-11 px-4 rounded-xl bg-[#062c24] text-white text-sm font-bold flex items-center gap-2 hover:bg-[#0a4135]">
           <i className="fas fa-plus" aria-hidden="true"></i>Add item
-        </button>
-      </div>
+        </button>} />
 
       <div className="flex gap-2">
-        <button type="button" onClick={() => setShowDiscounts(true)} className="flex-1 min-h-11 px-3.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-[13px] font-semibold flex items-center justify-between hover:bg-slate-50">
-          <span>Discounts{discounts.length ? ` · ${activeDiscounts} active` : ""}</span>
+        <button type="button" onClick={() => onOpenPromotions?.()} className="flex-1 min-h-11 px-3.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-[13px] font-semibold flex items-center justify-between hover:bg-slate-50">
+          <span>Promotions{discounts.length ? ` · ${activeDiscounts} active discount${activeDiscounts === 1 ? "" : "s"}` : ""}</span>
           <i className="fas fa-chevron-right text-slate-500" aria-hidden="true"></i>
         </button>
         <button type="button" onClick={() => setShowFlyer(true)} className="min-h-11 px-3.5 rounded-xl border border-slate-300 bg-white text-slate-700 text-[13px] font-semibold hover:bg-slate-50">Flyer</button>
@@ -260,7 +251,6 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
         />
       )}
 
-      {showDiscounts && <DiscountsScreen vendorId={vendorId} discounts={discounts} gear={allGear} onClose={() => setShowDiscounts(false)} onToast={showToast} />}
 
       {deleting && (
         <BottomSheet title={`Delete ${deleting.item.name}?`} onClose={() => setDeleting(null)}>
@@ -286,12 +276,7 @@ export default function InventoryTab({ vendorId }: InventoryTabProps) {
 
       {showFlyer && <GearFlyerModal vendorId={vendorId} onClose={() => setShowFlyer(false)} />}
 
-      {toast && (
-        <div role="status" className={`fixed bottom-28 left-1/2 -translate-x-1/2 z-[700] max-w-[90vw] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[13px] font-semibold ${toast.type === "success" ? "bg-emerald-700" : "bg-red-700"}`}>
-          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`} aria-hidden="true"></i>
-          {toast.msg}
-        </div>
-      )}
+      <Toast toast={toast} />
     </div>
   );
 }

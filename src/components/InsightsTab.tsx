@@ -92,11 +92,15 @@ function generateLoyaltyCode(name: string): string {
   return `${clean}-${rand}`;
 }
 
-export default function InsightsTab({ vendorId }: { vendorId: string }) {
+export type InsightsView = "customers" | "heatmap" | "items" | "forecast" | "promos";
+
+/** Customer, demand, item, forecast and promotion insights. Shown inside Performance. */
+export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: string; view?: InsightsView }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<View>("customers");
+  const [viewState, setView] = useState<View>("customers");
+  const view: View = viewProp || viewState;
   const [custSearch, setCustSearch] = useState("");
   const [custSort, setCustSort] = useState<"spent" | "bookings" | "recent">("spent");
   const [existingLoyaltyCodes, setExistingLoyaltyCodes] = useState<Record<string, string>>({});
@@ -500,51 +504,45 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <i className="fas fa-spinner fa-spin text-2xl text-slate-300"></i>
+        <i className="fas fa-spinner fa-spin text-2xl text-slate-500"></i>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 pb-20">
-      {/* Header */}
-      <div>
-        <h2 className="text-3xl font-black text-[#062c24] uppercase">Insights</h2>
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Customer data, demand patterns & item performance</p>
-      </div>
-
+    <div className="flex flex-col gap-4">
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {view === "customers" && <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white rounded-2xl p-4 border border-slate-100">
-          <p className="text-[9px] font-black text-slate-400 uppercase">Total Customers</p>
-          <p className="text-2xl font-black text-[#062c24]">{totalCustomers}</p>
-          <p className="text-[8px] text-slate-300 mt-1">{repeatCustomers} repeat ({repeatRate}%)</p>
+          <p className="text-xs font-bold text-slate-600 ">Total Customers</p>
+          <p className="text-2xl font-bold text-[#062c24]">{totalCustomers}</p>
+          <p className="text-xs text-slate-500 mt-1">{repeatCustomers} repeat ({repeatRate}%)</p>
         </div>
         <div className="bg-white rounded-2xl p-4 border border-slate-100">
-          <p className="text-[9px] font-black text-amber-600 uppercase">At Risk</p>
-          <p className="text-2xl font-black text-amber-600">{atRiskCount}</p>
-          <p className="text-[8px] text-amber-500 mt-1">60+ days inactive</p>
+          <p className="text-xs font-bold text-amber-600 ">At Risk</p>
+          <p className="text-2xl font-bold text-amber-600">{atRiskCount}</p>
+          <p className="text-xs text-amber-500 mt-1">60+ days inactive</p>
         </div>
         <div className="bg-white rounded-2xl p-4 border border-slate-100">
-          <p className="text-[9px] font-black text-slate-400 uppercase">Loyalty</p>
+          <p className="text-xs font-bold text-slate-600 ">Loyalty</p>
           {loyaltyConfig.enabled ? (
             <>
-              <p className="text-2xl font-black text-[#062c24]">{loyaltyEligible}</p>
-              <p className="text-[8px] text-emerald-600 mt-1">{rewardsNotSent > 0 ? `${rewardsNotSent} reward${rewardsNotSent > 1 ? "s" : ""} pending` : "All rewarded"}</p>
+              <p className="text-2xl font-bold text-[#062c24]">{loyaltyEligible}</p>
+              <p className="text-xs text-emerald-600 mt-1">{rewardsNotSent > 0 ? `${rewardsNotSent} reward${rewardsNotSent > 1 ? "s" : ""} pending` : "All rewarded"}</p>
             </>
           ) : (
             <>
-              <p className="text-sm font-black text-slate-300 mt-1">Disabled</p>
-              <p className="text-[8px] text-slate-300 mt-0.5">Enable in Settings → Loyalty</p>
+              <p className="text-sm font-bold text-slate-500 mt-1">Disabled</p>
+              <p className="text-xs text-slate-500 mt-0.5">Turn on in More › Promotions › Loyalty</p>
             </>
           )}
         </div>
         <div className="bg-white rounded-2xl p-4 border border-slate-100">
-          <p className="text-[9px] font-black text-slate-400 uppercase">Top Item</p>
-          <p className="text-sm font-black text-[#062c24] truncate">{topItem?.name || "—"}</p>
-          <p className="text-[8px] text-emerald-600 mt-1">{topItem ? `RM${topItem.totalRevenue} • ${topItem.timesRented}x rented` : ""}</p>
+          <p className="text-xs font-bold text-slate-600 ">Top Item</p>
+          <p className="text-sm font-bold text-[#062c24] truncate">{topItem?.name || "—"}</p>
+          <p className="text-xs text-emerald-600 mt-1">{topItem ? `RM${topItem.totalRevenue} • ${topItem.timesRented}x rented` : ""}</p>
         </div>
-      </div>
+      </div>}
 
       {/* Rewards Pending Alert */}
       {loyaltyConfig.enabled && rewardsNotSent > 0 && view === "customers" && (
@@ -553,14 +551,14 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
             <i className="fas fa-gift"></i>
           </div>
           <div className="flex-1">
-            <p className="text-sm font-black text-amber-900">{rewardsNotSent} loyalty reward{rewardsNotSent > 1 ? "s" : ""} ready to send</p>
-            <p className="text-[10px] text-amber-700 font-bold">Scroll down to send via WhatsApp</p>
+            <p className="text-sm font-bold text-amber-900">{rewardsNotSent} loyalty reward{rewardsNotSent > 1 ? "s" : ""} ready to send</p>
+            <p className="text-xs text-amber-700 font-bold">Scroll down to send via WhatsApp</p>
           </div>
         </div>
       )}
 
       {/* View Toggle */}
-      <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+      {!viewProp && <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
         {([
           { id: "customers" as View, label: "Customers", icon: "fa-users" },
           { id: "heatmap" as View, label: "Demand", icon: "fa-chart-bar" },
@@ -569,13 +567,13 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
           { id: "promos" as View, label: "Promos", icon: "fa-tags" },
         ]).map(v => (
           <button key={v.id} onClick={() => setView(v.id)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold  transition-all ${
               view === v.id ? "bg-[#062c24] text-white shadow-md" : "bg-white text-slate-500 border border-slate-200 hover:bg-slate-50"
             }`}>
             <i className={`fas ${v.icon}`}></i> {v.label}
           </button>
         ))}
-      </div>
+      </div>}
 
       {/* ═══════════════════════════════════════════════════════════
           CUSTOMERS VIEW
@@ -585,13 +583,13 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
           {/* Search + Sort */}
           <div className="flex gap-2">
             <div className="flex-1 relative">
-              <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
+              <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
               <input value={custSearch} onChange={e => setCustSearch(e.target.value)}
                 placeholder="Search customer..."
                 className="w-full bg-white border border-slate-200 pl-9 pr-3 py-2.5 rounded-xl text-xs font-bold outline-none focus:border-emerald-400" />
             </div>
             <select value={custSort} onChange={e => setCustSort(e.target.value as any)}
-              className="bg-white border border-slate-200 px-3 py-2.5 rounded-xl text-[10px] font-bold text-slate-600 outline-none appearance-none">
+              className="bg-white border border-slate-200 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-600 outline-none appearance-none">
               <option value="spent">Top Spent</option>
               <option value="bookings">Most Bookings</option>
               <option value="recent">Most Recent</option>
@@ -601,8 +599,8 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
           {customers.length === 0 ? (
             <div className="bg-white rounded-2xl p-8 text-center border border-slate-100">
               <i className="fas fa-users text-slate-200 text-4xl mb-3"></i>
-              <p className="text-sm font-bold text-slate-400">No customer data yet</p>
-              <p className="text-[10px] text-slate-300 mt-1">Customer profiles are built from completed orders</p>
+              <p className="text-sm font-bold text-slate-600">No customer data yet</p>
+              <p className="text-xs text-slate-500 mt-1">Customer profiles are built from completed orders</p>
             </div>
           ) : (
             customers.map(c => {
@@ -616,7 +614,7 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
                 <div className="p-4">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <div className={`relative w-10 h-10 rounded-full flex items-center justify-center font-black text-sm ${
+                      <div className={`relative w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
                         tier ? tier.bgClass : (
                           c.status === "active" ? "bg-emerald-100 text-emerald-600" :
                           c.status === "at_risk" ? "bg-amber-100 text-amber-600" : "bg-red-100 text-red-500"
@@ -626,22 +624,22 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <p className="text-sm font-black text-[#062c24]">{c.name}</p>
+                          <p className="text-sm font-bold text-[#062c24]">{c.name}</p>
                           {tier && (
-                            <span className={`text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase border ${tier.badgeClass}`}>
+                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full  border ${tier.badgeClass}`}>
                               {tier.label}
                             </span>
                           )}
                         </div>
-                        <p className="text-[9px] text-slate-400 font-bold">{c.phone}</p>
-                        <p className="text-[8px] text-slate-300 font-bold">
-                          <i className="fas fa-calendar-check text-slate-300 mr-1"></i>
+                        <p className="text-xs text-slate-600 font-bold">{c.phone}</p>
+                        <p className="text-xs text-slate-500 font-bold">
+                          <i className="fas fa-calendar-check text-slate-500 mr-1"></i>
                           First booked {formatDate(c.firstBooking)}
                         </p>
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full  ${
                         c.status === "active" ? "bg-emerald-50 text-emerald-600" :
                         c.status === "at_risk" ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-500"
                       }`}>
@@ -663,19 +661,19 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
                       <div className="flex-1 min-w-0">
                         {hasExistingCode ? (
                           <>
-                            <p className="text-[10px] font-black text-emerald-700">Reward sent</p>
-                            <p className="text-[8px] text-emerald-600 font-bold">Code: {existingLoyaltyCodes[c.phone]}</p>
+                            <p className="text-xs font-bold text-emerald-700">Reward sent</p>
+                            <p className="text-xs text-emerald-600 font-bold">Code: {existingLoyaltyCodes[c.phone]}</p>
                           </>
                         ) : (
                           <>
-                            <p className="text-[10px] font-black text-amber-800">{tier.label} reward ready!</p>
-                            <p className="text-[8px] text-amber-600 font-bold">{tier.discount}% OFF for {c.completedBookings} bookings</p>
+                            <p className="text-xs font-bold text-amber-800">{tier.label} reward ready!</p>
+                            <p className="text-xs text-amber-600 font-bold">{tier.discount}% OFF for {c.completedBookings} bookings</p>
                           </>
                         )}
                       </div>
                       {!hasExistingCode && (
                         <button onClick={() => sendLoyaltyReward(c)} disabled={isSending}
-                          className="bg-[#062c24] text-white px-3 py-2 rounded-xl text-[8px] font-black uppercase shrink-0 hover:bg-emerald-800 transition-colors disabled:opacity-50">
+                          className="bg-[#062c24] text-white px-3 py-2 rounded-xl text-xs font-bold shrink-0 hover:bg-emerald-800 transition-colors disabled:opacity-50">
                           {isSending ? <i className="fas fa-spinner fa-spin"></i> : <><i className="fab fa-whatsapp mr-1"></i>Send</>}
                         </button>
                       )}
@@ -685,20 +683,20 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
                   {/* Stats Row */}
                   <div className="grid grid-cols-4 gap-2 mb-3">
                     <div className="text-center bg-slate-50 rounded-lg py-2">
-                      <p className="text-xs font-black text-[#062c24]">RM{c.totalSpent.toLocaleString()}</p>
-                      <p className="text-[7px] text-slate-400 font-bold uppercase">Spent</p>
+                      <p className="text-xs font-bold text-[#062c24]">RM{c.totalSpent.toLocaleString()}</p>
+                      <p className="text-xs text-slate-600 font-bold ">Spent</p>
                     </div>
                     <div className="text-center bg-slate-50 rounded-lg py-2">
-                      <p className="text-xs font-black text-[#062c24]">{c.bookings}</p>
-                      <p className="text-[7px] text-slate-400 font-bold uppercase">Bookings</p>
+                      <p className="text-xs font-bold text-[#062c24]">{c.bookings}</p>
+                      <p className="text-xs text-slate-600 font-bold ">Bookings</p>
                     </div>
                     <div className="text-center bg-slate-50 rounded-lg py-2">
-                      <p className="text-xs font-black text-[#062c24]">RM{c.avgOrderValue}</p>
-                      <p className="text-[7px] text-slate-400 font-bold uppercase">Avg Order</p>
+                      <p className="text-xs font-bold text-[#062c24]">RM{c.avgOrderValue}</p>
+                      <p className="text-xs text-slate-600 font-bold ">Avg Order</p>
                     </div>
                     <div className="text-center bg-slate-50 rounded-lg py-2">
-                      <p className="text-xs font-black text-[#062c24]">{daysSince(c.lastBooking)}d</p>
-                      <p className="text-[7px] text-slate-400 font-bold uppercase">Last Visit</p>
+                      <p className="text-xs font-bold text-[#062c24]">{daysSince(c.lastBooking)}d</p>
+                      <p className="text-xs text-slate-600 font-bold ">Last Visit</p>
                     </div>
                   </div>
 
@@ -706,7 +704,7 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
                   {c.favoriteItems.length > 0 && (
                     <div className="flex flex-wrap gap-1 mb-3">
                       {c.favoriteItems.slice(0, 3).map(f => (
-                        <span key={f.name} className="text-[8px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-full">
+                        <span key={f.name} className="text-xs font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-full">
                           {f.name} ×{f.count}
                         </span>
                       ))}
@@ -716,13 +714,13 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
                   {/* Actions */}
                   <div className="flex gap-2">
                     <a href={`https://wa.me/${c.phone}`} target="_blank" rel="noreferrer"
-                      className="flex-1 py-2 rounded-xl text-[9px] font-black uppercase bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center gap-1.5 hover:bg-emerald-100 transition-colors">
+                      className="flex-1 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center gap-1.5 hover:bg-emerald-100 transition-colors">
                       <i className="fab fa-whatsapp"></i> Message
                     </a>
                     {c.status !== "active" && (
                       <a href={`https://wa.me/${c.phone}?text=${encodeURIComponent(`Hi ${c.name}! 👋\n\nLama tak camping! Kami ada promosi khas untuk pelanggan setia.\n\nJom check out gear terbaru kami 🏕️`)}`}
                         target="_blank" rel="noreferrer"
-                        className="flex-1 py-2 rounded-xl text-[9px] font-black uppercase bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center gap-1.5 hover:bg-amber-100 transition-colors">
+                        className="flex-1 py-2 rounded-xl text-xs font-bold bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center gap-1.5 hover:bg-amber-100 transition-colors">
                         <i className="fas fa-bell"></i> Re-engage
                       </a>
                     )}
@@ -742,19 +740,19 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
         <div className="space-y-4">
           {/* Monthly Chart */}
           <div className="bg-white rounded-2xl p-5 border border-slate-100">
-            <p className="text-[9px] font-black text-slate-400 uppercase mb-4">Monthly Bookings (12 Months)</p>
+            <p className="text-xs font-bold text-slate-600 mb-4">Monthly Bookings (12 Months)</p>
             <div className="flex items-end gap-1.5 h-36">
               {heatmapData.monthly.map((m, i) => {
                 const maxBookings = Math.max(...heatmapData.monthly.map(x => x.bookings), 1);
                 const h = (m.bookings / maxBookings) * 100;
                 return (
                   <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                    {m.bookings > 0 && <p className="text-[7px] font-bold text-slate-500">{m.bookings}</p>}
+                    {m.bookings > 0 && <p className="text-xs font-bold text-slate-500">{m.bookings}</p>}
                     <div className="w-full bg-slate-50 rounded-t-md relative" style={{ height: "100%" }}>
                       <div className="absolute bottom-0 w-full bg-emerald-400 rounded-t-md transition-all duration-500"
                         style={{ height: `${h}%`, minHeight: m.bookings > 0 ? "4px" : "0" }}></div>
                     </div>
-                    <p className="text-[6px] font-bold text-slate-400 leading-none">{m.month}</p>
+                    <p className="text-[6px] font-bold text-slate-600 leading-none">{m.month}</p>
                   </div>
                 );
               })}
@@ -763,20 +761,20 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
 
           {/* Day of Week */}
           <div className="bg-white rounded-2xl p-5 border border-slate-100">
-            <p className="text-[9px] font-black text-slate-400 uppercase mb-4">Pickup Day Distribution</p>
+            <p className="text-xs font-bold text-slate-600 mb-4">Pickup Day Distribution</p>
             <div className="space-y-2">
               {DAYS.map((day, i) => (
                 <div key={day} className="flex items-center gap-3">
-                  <span className="text-[10px] font-bold text-slate-500 w-8">{day}</span>
+                  <span className="text-xs font-bold text-slate-500 w-8">{day}</span>
                   <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
                     <div className={`h-full rounded-full transition-all ${i >= 4 ? "bg-emerald-500" : "bg-emerald-300"}`}
                       style={{ width: `${(heatmapData.dayDist[i] / heatmapData.maxDay) * 100}%` }}></div>
                   </div>
-                  <span className="text-[10px] font-black text-[#062c24] w-6 text-right">{heatmapData.dayDist[i]}</span>
+                  <span className="text-xs font-bold text-[#062c24] w-6 text-right">{heatmapData.dayDist[i]}</span>
                 </div>
               ))}
             </div>
-            <p className="text-[8px] text-slate-400 mt-3 text-center">
+            <p className="text-xs text-slate-600 mt-3 text-center">
               <i className="fas fa-lightbulb text-amber-400 mr-1"></i>
               {heatmapData.dayDist[4] + heatmapData.dayDist[5] > heatmapData.dayDist[0] + heatmapData.dayDist[1]
                 ? "Weekends are your busiest — consider premium pricing for Fri–Sun"
@@ -787,15 +785,15 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
           {/* Peak Dates */}
           {heatmapData.peakDates.length > 0 && (
             <div className="bg-white rounded-2xl p-5 border border-slate-100">
-              <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Most Popular Dates</p>
+              <p className="text-xs font-bold text-slate-600 mb-3">Most Popular Dates</p>
               <div className="space-y-2">
                 {heatmapData.peakDates.map((p, i) => (
                   <div key={p.date} className="flex items-center gap-3">
-                    <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[9px] font-black ${
-                      i === 0 ? "bg-amber-100 text-amber-600" : "bg-slate-100 text-slate-400"
+                    <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold ${
+                      i === 0 ? "bg-amber-100 text-amber-600" : "bg-slate-100 text-slate-600"
                     }`}>{i + 1}</span>
                     <span className="text-xs font-bold text-[#062c24] flex-1">{formatDate(p.date)}</span>
-                    <span className="text-[10px] font-black text-emerald-600">{p.count} booking{p.count > 1 ? "s" : ""}</span>
+                    <span className="text-xs font-bold text-emerald-600">{p.count} booking{p.count > 1 ? "s" : ""}</span>
                   </div>
                 ))}
               </div>
@@ -804,7 +802,7 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
 
           {/* Insights */}
           <div className="bg-gradient-to-br from-[#062c24] to-emerald-800 rounded-2xl p-5 text-white">
-            <p className="text-[9px] font-black text-emerald-400 uppercase mb-3"><i className="fas fa-brain mr-1"></i>Auto Insights</p>
+            <p className="text-xs font-bold text-emerald-400 mb-3"><i className="fas fa-brain mr-1"></i>Auto Insights</p>
             <div className="space-y-2 text-xs text-white/80">
               {repeatRate >= 30 && <p>✅ Strong repeat rate ({repeatRate}%) — your customers keep coming back.</p>}
               {repeatRate > 0 && repeatRate < 30 && <p>⚠️ Low repeat rate ({repeatRate}%). Consider loyalty promos or follow-up messages.</p>}
@@ -824,7 +822,7 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
           {itemPerformance.length === 0 ? (
             <div className="bg-white rounded-2xl p-8 text-center border border-slate-100">
               <i className="fas fa-box text-slate-200 text-4xl mb-3"></i>
-              <p className="text-sm font-bold text-slate-400">No rental data yet</p>
+              <p className="text-sm font-bold text-slate-600">No rental data yet</p>
             </div>
           ) : (
             itemPerformance.map((item, i) => {
@@ -836,16 +834,16 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
                 <div key={item.name} className={`bg-white rounded-2xl border p-4 ${isDead ? "border-red-200" : "border-slate-100"}`}>
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2.5">
-                      <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black ${
-                        i === 0 ? "bg-amber-100 text-amber-600" : i === 1 ? "bg-slate-200 text-slate-600" : i === 2 ? "bg-orange-100 text-orange-600" : "bg-slate-100 text-slate-400"
+                      <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold ${
+                        i === 0 ? "bg-amber-100 text-amber-600" : i === 1 ? "bg-slate-200 text-slate-600" : i === 2 ? "bg-orange-100 text-orange-600" : "bg-slate-100 text-slate-600"
                       }`}>{i + 1}</span>
                       <div>
-                        <p className="text-sm font-black text-[#062c24]">{item.name}</p>
-                        <p className="text-[8px] text-slate-400 font-bold">Last rented: {lastDays < 999 ? `${lastDays}d ago` : "Never"}</p>
+                        <p className="text-sm font-bold text-[#062c24]">{item.name}</p>
+                        <p className="text-xs text-slate-600 font-bold">Last rented: {lastDays < 999 ? `${lastDays}d ago` : "Never"}</p>
                       </div>
                     </div>
                     {isDead && (
-                      <span className="text-[8px] font-black bg-red-50 text-red-500 px-2 py-0.5 rounded-full uppercase">Dead Stock</span>
+                      <span className="text-xs font-bold bg-red-50 text-red-500 px-2 py-0.5 rounded-full ">Dead Stock</span>
                     )}
                   </div>
 
@@ -859,16 +857,16 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
                   {/* Stats */}
                   <div className="grid grid-cols-3 gap-2">
                     <div className="text-center bg-slate-50 rounded-lg py-2">
-                      <p className="text-xs font-black text-emerald-600">RM{item.totalRevenue.toLocaleString()}</p>
-                      <p className="text-[7px] text-slate-400 font-bold uppercase">Revenue</p>
+                      <p className="text-xs font-bold text-emerald-600">RM{item.totalRevenue.toLocaleString()}</p>
+                      <p className="text-xs text-slate-600 font-bold ">Revenue</p>
                     </div>
                     <div className="text-center bg-slate-50 rounded-lg py-2">
-                      <p className="text-xs font-black text-[#062c24]">{item.timesRented}×</p>
-                      <p className="text-[7px] text-slate-400 font-bold uppercase">Rented</p>
+                      <p className="text-xs font-bold text-[#062c24]">{item.timesRented}×</p>
+                      <p className="text-xs text-slate-600 font-bold ">Rented</p>
                     </div>
                     <div className="text-center bg-slate-50 rounded-lg py-2">
-                      <p className="text-xs font-black text-[#062c24]">{item.utilizationDays}d</p>
-                      <p className="text-[7px] text-slate-400 font-bold uppercase">Total Days</p>
+                      <p className="text-xs font-bold text-[#062c24]">{item.utilizationDays}d</p>
+                      <p className="text-xs text-slate-600 font-bold ">Total Days</p>
                     </div>
                   </div>
                 </div>
@@ -886,24 +884,24 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
           {/* Forecast Cards */}
           <div className="grid grid-cols-2 gap-2">
             <div className="bg-white rounded-2xl p-4 border border-slate-100">
-              <p className="text-[8px] font-black text-slate-400 uppercase">Next 7 Days</p>
-              <p className="text-xl font-black text-emerald-600 mt-1">RM{forecast.next7.revenue.toLocaleString()}</p>
-              <p className="text-[8px] text-slate-300 mt-0.5">{forecast.next7.orders} booking{forecast.next7.orders !== 1 ? "s" : ""}</p>
+              <p className="text-xs font-bold text-slate-600 ">Next 7 Days</p>
+              <p className="text-xl font-bold text-emerald-600 mt-1">RM{forecast.next7.revenue.toLocaleString()}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{forecast.next7.orders} booking{forecast.next7.orders !== 1 ? "s" : ""}</p>
             </div>
             <div className="bg-white rounded-2xl p-4 border border-slate-100">
-              <p className="text-[8px] font-black text-slate-400 uppercase">Next 30 Days</p>
-              <p className="text-xl font-black text-[#062c24] mt-1">RM{forecast.next30.revenue.toLocaleString()}</p>
-              <p className="text-[8px] text-slate-300 mt-0.5">{forecast.next30.orders} booking{forecast.next30.orders !== 1 ? "s" : ""}</p>
+              <p className="text-xs font-bold text-slate-600 ">Next 30 Days</p>
+              <p className="text-xl font-bold text-[#062c24] mt-1">RM{forecast.next30.revenue.toLocaleString()}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{forecast.next30.orders} booking{forecast.next30.orders !== 1 ? "s" : ""}</p>
             </div>
             <div className="bg-white rounded-2xl p-4 border border-slate-100">
-              <p className="text-[8px] font-black text-slate-400 uppercase">Next 60 Days</p>
-              <p className="text-lg font-black text-[#062c24] mt-1">RM{forecast.next60.revenue.toLocaleString()}</p>
-              <p className="text-[8px] text-slate-300 mt-0.5">{forecast.next60.orders} bookings</p>
+              <p className="text-xs font-bold text-slate-600 ">Next 60 Days</p>
+              <p className="text-lg font-bold text-[#062c24] mt-1">RM{forecast.next60.revenue.toLocaleString()}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{forecast.next60.orders} bookings</p>
             </div>
             <div className="bg-white rounded-2xl p-4 border border-slate-100">
-              <p className="text-[8px] font-black text-slate-400 uppercase">Next 90 Days</p>
-              <p className="text-lg font-black text-[#062c24] mt-1">RM{forecast.next90.revenue.toLocaleString()}</p>
-              <p className="text-[8px] text-slate-300 mt-0.5">{forecast.next90.orders} bookings</p>
+              <p className="text-xs font-bold text-slate-600 ">Next 90 Days</p>
+              <p className="text-lg font-bold text-[#062c24] mt-1">RM{forecast.next90.revenue.toLocaleString()}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{forecast.next90.orders} bookings</p>
             </div>
           </div>
 
@@ -914,29 +912,29 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
                 <i className={`fas ${forecast.trend > 0 ? "fa-arrow-up" : "fa-arrow-down"}`}></i>
               </div>
               <div>
-                <p className={`text-sm font-black ${forecast.trend > 0 ? "text-emerald-700" : "text-red-600"}`}>
+                <p className={`text-sm font-bold ${forecast.trend > 0 ? "text-emerald-700" : "text-red-600"}`}>
                   {forecast.trend > 0 ? "+" : ""}{forecast.trend}% vs last 30 days
                 </p>
-                <p className="text-[9px] text-slate-500">Comparing confirmed bookings ahead vs past month</p>
+                <p className="text-xs text-slate-500">Comparing confirmed bookings ahead vs past month</p>
               </div>
             </div>
           )}
 
           {/* Weekly Breakdown Chart */}
           <div className="bg-white rounded-2xl p-5 border border-slate-100">
-            <p className="text-[9px] font-black text-slate-400 uppercase mb-4">Weekly Revenue Forecast (8 Weeks)</p>
+            <p className="text-xs font-bold text-slate-600 mb-4">Weekly Revenue Forecast (8 Weeks)</p>
             <div className="flex items-end gap-2 h-32">
               {forecast.weeks.map((w, i) => {
                 const maxRev = Math.max(...forecast.weeks.map(x => x.revenue), 1);
                 const h = (w.revenue / maxRev) * 100;
                 return (
                   <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                    {w.revenue > 0 && <p className="text-[7px] font-bold text-emerald-600">RM{w.revenue}</p>}
+                    {w.revenue > 0 && <p className="text-xs font-bold text-emerald-600">RM{w.revenue}</p>}
                     <div className="w-full bg-slate-50 rounded-t-md relative" style={{ height: "100%" }}>
                       <div className={`absolute bottom-0 w-full rounded-t-md transition-all duration-500 ${i === 0 ? "bg-emerald-500" : "bg-emerald-300"}`}
                         style={{ height: `${h}%`, minHeight: w.revenue > 0 ? "4px" : "0" }}></div>
                     </div>
-                    <p className="text-[6px] font-bold text-slate-400 leading-none">{w.label}</p>
+                    <p className="text-[6px] font-bold text-slate-600 leading-none">{w.label}</p>
                   </div>
                 );
               })}
@@ -946,22 +944,22 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
           {/* Upcoming Bookings */}
           {forecast.upcoming.length > 0 && (
             <div className="bg-white rounded-2xl p-5 border border-slate-100">
-              <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Upcoming Bookings</p>
+              <p className="text-xs font-bold text-slate-600 mb-3">Upcoming Bookings</p>
               <div className="space-y-2">
                 {forecast.upcoming.map((o, i) => (
                   <div key={o.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
                       o.status === "confirmed" ? "bg-blue-100 text-blue-600" : "bg-amber-100 text-amber-600"
                     }`}>
                       {new Date(o.bookingDates.start).getDate()}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] font-black text-[#062c24] truncate">{o.customerName || "Customer"}</p>
-                      <p className="text-[8px] text-slate-400 truncate">{o.items.map(it => `${it.name} ×${it.qty}`).join(", ")}</p>
+                      <p className="text-xs font-bold text-[#062c24] truncate">{o.customerName || "Customer"}</p>
+                      <p className="text-xs text-slate-600 truncate">{o.items.map(it => `${it.name} ×${it.qty}`).join(", ")}</p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-xs font-black text-emerald-600">RM{o.rentalAmount ?? o.totalAmount}</p>
-                      <p className="text-[7px] text-slate-400">{formatDate(o.bookingDates.start)}</p>
+                      <p className="text-xs font-bold text-emerald-600">RM{o.rentalAmount ?? o.totalAmount}</p>
+                      <p className="text-xs text-slate-600">{formatDate(o.bookingDates.start)}</p>
                     </div>
                   </div>
                 ))}
@@ -972,7 +970,7 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
           {forecast.next30.orders === 0 && (
             <div className="bg-gradient-to-br from-[#062c24] to-emerald-800 rounded-2xl p-5 text-white text-center">
               <i className="fas fa-chart-line text-2xl text-emerald-400 mb-3"></i>
-              <p className="text-sm font-black uppercase mb-1">No upcoming bookings</p>
+              <p className="text-sm font-bold mb-1">No upcoming bookings</p>
               <p className="text-xs text-white/60">Share your shop link to get more orders!</p>
             </div>
           )}
@@ -987,36 +985,36 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
           {/* Summary */}
           <div className="grid grid-cols-2 gap-2">
             <div className="bg-white rounded-2xl p-4 border border-slate-100">
-              <p className="text-[8px] font-black text-slate-400 uppercase">Promo Orders</p>
-              <p className="text-2xl font-black text-[#062c24] mt-1">{promoAnalytics.totalPromoOrders}</p>
-              <p className="text-[8px] text-slate-300 mt-0.5">{promoAnalytics.promoRate}% of all orders</p>
+              <p className="text-xs font-bold text-slate-600 ">Promo Orders</p>
+              <p className="text-2xl font-bold text-[#062c24] mt-1">{promoAnalytics.totalPromoOrders}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{promoAnalytics.promoRate}% of all orders</p>
             </div>
             <div className="bg-white rounded-2xl p-4 border border-slate-100">
-              <p className="text-[8px] font-black text-slate-400 uppercase">Revenue from Promos</p>
-              <p className="text-2xl font-black text-emerald-600 mt-1">RM{promoAnalytics.totalPromoRevenue.toLocaleString()}</p>
-              <p className="text-[8px] text-slate-300 mt-0.5">RM{promoAnalytics.totalDiscountGiven} discounted</p>
+              <p className="text-xs font-bold text-slate-600 ">Revenue from Promos</p>
+              <p className="text-2xl font-bold text-emerald-600 mt-1">RM{promoAnalytics.totalPromoRevenue.toLocaleString()}</p>
+              <p className="text-xs text-slate-500 mt-0.5">RM{promoAnalytics.totalDiscountGiven} discounted</p>
             </div>
             <div className="bg-white rounded-2xl p-4 border border-slate-100">
-              <p className="text-[8px] font-black text-slate-400 uppercase">Avg Promo Order</p>
-              <p className="text-xl font-black text-[#062c24] mt-1">RM{promoAnalytics.avgPromoOrder}</p>
-              <p className="text-[8px] text-slate-300 mt-0.5">vs RM{promoAnalytics.avgNonPromoOrder} without</p>
+              <p className="text-xs font-bold text-slate-600 ">Avg Promo Order</p>
+              <p className="text-xl font-bold text-[#062c24] mt-1">RM{promoAnalytics.avgPromoOrder}</p>
+              <p className="text-xs text-slate-500 mt-0.5">vs RM{promoAnalytics.avgNonPromoOrder} without</p>
             </div>
             <div className="bg-white rounded-2xl p-4 border border-slate-100">
-              <p className="text-[8px] font-black text-slate-400 uppercase">Extended Stay</p>
-              <p className="text-xl font-black text-blue-600 mt-1">{promoAnalytics.autoDiscOrders}</p>
-              <p className="text-[8px] text-slate-300 mt-0.5">RM{promoAnalytics.totalAutoDiscount} discounted</p>
+              <p className="text-xs font-bold text-slate-600 ">Extended Stay</p>
+              <p className="text-xl font-bold text-blue-600 mt-1">{promoAnalytics.autoDiscOrders}</p>
+              <p className="text-xs text-slate-500 mt-0.5">RM{promoAnalytics.totalAutoDiscount} discounted</p>
             </div>
           </div>
 
           {/* Promo vs Non-Promo comparison */}
           {promoAnalytics.avgPromoOrder > 0 && promoAnalytics.avgNonPromoOrder > 0 && (
             <div className="bg-white rounded-2xl p-5 border border-slate-100">
-              <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Avg Order Value Comparison</p>
+              <p className="text-xs font-bold text-slate-600 mb-3">Avg Order Value Comparison</p>
               <div className="space-y-3">
                 <div>
                   <div className="flex justify-between mb-1">
-                    <span className="text-[10px] font-bold text-slate-500"><i className="fas fa-tag text-emerald-500 mr-1"></i>With Promo</span>
-                    <span className="text-xs font-black text-[#062c24]">RM{promoAnalytics.avgPromoOrder}</span>
+                    <span className="text-xs font-bold text-slate-500"><i className="fas fa-tag text-emerald-500 mr-1"></i>With Promo</span>
+                    <span className="text-xs font-bold text-[#062c24]">RM{promoAnalytics.avgPromoOrder}</span>
                   </div>
                   <div className="bg-slate-100 rounded-full h-3 overflow-hidden">
                     <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${Math.min(100, (promoAnalytics.avgPromoOrder / Math.max(promoAnalytics.avgPromoOrder, promoAnalytics.avgNonPromoOrder)) * 100)}%` }}></div>
@@ -1024,15 +1022,15 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
                 </div>
                 <div>
                   <div className="flex justify-between mb-1">
-                    <span className="text-[10px] font-bold text-slate-500"><i className="fas fa-shopping-bag text-slate-400 mr-1"></i>Without Promo</span>
-                    <span className="text-xs font-black text-[#062c24]">RM{promoAnalytics.avgNonPromoOrder}</span>
+                    <span className="text-xs font-bold text-slate-500"><i className="fas fa-shopping-bag text-slate-600 mr-1"></i>Without Promo</span>
+                    <span className="text-xs font-bold text-[#062c24]">RM{promoAnalytics.avgNonPromoOrder}</span>
                   </div>
                   <div className="bg-slate-100 rounded-full h-3 overflow-hidden">
                     <div className="h-full bg-slate-400 rounded-full" style={{ width: `${Math.min(100, (promoAnalytics.avgNonPromoOrder / Math.max(promoAnalytics.avgPromoOrder, promoAnalytics.avgNonPromoOrder)) * 100)}%` }}></div>
                   </div>
                 </div>
               </div>
-              <p className="text-[8px] text-slate-400 mt-3 text-center">
+              <p className="text-xs text-slate-600 mt-3 text-center">
                 <i className="fas fa-lightbulb text-amber-400 mr-1"></i>
                 {promoAnalytics.avgPromoOrder > promoAnalytics.avgNonPromoOrder
                   ? "Promo customers spend more per order — promos are driving larger carts!"
@@ -1045,12 +1043,12 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
 
           {/* Per-Code Performance */}
           <div className="bg-white rounded-2xl p-5 border border-slate-100">
-            <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Code Performance</p>
+            <p className="text-xs font-bold text-slate-600 mb-3">Code Performance</p>
             {promoAnalytics.promos.length === 0 ? (
               <div className="text-center py-8">
                 <i className="fas fa-tags text-slate-200 text-3xl mb-3"></i>
-                <p className="text-sm font-bold text-slate-400">No promo codes used yet</p>
-                <p className="text-[10px] text-slate-300 mt-1">Create codes in Referrals tab and they'll appear here when used</p>
+                <p className="text-sm font-bold text-slate-600">No promo codes used yet</p>
+                <p className="text-xs text-slate-500 mt-1">Create codes in Referrals tab and they'll appear here when used</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -1061,17 +1059,17 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
                     <div key={p.code} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
-                          <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[9px] font-black ${
-                            i === 0 ? "bg-amber-100 text-amber-600" : i === 1 ? "bg-slate-200 text-slate-600" : "bg-slate-100 text-slate-400"
+                          <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold ${
+                            i === 0 ? "bg-amber-100 text-amber-600" : i === 1 ? "bg-slate-200 text-slate-600" : "bg-slate-100 text-slate-600"
                           }`}>{i + 1}</span>
-                          <span className="text-sm font-black text-[#062c24] tracking-wider">{p.code}</span>
+                          <span className="text-sm font-bold text-[#062c24] ">{p.code}</span>
                         </div>
-                        <span className="text-xs font-black text-emerald-600">RM{p.totalRevenue.toLocaleString()}</span>
+                        <span className="text-xs font-bold text-emerald-600">RM{p.totalRevenue.toLocaleString()}</span>
                       </div>
                       <div className="bg-slate-200 rounded-full h-1.5 mb-2 overflow-hidden">
                         <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${bar}%` }}></div>
                       </div>
-                      <div className="flex items-center gap-3 text-[8px] font-bold text-slate-400">
+                      <div className="flex items-center gap-3 text-xs font-bold text-slate-600">
                         <span><i className="fas fa-check-circle text-emerald-500 mr-0.5"></i>{p.timesUsed}× used</span>
                         <span><i className="fas fa-tag text-red-400 mr-0.5"></i>RM{p.totalDiscount} off given</span>
                         <span><i className="fas fa-receipt mr-0.5"></i>Avg RM{p.avgOrderValue}</span>
@@ -1086,7 +1084,7 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
           {/* Insight */}
           {promoAnalytics.totalPromoOrders > 0 && (
             <div className="bg-gradient-to-br from-[#062c24] to-emerald-800 rounded-2xl p-5 text-white">
-              <p className="text-[9px] font-black text-emerald-400 uppercase mb-3"><i className="fas fa-brain mr-1"></i>Promo Insights</p>
+              <p className="text-xs font-bold text-emerald-400 mb-3"><i className="fas fa-brain mr-1"></i>Promo Insights</p>
               <div className="space-y-2 text-xs text-white/80">
                 {promoAnalytics.promoRate > 30 && <p>📊 {promoAnalytics.promoRate}% of orders use promos — healthy promo adoption.</p>}
                 {promoAnalytics.promoRate > 0 && promoAnalytics.promoRate <= 10 && <p>📊 Only {promoAnalytics.promoRate}% use promos — consider promoting your codes more actively.</p>}
@@ -1101,7 +1099,7 @@ export default function InsightsTab({ vendorId }: { vendorId: string }) {
 
       {/* Reward Toast */}
       {rewardToast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-2xl text-xs font-black uppercase flex items-center gap-2 animate-[slideUp_0.3s_ease-out]">
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-2xl text-xs font-bold flex items-center gap-2 animate-[slideUp_0.3s_ease-out]">
           <i className="fas fa-check-circle"></i> {rewardToast}
           <style>{`@keyframes slideUp { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
         </div>

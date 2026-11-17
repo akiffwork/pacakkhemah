@@ -1,7 +1,7 @@
 /**
  * Agreement PDF Generator
  * Shared utility for generating professional rental agreement PDFs
- * Used by: DocumentsTab (vendor), Agreement page (customer)
+ * Used by: Orders › Agreements and the order detail (vendor), Agreement page (customer)
  */
 
 type PDFVendor = {

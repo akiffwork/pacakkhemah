@@ -9,22 +9,22 @@ import {
   signInWithPopup, GoogleAuthProvider,
   signInWithEmailAndPassword, sendPasswordResetEmail, signOut, onAuthStateChanged, User,
 } from "firebase/auth";
-import AnalyticsTab from "@/components/AnalyticsTab";
 import HomeTab from "@/components/HomeTab";
-import DocumentsTab from "@/components/DocumentsTab";
 import InventoryTab from "@/components/InventoryTab";
 import SettingsTab from "@/components/SettingsTab";
 import OrdersTab from "@/components/OrdersTab";
 import ReviewsTab from "@/components/ReviewsTab";
-import InsightsTab from "@/components/InsightsTab";
-import UpdatesTab from "@/components/UpdatesTab";
-import ReferralsTab from "@/components/ReferralsTab";
-import FoodPartnersTab from "@/components/FoodPartnersTab";
-import OrderGuideTab from "@/components/vendor/OrderGuideTab";
+import MoreTab from "@/components/MoreTab";
+import PromotionsTab from "@/components/PromotionsTab";
+import PerformanceTab from "@/components/PerformanceTab";
+import ShopPageTab from "@/components/ShopPageTab";
+import CalendarView from "@/components/calendar/CalendarView";
+import { PageHeader, Toast, useToast } from "@/components/ui/kit";
+import { handleTopUpReturn } from "@/lib/credits";
 import WelcomeTour from "@/components/vendor/WelcomeTour";
 import FirstItemTour from "@/components/vendor/FirstItemTour";
 import FirstOrderTour from "@/components/vendor/FirstOrderTour";
-import { summarize, type Order } from "@/lib/orderFlow";
+import { summarize, getStage, daysUntil, type Order } from "@/lib/orderFlow";
 import { refreshPushIfEnabled } from "@/lib/pushRegistration";
 
 type VendorData = {
@@ -67,7 +67,7 @@ type VendorData = {
   [key: string]: any; // pass-through for SettingsTab
 };
 
-type Tab = "home" | "calendar" | "orders" | "reviews" | "insights" | "analytics" | "updates" | "documents" | "inventory" | "storefront" | "referrals" | "settings" | "food_partners" | "order_guide";
+type Tab = "home" | "orders" | "calendar" | "inventory" | "more" | "promotions" | "performance" | "reviews" | "shop" | "settings";
 
 // --- LOGIN SCREEN ---
 function LoginScreen() {
@@ -163,19 +163,49 @@ function LoginScreen() {
 }
 
 // --- MAIN DASHBOARD SHELL ---
-function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User; vendorData: VendorData; vendorId: string; isAdminOverride?: boolean }) {
+// Five places in the bottom bar (Home, Orders, Calendar, Inventory, More);
+// everything else opens from More and shows a back link to it.
+const PRIMARY: { id: Tab; label: string; icon: string }[] = [
+  { id: "home", label: "Home", icon: "fa-home" },
+  { id: "orders", label: "Orders", icon: "fa-shopping-bag" },
+  { id: "calendar", label: "Calendar", icon: "fa-calendar-alt" },
+  { id: "inventory", label: "Inventory", icon: "fa-boxes" },
+  { id: "more", label: "More", icon: "fa-th-large" },
+];
+const UNDER_MORE: Tab[] = ["promotions", "performance", "reviews", "shop", "settings"];
+
+// Old tab names from links, tours and bookmarks, mapped to where they live now.
+const ALIASES: Record<string, { tab: Tab; extra?: Record<string, string> }> = {
+  analytics: { tab: "performance" },
+  insights: { tab: "performance" },
+  referrals: { tab: "promotions", extra: { section: "referrals" } },
+  updates: { tab: "shop", extra: { section: "posts" } },
+  food_partners: { tab: "shop", extra: { section: "food" } },
+  order_guide: { tab: "shop", extra: { section: "guide" } },
+  storefront: { tab: "shop", extra: { section: "storefront" } },
+  documents: { tab: "orders", extra: { view: "agreements" } },
+  profile: { tab: "settings" },
+};
+const ALL_TABS: Tab[] = ["home", "orders", "calendar", "inventory", "more", ...UNDER_MORE];
+
+function resolveTab(raw: string | null): { tab: Tab; extra?: Record<string, string> } {
+  if (!raw) return { tab: "home" };
+  if ((ALL_TABS as string[]).includes(raw)) return { tab: raw as Tab };
+  return ALIASES[raw] || { tab: "home" };
+}
+
+function Dashboard({ vendorData, vendorId, isAdminOverride }: { user: User; vendorData: VendorData; vendorId: string; isAdminOverride?: boolean }) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const tabParam = searchParams.get("tab") as Tab | null;
   const adminOverride = searchParams.get("admin_override");
-  const [activeTab, setActiveTab] = useState<Tab>(tabParam || "home");
-  const [menuOpen, setMenuOpen] = useState(false);
-  
+  const resolved = resolveTab(searchParams.get("tab"));
+  const activeTab = resolved.tab;
+  const param = (k: string) => searchParams.get(k) || resolved.extra?.[k] || null;
+
   // Tour states
   const [showWelcomeTour, setShowWelcomeTour] = useState(false);
   const [showFirstItemTour, setShowFirstItemTour] = useState(false);
   const [showFirstOrderTour, setShowFirstOrderTour] = useState(false);
-  const [showAddGearModal, setShowAddGearModal] = useState(false);
 
   // Keep the push token fresh for vendors who turned alerts on (Settings › Account)
   useEffect(() => {
@@ -184,259 +214,154 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vendorId, isAdminOverride]);
 
-  // Check which tour should be shown (skip for admin override)
+  // Which tour to show (skipped in admin override)
   useEffect(() => {
     if (isAdminOverride) return;
-    
     const tutorials = vendorData?.tutorials_completed;
-    
-    // Priority 1: Welcome tour (if not completed)
     if (!tutorials?.welcome) {
       const timer = setTimeout(() => setShowWelcomeTour(true), 500);
       return () => clearTimeout(timer);
     }
-    
-    // Priority 2: First item tour (if welcome done, no gear, and not completed)
     if (tutorials?.welcome && !tutorials?.first_item && (vendorData?.gear_count || 0) === 0) {
       const timer = setTimeout(() => setShowFirstItemTour(true), 500);
       return () => clearTimeout(timer);
     }
-    
-    // Priority 3: First order tour (if first item done, has first order, and not completed)
-    // This would be triggered manually when first order comes in
-    
   }, [vendorData, isAdminOverride]);
 
-  function handleTabChange(tab: Tab) {
-    // Calendar is a full-screen route (too large to embed)
-    if (tab === "calendar") {
-      const params = new URLSearchParams();
-      if (adminOverride) params.set("v", adminOverride);
-      router.push(`/calendar${params.toString() ? "?" + params.toString() : ""}`);
-      return;
-    }
-    setActiveTab(tab);
+  function navigate(tab: string, extra?: Record<string, string>) {
+    const r = resolveTab(tab);
     const params = new URLSearchParams();
-    params.set("tab", tab);
+    params.set("tab", r.tab);
+    for (const [k, v] of Object.entries({ ...(r.extra || {}), ...(extra || {}) })) params.set(k, v);
     if (adminOverride) params.set("admin_override", adminOverride);
     router.push(`/store?${params.toString()}`, { scroll: false });
+    window.scrollTo({ top: 0 });
   }
-
-  function handleTourNavigate(tab: string) {
-    const tabMap: Record<string, Tab> = {
-      profile: "settings",
-      storefront: "storefront",
-      inventory: "inventory",
-      settings: "settings",
-    };
-    const targetTab = tabMap[tab] || "home";
-    setActiveTab(targetTab);
-    // Preserve admin_override parameter if present
-    const params = new URLSearchParams();
-    params.set("tab", targetTab);
-    if (adminOverride) params.set("admin_override", adminOverride);
-    router.push(`/store?${params.toString()}`, { scroll: false });
-  }
-  
-  function handleFirstItemTourComplete() {
-    setShowFirstItemTour(false);
-    // Navigate to inventory tab and trigger add modal
-    setActiveTab("inventory");
-    const params = new URLSearchParams();
-    params.set("tab", "inventory");
-    if (adminOverride) params.set("admin_override", adminOverride);
-    router.push(`/store?${params.toString()}`, { scroll: false });
-  }
-  
-  function handleRestartWelcomeTour() {
-    setShowWelcomeTour(true);
-  }
-
-  useEffect(() => {
-    if (tabParam && tabParam !== activeTab) setActiveTab(tabParam);
-  }, [tabParam]);
 
   async function logout() {
     await signOut(auth);
   }
 
-  // Compute today/tomorrow for calendar badge
-  const [pendingCount, setPendingCount] = useState(0);
-  const [todayCalendarCount, setTodayCalendarCount] = useState(0);
+  // Returning from a credit top-up payment
+  const { toast, show } = useToast();
+  useEffect(() => {
+    if (!vendorId || isAdminOverride) return;
+    handleTopUpReturn(vendorId).then(n => { if (n) show(`${n} credits added`); }).catch(() => show("Could not add the credits. Contact support.", "error"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId]);
+
+  // Badges: orders needing action, gear moving today, reviews to reply to
+  const [actionCount, setActionCount] = useState(0);
+  const [todayCount, setTodayCount] = useState(0);
+  const [unreplied, setUnreplied] = useState(0);
 
   useEffect(() => {
     if (!vendorId) return;
-    const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-
-    const ordersQuery = query(collection(db, "orders"), where("vendorId", "==", vendorId));
-    const unsub = onSnapshot(ordersQuery, (snap) => {
-      let todayCount = 0;
-      // Orders badge counts everything that needs the vendor's action, not only new orders
-      const pending = summarize(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order))).action;
-      snap.docs.forEach((d) => {
-        const o = d.data();
-        if (o.deleted) return;
-        if ((o.status === "confirmed" || o.status === "pending") &&
-            (o.bookingDates?.start === todayStr || o.bookingDates?.end === todayStr)) {
-          todayCount++;
-        }
-      });
-      setPendingCount(pending);
-      setTodayCalendarCount(todayCount);
+    const unsubOrders = onSnapshot(query(collection(db, "orders"), where("vendorId", "==", vendorId)), (snap) => {
+      const orders = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order)).filter(o => !o.deleted);
+      setActionCount(summarize(orders).action);
+      setTodayCount(orders.filter(o => {
+        const st = getStage(o);
+        return (st === "confirmed" && daysUntil(o.bookingDates?.start) === 0) || (st === "picked_up" && daysUntil(o.bookingDates?.end) === 0);
+      }).length);
     });
-    return () => unsub();
+    const unsubReviews = onSnapshot(query(collection(db, "reviews"), where("vendorId", "==", vendorId)), (snap) => {
+      setUnreplied(snap.docs.filter(d => !d.data().vendorReply).length);
+    }, () => {});
+    return () => { unsubOrders(); unsubReviews(); };
   }, [vendorId]);
 
-  const primaryTabs: { id: Tab; label: string; icon: string; badge?: number }[] = [
-    { id: "home", label: "Home", icon: "fa-home" },
-    { id: "calendar", label: "Calendar", icon: "fa-calendar-alt", badge: todayCalendarCount || undefined },
-    { id: "orders", label: "Orders", icon: "fa-shopping-bag", badge: pendingCount || undefined },
-    { id: "reviews", label: "Reviews", icon: "fa-star" },
-    { id: "insights", label: "Insights", icon: "fa-brain" },
-  ];
-
+  const badges: Partial<Record<Tab, number>> = { orders: actionCount, calendar: todayCount, more: unreplied };
   const shopUrl = vendorData.slug ? `/shop/${vendorData.slug}` : `/shop?v=${vendorId}`;
   const credits = vendorData.credits || 0;
-  const creditColor = credits > 10 ? "text-emerald-600 bg-emerald-50 border-emerald-100" : credits > 0 ? "text-amber-600 bg-amber-50 border-amber-100" : "text-red-600 bg-red-50 border-red-100";
+  const inMore = UNDER_MORE.includes(activeTab);
+  const highlighted: Tab = inMore ? "more" : activeTab;
 
   return (
-    <div className="min-h-screen pb-24" style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f8fafc", color: "#062c24" }}>
+    <div className="min-h-screen pb-24 bg-slate-50 text-slate-900" style={{ fontFamily: "'Inter', sans-serif" }}>
 
-      {/* Welcome Tour */}
-      <WelcomeTour
-        vendorId={vendorId}
-        isOpen={showWelcomeTour}
-        onClose={() => setShowWelcomeTour(false)}
-        onNavigateTab={handleTourNavigate}
-      />
-      
-      {/* First Item Tour */}
-      <FirstItemTour
-        vendorId={vendorId}
-        isOpen={showFirstItemTour}
-        onClose={() => setShowFirstItemTour(false)}
-        onOpenAddModal={handleFirstItemTourComplete}
-      />
-      
-      {/* First Order Tour */}
-      <FirstOrderTour
-        vendorId={vendorId}
-        isOpen={showFirstOrderTour}
-        onClose={() => setShowFirstOrderTour(false)}
-      />
+      <WelcomeTour vendorId={vendorId} isOpen={showWelcomeTour} onClose={() => setShowWelcomeTour(false)} onNavigateTab={(tab: string) => navigate(tab)} />
+      <FirstItemTour vendorId={vendorId} isOpen={showFirstItemTour} onClose={() => setShowFirstItemTour(false)} onOpenAddModal={() => { setShowFirstItemTour(false); navigate("inventory"); }} />
+      <FirstOrderTour vendorId={vendorId} isOpen={showFirstOrderTour} onClose={() => setShowFirstOrderTour(false)} />
 
-      {/* Menu overlay */}
-      {menuOpen && (
-        <div className="fixed inset-0 bg-black/40 z-[60]" onClick={() => setMenuOpen(false)}>
-          <div className="absolute top-0 right-0 w-72 max-w-[85vw] h-full bg-white shadow-2xl p-5 overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-sm font-black uppercase">More</h3>
-              <button onClick={() => setMenuOpen(false)} className="w-9 h-9 bg-slate-100 rounded-full flex items-center justify-center">
-                <i className="fas fa-times text-sm text-slate-400"></i>
-              </button>
-            </div>
-            <div className="space-y-1.5">
-              <MenuItem icon="fa-chart-line" label="Analytics" onClick={() => { handleTabChange("analytics"); setMenuOpen(false); }} />
-              <MenuItem icon="fa-boxes" label="Inventory" onClick={() => { handleTabChange("inventory"); setMenuOpen(false); }} />
-              <MenuItem icon="fa-bullhorn" label="Updates" onClick={() => { handleTabChange("updates"); setMenuOpen(false); }} />
-              <MenuItem icon="fa-file-contract" label="Documents" onClick={() => { handleTabChange("documents"); setMenuOpen(false); }} />
-              <MenuItem icon="fa-gift" label="Referrals" onClick={() => { handleTabChange("referrals"); setMenuOpen(false); }} />
-              <MenuItem icon="fa-utensils" label="Food Partners" onClick={() => { handleTabChange("food_partners"); setMenuOpen(false); }} />
-              <MenuItem icon="fa-magic" label="Order Guide" onClick={() => { handleTabChange("order_guide"); setMenuOpen(false); }} />
-              <MenuItem icon="fa-cog" label="Settings" onClick={() => { handleTabChange("settings"); setMenuOpen(false); }} />
-              <div className="border-t border-slate-100 my-3"></div>
-              <a href={shopUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 transition-colors">
-                <div className="w-9 h-9 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center">
-                  <i className="fas fa-external-link-alt text-xs"></i>
-                </div>
-                <span className="text-sm font-bold text-[#062c24]">View Live Shop</span>
-              </a>
-              <button onClick={() => { logout(); setMenuOpen(false); }} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-red-50 transition-colors">
-                <div className="w-9 h-9 bg-red-50 text-red-500 rounded-lg flex items-center justify-center">
-                  <i className="fas fa-power-off text-xs"></i>
-                </div>
-                <span className="text-sm font-bold text-red-500">Logout</span>
-              </button>
-            </div>
+      {/* Header */}
+      <header className="bg-white/95 backdrop-blur border-b border-slate-200 sticky top-0 z-40">
+        <div className="max-w-xl lg:max-w-5xl mx-auto px-4 py-2.5 flex items-center gap-3">
+          {vendorData.image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={vendorData.image} alt="" className="w-10 h-10 rounded-xl object-cover shrink-0 border border-slate-200" />
+          ) : (
+            <div className="w-10 h-10 bg-[#062c24] text-white rounded-xl flex items-center justify-center font-bold shrink-0" aria-hidden="true">{vendorData.name?.charAt(0) || "V"}</div>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] font-bold text-[#062c24] truncate">{vendorData.name}</p>
+            {vendorData.status === "pending" && <p className="text-xs font-semibold text-amber-800">Account waiting for approval</p>}
           </div>
-        </div>
-      )}
-
-      {/* Sticky Header - Compact */}
-      <header className="bg-white/95 backdrop-blur-xl border border-slate-100 shadow-sm sticky top-2 z-40 mx-3 mt-3 rounded-[1.5rem] p-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            {vendorData.image ? (
-              <img src={vendorData.image} alt={vendorData.name} className="w-10 h-10 rounded-xl object-cover shrink-0 border border-slate-100" />
-            ) : (
-              <div className="w-10 h-10 bg-[#062c24] text-white rounded-xl flex items-center justify-center font-black text-sm shrink-0">
-                {vendorData.name?.charAt(0) || "V"}
-              </div>
-            )}
-            <div className="min-w-0">
-              <h1 className="text-xs font-black text-[#062c24] uppercase leading-none truncate">{vendorData.name}</h1>
-              <div className="flex items-center gap-1.5 mt-1">
-                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border ${creditColor}`}>
-                  <i className="fas fa-coins mr-0.5"></i>{credits}
-                </span>
-                {vendorData.status === "pending" && (
-                  <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100">Pending</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <button onClick={() => setMenuOpen(true)} className="w-10 h-10 flex items-center justify-center bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-all shrink-0 relative">
-            <i className="fas fa-bars text-sm"></i>
+          <button type="button" onClick={() => navigate("settings", { group: "account", section: "credits" })}
+            className={`min-h-10 px-3 rounded-xl text-[13px] font-bold flex items-center gap-1.5 border ${credits > 10 ? "bg-emerald-50 border-emerald-200 text-emerald-900" : credits > 0 ? "bg-amber-100 border-amber-300 text-amber-900" : "bg-red-50 border-red-200 text-red-900"}`}
+            aria-label={`${credits} credits. Open credits`}>
+            <i className="fas fa-coins" aria-hidden="true"></i>{credits}
           </button>
+          <a href={shopUrl} target="_blank" rel="noreferrer" aria-label="View your live shop"
+            className="w-10 h-10 rounded-xl border border-slate-200 bg-white text-slate-700 flex items-center justify-center hover:bg-slate-100">
+            <i className="fas fa-external-link-alt text-sm" aria-hidden="true"></i>
+          </a>
         </div>
       </header>
 
-      {/* Bottom Tab Bar - Mobile-first Primary Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-xl border-t border-slate-100 shadow-[0_-4px_20px_rgba(0,0,0,0.04)]" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-        <div className="max-w-xl mx-auto flex items-center justify-around px-1 py-1.5">
-          {primaryTabs.map(t => {
-            const isActive = activeTab === t.id;
+      {/* Content */}
+      <main className="max-w-xl lg:max-w-5xl mx-auto px-4 pt-4">
+        {inMore && (
+          <button type="button" onClick={() => navigate("more")} className="min-h-10 -ml-1 mb-1 px-1 flex items-center gap-2 text-[13px] font-semibold text-slate-700 hover:text-[#062c24]">
+            <i className="fas fa-chevron-left text-xs" aria-hidden="true"></i>More
+          </button>
+        )}
+        {activeTab === "home" && <HomeTab vendorId={vendorId} vendorData={vendorData} onNavigate={navigate} />}
+        {activeTab === "orders" && <OrdersTab key={param("order") || "orders"} vendorId={vendorId} vendorName={vendorData.name} initialOrderId={param("order")} initialView={param("view") === "agreements" ? "agreements" : undefined} onOpenCalendar={(orderId: string) => navigate("calendar", { order: orderId })} />}
+        {activeTab === "calendar" && (
+          <div className="space-y-4">
+            <PageHeader title="Calendar" subtitle="Bookings and days off. Tap a date to see what goes out." />
+            <CalendarView key={param("order") || "cal"} vendorId={vendorId} orderId={param("order")} />
+          </div>
+        )}
+        {activeTab === "inventory" && <InventoryTab vendorId={vendorId} onOpenPromotions={() => navigate("promotions")} />}
+        {activeTab === "more" && <MoreTab shopUrl={shopUrl} credits={credits} unrepliedReviews={unreplied} onNavigate={navigate} onRestartTour={isAdminOverride ? undefined : () => setShowWelcomeTour(true)} onLogout={logout} />}
+        {activeTab === "promotions" && <PromotionsTab vendorId={vendorId} vendorName={vendorData.name} initialSection={param("section")} />}
+        {activeTab === "performance" && <PerformanceTab vendorId={vendorId} />}
+        {activeTab === "reviews" && <ReviewsTab vendorId={vendorId} />}
+        {activeTab === "shop" && <ShopPageTab vendorId={vendorId} vendorData={vendorData} initialSection={param("section")} />}
+        {activeTab === "settings" && (
+          <SettingsTab key={`${param("group")}-${param("section")}`} vendorId={vendorId} vendorData={vendorData}
+            initialGroup={param("group") === "account" ? "account" : "rules"} initialSection={param("section")}
+            onRestartTour={() => setShowWelcomeTour(true)} onNavigate={(tab: string) => navigate(tab)} />
+        )}
+      </main>
+
+      {/* Bottom bar */}
+      <nav aria-label="Dashboard" className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+        <div className="max-w-xl mx-auto grid grid-cols-5 px-1 py-1.5">
+          {PRIMARY.map(t => {
+            const on = highlighted === t.id;
+            const badge = badges[t.id];
             return (
-              <button key={t.id} onClick={() => handleTabChange(t.id)}
-                className={`relative flex flex-col items-center justify-center gap-0.5 min-w-[56px] min-h-[52px] px-2 py-1.5 rounded-xl transition-all ${
-                  isActive ? "text-[#062c24]" : "text-slate-400 hover:text-slate-600"
-                }`}>
-                <div className="relative">
-                  <i className={`fas ${t.icon} text-base`}></i>
-                  {t.badge !== undefined && (
-                    <span className="absolute -top-1.5 -right-2 bg-red-500 text-white text-[8px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center shadow-sm">
-                      {t.badge > 9 ? "9+" : t.badge}
+              <button key={t.id} type="button" onClick={() => navigate(t.id)} aria-current={on ? "page" : undefined}
+                className={`relative min-h-[54px] flex flex-col items-center justify-center gap-1 rounded-xl ${on ? "text-[#062c24]" : "text-slate-600 hover:text-slate-900"}`}>
+                <span className="relative">
+                  <i className={`fas ${t.icon} text-lg`} aria-hidden="true"></i>
+                  {!!badge && (
+                    <span className="absolute -top-1.5 -right-3 min-w-[18px] h-[18px] px-1 rounded-full bg-red-700 text-white text-[11px] font-bold flex items-center justify-center" aria-label={`${badge} waiting`}>
+                      {badge > 9 ? "9+" : badge}
                     </span>
                   )}
-                </div>
-                <span className={`text-[9px] font-black uppercase leading-none ${isActive ? "opacity-100" : "opacity-70"}`}>{t.label}</span>
-                {isActive && <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-[#062c24] rounded-full"></span>}
+                </span>
+                <span className={`text-xs ${on ? "font-bold" : "font-semibold"}`}>{t.label}</span>
+                {on && <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] bg-[#062c24] rounded-full" aria-hidden="true"></span>}
               </button>
             );
           })}
         </div>
       </nav>
-
-      {/* Tab Content */}
-      <div className="max-w-7xl mx-auto px-3 mt-4">
-        {activeTab === "home" && <HomeTab vendorId={vendorId} vendorData={vendorData} onNavigate={(tab: string) => handleTabChange(tab as Tab)} />}
-        {activeTab === "analytics" && <AnalyticsTab vendorId={vendorId} vendorData={vendorData} />}
-        {activeTab === "orders" && <OrdersTab vendorId={vendorId} vendorName={vendorData.name} />}
-        {activeTab === "reviews" && <ReviewsTab vendorId={vendorId} />}
-        {activeTab === "insights" && <InsightsTab vendorId={vendorId} />}
-        {activeTab === "updates" && <UpdatesTab vendorId={vendorId} vendorName={vendorData.name} vendorSlug={vendorData.slug} />}
-        {activeTab === "documents" && <DocumentsTab vendorId={vendorId} vendorData={vendorData} />}
-        {activeTab === "inventory" && <InventoryTab vendorId={vendorId} />}
-        {activeTab === "referrals" && <ReferralsTab vendorId={vendorId} vendorName={vendorData.name} />}
-        {(activeTab === "settings" || activeTab === "storefront") && (
-          <SettingsTab key={activeTab} vendorId={vendorId} vendorData={vendorData} initialGroup={activeTab === "storefront" ? "storefront" : "rules"}
-            onRestartTour={handleRestartWelcomeTour} onNavigate={(tab: string) => handleTabChange(tab as Tab)} />
-        )}
-        {activeTab === "food_partners" && <FoodPartnersTab vendorId={vendorId} />}
-        {activeTab === "order_guide" && <OrderGuideTab vendorId={vendorId} vendorSlug={vendorData.slug} />}
-      </div>
+      <Toast toast={toast} />
     </div>
   );
 }
@@ -498,6 +423,15 @@ function StorePageContent() {
     });
     return () => unsub();
   }, [adminOverrideId]);
+
+  // Keep vendor data live so the header, credits and Home reflect changes made anywhere
+  useEffect(() => {
+    if (!vendorId) return;
+    const unsub = onSnapshot(doc(db, "vendors", vendorId), snap => {
+      if (snap.exists()) setVendorData(snap.data() as VendorData);
+    }, () => {});
+    return () => unsub();
+  }, [vendorId]);
 
   if (loading) return (
     <div className="fixed inset-0 bg-[#062c24] flex flex-col items-center justify-center gap-4">
@@ -566,13 +500,3 @@ export default function StorePage() {
 // ═══════════════════════════════════════════════════════════
 // MENU ITEM (drawer)
 // ═══════════════════════════════════════════════════════════
-function MenuItem({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 transition-colors active:scale-95">
-      <div className="w-9 h-9 bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center shrink-0">
-        <i className={`fas ${icon} text-xs`}></i>
-      </div>
-      <span className="text-sm font-bold text-[#062c24]">{label}</span>
-    </button>
-  );
-}
