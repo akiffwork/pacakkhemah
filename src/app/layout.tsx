@@ -68,7 +68,7 @@ export const metadata: Metadata = {
 };
 
 const FA_URL =
-  "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css";
+  "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css";
 
 export default function RootLayout({
   children,
