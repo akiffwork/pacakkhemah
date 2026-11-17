@@ -71,7 +71,17 @@ service firebase.storage {
                    && request.resource.contentType.matches('image/.*');
     }
 
-    // 8. ARTICLE COVER IMAGES (public read, authenticated write)
+    // 8. CREDIT TOP-UP RECEIPTS (private: the vendor and the admin)
+    match /receipts/{vendorId}/{fileName} {
+      allow read: if isAdmin() || isVendorOwner(vendorId);
+      allow create: if isVendorOwner(vendorId)
+                   && request.resource.size < 5 * 1024 * 1024
+                   && (request.resource.contentType.matches('image/.*')
+                       || request.resource.contentType == 'application/pdf');
+      allow update, delete: if isAdmin();
+    }
+
+    // 9. ARTICLE COVER IMAGES (public read, authenticated write)
     match /articles/{allPaths=**} {
       allow read: if true;
       allow write: if request.auth != null

@@ -20,7 +20,6 @@ import PerformanceTab from "@/components/PerformanceTab";
 import ShopPageTab from "@/components/ShopPageTab";
 import CalendarView from "@/components/calendar/CalendarView";
 import { PageHeader, Toast, useToast } from "@/components/ui/kit";
-import { handleTopUpReturn } from "@/lib/credits";
 import WelcomeTour from "@/components/vendor/WelcomeTour";
 import FirstItemTour from "@/components/vendor/FirstItemTour";
 import FirstOrderTour from "@/components/vendor/FirstOrderTour";
@@ -242,13 +241,7 @@ function Dashboard({ vendorData, vendorId, isAdminOverride }: { user: User; vend
     await signOut(auth);
   }
 
-  // Returning from a credit top-up payment
-  const { toast, show } = useToast();
-  useEffect(() => {
-    if (!vendorId || isAdminOverride) return;
-    handleTopUpReturn(vendorId).then(n => { if (n) show(`${n} credits added`); }).catch(() => show("Could not add the credits. Contact support.", "error"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendorId]);
+  const { toast } = useToast();
 
   // Badges: orders needing action, gear moving today, reviews to reply to
   const [actionCount, setActionCount] = useState(0);

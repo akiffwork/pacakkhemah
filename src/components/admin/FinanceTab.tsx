@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
+import TopUpRequests from "@/components/admin/TopUpRequests";
 import { collection, getDocs, query, orderBy, limit, where, addDoc, updateDoc, doc, serverTimestamp, increment } from "firebase/firestore";
 
 type Transaction = {
@@ -139,6 +140,8 @@ export default function FinanceTab() {
           </button>
         </div>
       </div>
+
+      <TopUpRequests onChanged={loadData} notify={showToast} />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { type VendorSettings, type TaxProfile, invoiceSummary, taxProfileComplete } from "@/lib/vendorSettings";
-import { type CreditPackage, DEFAULT_PACKAGES, loadPaymentConfig, startTopUp } from "@/lib/credits";
+import { type CreditPackage, loadPaymentConfig, paymentDetails } from "@/lib/credits";
+import { TopUpRequests, TopUpSheet } from "./TopUp";
 import { enablePush, disablePush, pushPermission, pushSupported } from "@/lib/pushRegistration";
-import { Card, H2, Field, Section, SwitchRow, inputCls, hintCls, smallBtn, primarySmallBtn } from "./ui";
+import { Card, H2, Field, Section, SwitchRow, inputCls, hintCls, smallBtn } from "./ui";
 
 type Props = {
   vendorId: string;
@@ -22,14 +23,14 @@ type Props = {
 const SUPPORT_WA = "https://wa.me/601136904336?text=Hi%20Pacak%20Khemah,%20I%20need%20help%20with%20my%20vendor%20account";
 
 export default function AccountGroup({ vendorId, v, set, openSection, setOpenSection, toast, onRestartTour }: Props) {
-  const [packages, setPackages] = useState<CreditPackage[]>(DEFAULT_PACKAGES);
   const [config, setConfig] = useState<Awaited<ReturnType<typeof loadPaymentConfig>>>(null);
-  const [paying, setPaying] = useState<number | null>(null);
+  const [buying, setBuying] = useState<CreditPackage | null>(null);
+  const pay = paymentDetails(config);
   const refCode = (v as { myReferralCode?: string }).myReferralCode || "";
   const refLink = refCode ? `https://pacakkhemah.com/register-vendor?ref=${refCode}` : "";
 
   useEffect(() => {
-    loadPaymentConfig().then(c => { setConfig(c); if (c?.packages?.length) setPackages(c.packages); });
+    loadPaymentConfig().then(setConfig);
   }, []);
 
   // Older vendors may not have an invite code yet
@@ -38,12 +39,6 @@ export default function AccountGroup({ vendorId, v, set, openSection, setOpenSec
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refCode, vendorId]);
 
-  async function topUp(p: CreditPackage) {
-    if (!config) { toast("Payments are not available right now. Please try again later.", "error"); return; }
-    setPaying(p.credits);
-    try { await startTopUp(config, p, v.name || "Vendor"); }
-    catch { toast("Could not open the payment page", "error"); setPaying(null); }
-  }
   const toggle = (s: string) => setOpenSection(openSection === s ? null : s);
   const [resetSent, setResetSent] = useState(false);
   const [pushState, setPushState] = useState<"checking" | "unsupported" | "blocked" | "ready">("checking");
@@ -120,15 +115,20 @@ export default function AccountGroup({ vendorId, v, set, openSection, setOpenSec
         </div>
         <p className={hintCls}>One credit is used each time a new customer sends you a booking request. You get one back when a completed order receives a review.</p>
         <div className="grid grid-cols-3 gap-2">
-          {packages.map(p => (
-            <button key={p.credits} type="button" disabled={!!paying} onClick={() => topUp(p)}
-              className="min-h-[72px] rounded-xl border border-slate-300 bg-white hover:border-[#062c24] flex flex-col items-center justify-center gap-0.5 disabled:opacity-50">
+          {pay.packages.map(p => (
+            <button key={p.credits} type="button" onClick={() => setBuying(p)}
+              className="min-h-[72px] rounded-xl border border-slate-300 bg-white hover:border-[#062c24] flex flex-col items-center justify-center gap-0.5">
               <span className="text-lg font-bold text-[#062c24]">{p.credits}</span>
-              <span className="text-xs text-slate-600">{paying === p.credits ? "Opening payment" : `RM ${p.price}`}</span>
+              <span className="text-xs text-slate-600">RM {p.price}</span>
             </button>
           ))}
         </div>
-        <p className={hintCls}>Paid securely through ToyyibPay (FPX online banking).</p>
+        <p className={hintCls}>Pay by DuitNow QR from any banking app, then upload your receipt. Credits are added once we check the payment.</p>
+        <TopUpRequests vendorId={vendorId} adminWhatsApp={pay.adminWhatsApp} />
+        {buying && (
+          <TopUpSheet pkg={buying} details={pay} vendorId={vendorId} vendorName={v.name || "Vendor"}
+            onClose={() => setBuying(null)} toast={toast} />
+        )}
       </Card>
 
       <Card>

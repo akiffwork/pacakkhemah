@@ -28,6 +28,7 @@ const byPath: Record<string, unknown[]> = {
   orders, agreements, reviews: [{ id: 'rv1', vendorId: 'v1', rating: 5, customerName: 'Daniel', vendorReply: '' }],
   'vendors/v1/discounts': [], 'vendors/v1/referrals': referrals, gear: [], analytics: [], campsites: [],
   'vendors/v1/foodPartners': [], 'vendors/v1/posts': [], articles: [],
+  topups: [{ id: 't1', vendorId: 'v1', credits: 10, price: 10, reference: 'PK-OLD111', status: 'pending', createdAt: ts(ago(1)) }],
 };
 const snapFor = (path: string) => {
   if (path === 'vendors/v1') return { exists: () => true, data: () => vendor, metadata: { hasPendingWrites: false }, id: 'v1' };
@@ -45,11 +46,11 @@ jest.mock('firebase/firestore', () => ({
   updateDoc: jest.fn(() => Promise.resolve()), addDoc: jest.fn(() => Promise.resolve()), setDoc: jest.fn(() => Promise.resolve()),
   deleteDoc: jest.fn(() => Promise.resolve()), serverTimestamp: jest.fn(), arrayUnion: jest.fn(), increment: jest.fn(),
   writeBatch: jest.fn(() => ({ update: jest.fn(), commit: jest.fn(() => Promise.resolve()) })),
+  runTransaction: jest.fn(),
 }));
-jest.mock('firebase/storage', () => ({ getStorage: jest.fn(), ref: jest.fn(), uploadBytes: jest.fn(), getDownloadURL: jest.fn() }));
+jest.mock('firebase/storage', () => ({ getStorage: jest.fn(), ref: jest.fn((_s, p: string) => ({ path: p })), uploadBytes: jest.fn(() => Promise.resolve()), getDownloadURL: jest.fn(() => Promise.resolve('https://files.example/receipt.jpg')) }));
 jest.mock('firebase/auth', () => ({ sendPasswordResetEmail: jest.fn(), getAuth: () => ({ currentUser: null }) }));
 jest.mock('@/lib/pushRegistration', () => ({ enablePush: jest.fn(), disablePush: jest.fn(), pushPermission: () => 'default', pushSupported: () => Promise.resolve(true) }));
-jest.mock('@/lib/credits', () => ({ DEFAULT_PACKAGES: [{ credits: 10, price: 10 }, { credits: 50, price: 45 }, { credits: 100, price: 80 }], loadPaymentConfig: () => Promise.resolve(null), startTopUp: jest.fn() }));
 jest.mock('@/hooks/useVendorAutosave', () => ({ useVendorAutosave: () => ({ state: 'idle', save: jest.fn(), flush: jest.fn(), retry: jest.fn() }) }));
 
 import HomeTab from '@/components/HomeTab';
@@ -131,6 +132,46 @@ describe('dashboard screens', () => {
     expect(screen.getByText('VEN-ABC123')).toBeInTheDocument();
     expect(screen.getByText('RM 45')).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Storefront' })).not.toBeInTheDocument();
+    // Earlier request shows its status
+    expect(screen.getByText('Waiting for approval')).toBeInTheDocument();
+    expect(screen.getByText(/Reference PK-OLD111/)).toBeInTheDocument();
+  });
+
+  test('Settings › Account: pay by QR, upload receipt, send to admin on WhatsApp', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('@/lib/firebase').auth.currentUser = { uid: 'u1' };
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('firebase/firestore');
+    fs.addDoc.mockClear();
+    fs.addDoc.mockImplementationOnce(() => Promise.resolve({ id: 'new1' }));
+    render(<SettingsTab vendorId="v1" vendorData={vendor} initialGroup="account" />);
+    fireEvent.click(screen.getByText('RM 45'));
+    expect(screen.getByRole('dialog', { name: 'Buy 50 credits' })).toBeInTheDocument();
+    expect(screen.getByAltText(/DuitNow QR for Atakasen Enterprise/)).toHaveAttribute('src', '/payment/maybank-qr.png');
+    const ref = screen.getByText(/^PK-[A-Z2-9]{6}$/).textContent!;
+    const send = screen.getByRole('button', { name: 'I have paid, send for approval' });
+    expect(send).toBeDisabled();
+
+    const input = document.querySelector('input[type=file]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(['x'.repeat(10)], 'big.exe', { type: 'application/x-msdownload' })] } });
+    expect(screen.getByText(/photo, screenshot or PDF/)).toBeInTheDocument();
+    fireEvent.change(input, { target: { files: [new File(['img'], 'receipt.jpg', { type: 'image/jpeg' })] } });
+    expect(send).toBeEnabled();
+    dump('topup-sheet', screen.getByRole('dialog'));
+    fireEvent.click(send);
+
+    const wa = await screen.findByRole('link', { name: /Send on WhatsApp/ });
+    dump('topup-sent', screen.getByRole('dialog'));
+    const text = decodeURIComponent(wa.getAttribute('href')!.split('?text=')[1]);
+    expect(wa.getAttribute('href')).toMatch(/^https:\/\/wa\.me\/601136904336\?text=/);
+    expect(text).toContain('Package: 50 credits (RM 45)');
+    expect(text).toContain(`Reference: ${ref}`);
+    expect(text).toContain('Receipt: https://files.example/receipt.jpg');
+    expect(fs.addDoc).toHaveBeenCalledWith({ path: 'topups' }, expect.objectContaining({
+      vendorId: 'v1', uid: 'u1', credits: 50, price: 45, reference: ref, status: 'pending', receiptUrl: 'https://files.example/receipt.jpg',
+    }));
+    // Never touches the vendor's credits
+    expect(fs.updateDoc).not.toHaveBeenCalledWith({ path: 'vendors/v1' }, expect.objectContaining({ credits: expect.anything() }));
   });
 
   test('older screens render inside the new shell (Reviews, Shop page, Customers, Calendar)', async () => {

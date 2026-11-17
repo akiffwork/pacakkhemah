@@ -17,11 +17,33 @@ service cloud.firestore {
               get(/databases/$(database)/documents/vendors/$(vendorId)).data.owner_uid == request.auth.uid;
     }
 
+    // Fields only the admin or Cloud Functions may change: credits are paid
+    // for, referral rewards are granted on approval, and status is approval.
+    function startingCredits() {
+      let cfg = /databases/$(database)/documents/settings/payment_config;
+      return exists(cfg) ? get(cfg).data.get('startingCredits', 10) : 10;
+    }
+    function touchesProtectedVendorFields() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'credits', 'status',
+        'referral_total_credits', 'referral_total_referred',
+        'referralRewarded', 'referralRewardedAt'
+      ]);
+    }
+
     // --- 1. VENDORS COLLECTION ---
     match /vendors/{vendorId} {
       allow read: if true;
-      allow create: if isCreatingOwn();
-      allow update: if isAdmin() || isOwner();
+      // A new shop starts pending, with no more than the free starting credits
+      allow create: if isAdmin() || (isCreatingOwn() &&
+        request.resource.data.get('status', 'pending') == 'pending' &&
+        request.resource.data.get('credits', 0) is number &&
+        request.resource.data.get('credits', 0) <= startingCredits() &&
+        request.resource.data.get('referralRewarded', false) == false &&
+        !request.resource.data.keys().hasAny([
+          'referral_total_credits', 'referral_total_referred', 'referralRewardedAt'
+        ]));
+      allow update: if isAdmin() || (isOwner() && !touchesProtectedVendorFields());
       allow delete: if isAdmin();
 
       match /discounts/{discountId} {
@@ -61,6 +83,25 @@ service cloud.firestore {
         allow read: if true;
         allow write: if isVendorOwner(vendorId);
       }
+    }
+
+    // --- 1b. CREDIT TOP-UPS (bank QR, approved by the admin) ---
+    // A vendor may only file a pending request for their own shop. Only the
+    // admin approves or rejects; approval is what adds credits.
+    match /topups/{topupId} {
+      allow read: if isAdmin() || isVendorOwner(resource.data.vendorId);
+      allow create: if isAdmin() || (
+        isVendorOwner(request.resource.data.vendorId) &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.credits is int && request.resource.data.credits > 0 &&
+        request.resource.data.price is number && request.resource.data.price > 0 &&
+        request.resource.data.reference is string && request.resource.data.reference.size() <= 20 &&
+        request.resource.data.keys().hasOnly([
+          'vendorId', 'vendorName', 'uid', 'credits', 'price', 'reference',
+          'status', 'receiptUrl', 'receiptPath', 'createdAt'
+        ]));
+      allow update, delete: if isAdmin();
     }
 
     // --- 2. GEAR COLLECTION ---
