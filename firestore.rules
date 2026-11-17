@@ -85,10 +85,23 @@ service cloud.firestore {
       }
     }
 
-    // --- 1b. CREDIT TOP-UPS (written only by Cloud Functions) ---
+    // --- 1b. CREDIT TOP-UPS (bank QR, approved by the admin) ---
+    // A vendor may only file a pending request for their own shop. Only the
+    // admin approves or rejects; approval is what adds credits.
     match /topups/{topupId} {
       allow read: if isAdmin() || isVendorOwner(resource.data.vendorId);
-      allow write: if false;
+      allow create: if isAdmin() || (
+        isVendorOwner(request.resource.data.vendorId) &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.credits is int && request.resource.data.credits > 0 &&
+        request.resource.data.price is number && request.resource.data.price > 0 &&
+        request.resource.data.reference is string && request.resource.data.reference.size() <= 20 &&
+        request.resource.data.keys().hasOnly([
+          'vendorId', 'vendorName', 'uid', 'credits', 'price', 'reference',
+          'status', 'receiptUrl', 'receiptPath', 'createdAt'
+        ]));
+      allow update, delete: if isAdmin();
     }
 
     // --- 2. GEAR COLLECTION ---

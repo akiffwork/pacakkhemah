@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { db, auth } from "@/lib/firebase";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from "firebase/auth";
 import DashboardTab from "@/components/admin/DashboardTab";
 import VendorsTab from "@/components/admin/VendorsTab";
@@ -94,8 +94,15 @@ function AdminShell({ user, allVendors }: { user: User; allVendors: any[] }) {
     return () => unsub();
   }, []);
 
+  // Credit top-ups waiting for approval
+  const [pendingTopUps, setPendingTopUps] = useState(0);
+  useEffect(() => {
+    const unsub = onSnapshot(query(collection(db, "topups"), where("status", "==", "pending")), snap => setPendingTopUps(snap.size), () => setPendingTopUps(0));
+    return () => unsub();
+  }, []);
+
   const pendingVendors = allVendors.filter(v => v.status === "pending").length;
-  const totalAlerts = pendingVendors + orderCounts.pending;
+  const totalAlerts = pendingVendors + orderCounts.pending + pendingTopUps;
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50" style={{ fontFamily: "'Inter', sans-serif" }}>
@@ -140,6 +147,11 @@ function AdminShell({ user, allVendors }: { user: User; allVendors: any[] }) {
                         {item.id === "vendors" && pendingVendors > 0 && (
                           <span className="bg-amber-400 text-[#062c24] text-[8px] font-black px-1.5 py-0.5 rounded-full text-center min-w-[20px]">
                             {pendingVendors}
+                          </span>
+                        )}
+                        {item.id === "finance" && pendingTopUps > 0 && (
+                          <span className="bg-amber-400 text-[#062c24] text-[8px] font-black px-1.5 py-0.5 rounded-full text-center min-w-[20px]">
+                            {pendingTopUps}
                           </span>
                         )}
                         {item.id === "orders" && orderCounts.pending > 0 && (

@@ -20,7 +20,6 @@ import PerformanceTab from "@/components/PerformanceTab";
 import ShopPageTab from "@/components/ShopPageTab";
 import CalendarView from "@/components/calendar/CalendarView";
 import { PageHeader, Toast, useToast } from "@/components/ui/kit";
-import { handleTopUpReturn } from "@/lib/credits";
 import WelcomeTour from "@/components/vendor/WelcomeTour";
 import FirstItemTour from "@/components/vendor/FirstItemTour";
 import FirstOrderTour from "@/components/vendor/FirstOrderTour";
@@ -242,20 +241,7 @@ function Dashboard({ vendorData, vendorId, isAdminOverride }: { user: User; vend
     await signOut(auth);
   }
 
-  // Returning from a credit top-up payment
-  const { toast, show } = useToast();
-  useEffect(() => {
-    if (!vendorId || isAdminOverride) return;
-    handleTopUpReturn()
-      .then(r => {
-        if (!r) return;
-        if (r.status === "paid") show(`${r.credits} credits added`);
-        else if (r.status === "pending") show("Payment received. Your credits will show here once ToyyibPay confirms it.");
-        else show("Payment was not completed. No credits were added.", "error");
-      })
-      .catch(() => show("We could not check your payment yet. If you paid, your credits will show here shortly.", "error"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendorId]);
+  const { toast } = useToast();
 
   // Badges: orders needing action, gear moving today, reviews to reply to
   const [actionCount, setActionCount] = useState(0);

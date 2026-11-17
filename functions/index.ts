@@ -10,8 +10,6 @@ initializeApp();
 
 const db = getFirestore();
 
-// Credit top-ups (ToyyibPay), verified on the server
-export { createTopUpBill, confirmTopUp, toyyibpayCallback } from "./topup";
 // Customer lookups (my bookings, review links); orders can't be listed from the browser
 export { lookupBookingsByPhone, lookupOrderByReviewToken } from "./lookups";
 
