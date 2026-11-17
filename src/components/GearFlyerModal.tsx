@@ -118,7 +118,7 @@ export default function GearFlyerModal({ vendorId, onClose }: Props) {
           getDocs(query(collection(db, "gear"), where("vendorId", "==", vendorId))),
         ]);
         if (vSnap.exists()) setVendor(vSnap.data() as VendorInfo);
-        const gear = gSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted);
+        const gear = gSnap.docs.map(d => ({ id: d.id, ...d.data() } as GearItem)).filter(g => !g.deleted && !(g as { paused?: boolean }).paused);
         setAllGear(gear);
         setSelectedIds(new Set(gear.map(g => g.id)));
       } catch (e) { console.error(e); }
