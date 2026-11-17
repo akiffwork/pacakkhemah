@@ -235,7 +235,7 @@ export default function DirectoryPage() {
   const [locationSearch, setLocationSearch] = useState("");
   const [showLocDropdown, setShowLocDropdown] = useState(false);
   const [customLocation, setCustomLocation] = useState("");
-  const [socialLinks, setSocialLinks] = useState<{ instagram?: string; threads?: string; whatsapp?: string }>({});
+  const [socialLinks, setSocialLinks] = useState<{ instagram?: string; tiktok?: string; facebook?: string; threads?: string; whatsapp?: string }>({});
   const [testimonials, setTestimonials] = useState<Testimonial[]>(DEFAULT_TESTIMONIALS);
   const [reviews, setReviews] = useState<Review[]>([]);
 
@@ -970,15 +970,18 @@ export default function DirectoryPage() {
         </div>
         
         <div className="flex justify-center gap-3 mb-4">
-          {socialLinks.instagram && (
-            <a href={socialLinks.instagram} target="_blank" rel="noreferrer" className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 hover:text-pink-500 hover:bg-pink-50 transition-colors"><i className="fab fa-instagram text-sm"></i></a>
-          )}
-          {socialLinks.threads && (
-            <a href={socialLinks.threads} target="_blank" rel="noreferrer" className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 hover:text-black hover:bg-slate-200 transition-colors"><i className="fab fa-threads text-sm"></i></a>
-          )}
-          {socialLinks.whatsapp && (
-            <a href={socialLinks.whatsapp} target="_blank" rel="noreferrer" className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 transition-colors"><i className="fab fa-whatsapp text-sm"></i></a>
-          )}
+          {([
+            ["instagram", "fa-instagram", "Instagram", "hover:text-pink-600 hover:bg-pink-50"],
+            ["tiktok", "fa-tiktok", "TikTok", "hover:text-black hover:bg-slate-200"],
+            ["facebook", "fa-facebook-f", "Facebook", "hover:text-blue-700 hover:bg-blue-50"],
+            ["threads", "fa-threads", "Threads", "hover:text-black hover:bg-slate-200"],
+            ["whatsapp", "fa-whatsapp", "WhatsApp", "hover:text-emerald-700 hover:bg-emerald-50"],
+          ] as const).map(([key, icon, label, hover]) => socialLinks[key]?.trim() ? (
+            <a key={key} href={socialLinks[key]!.trim()} target="_blank" rel="noreferrer" aria-label={`Pacak Khemah on ${label}`}
+              className={`w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-600 transition-colors ${hover}`}>
+              <i className={`fab ${icon}`} aria-hidden="true"></i>
+            </a>
+          ) : null)}
         </div>
         
         <p className="text-[8px] text-slate-300 uppercase">© 2026 Pacak Khemah. All rights reserved.</p>

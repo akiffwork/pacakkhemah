@@ -38,6 +38,7 @@ const docs: Record<string, Record<string, unknown>> = {
   'settings/referral_config': { rewardCredits: 5, enabled: true },
   'settings/site': { tagline: 'Pacak. Rehat. Ulang.', maintenanceMode: false },
   'private/admins': { emails: ['helper@gmail.com'] },
+  'settings/social_links': { instagram: 'https://instagram.com/pacakkhemah', tiktok: 'https://tiktok.com/pacakkhemah.com', facebook: '', threads: 'https://threads.com/@pacakkhemah', whatsapp: 'https://wa.me/601136904336' },
 };
 
 const snapFor = (path: string) => {
@@ -207,5 +208,13 @@ describe('admin panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete all transactions' }));
     const d = screen.getByRole('dialog', { name: 'Delete all transactions?' });
     expect(within(d).getByRole('button', { name: 'Delete all transactions' })).toBeDisabled(); // type DELETE first
+  });
+
+  test('Settings: social links warn when a TikTok link has no @', async () => {
+    render(<AdminSettingsTab initialSection="social" />);
+    await flush();
+    expect(screen.getByText(/TikTok profile links need an @/)).toBeInTheDocument();
+    expect(screen.queryByText(/Threads profile links need an @/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Use a wa.me/)).not.toBeInTheDocument();
   });
 });

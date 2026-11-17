@@ -33,8 +33,20 @@ const SOCIAL_FIELDS: { key: keyof Social; label: string; placeholder: string }[]
   { key: "tiktok", label: "TikTok", placeholder: "https://tiktok.com/@yourpage" },
   { key: "facebook", label: "Facebook", placeholder: "https://facebook.com/yourpage" },
   { key: "threads", label: "Threads", placeholder: "https://threads.net/@yourpage" },
-  { key: "whatsapp", label: "WhatsApp channel", placeholder: "https://whatsapp.com/channel/..." },
+  { key: "whatsapp", label: "WhatsApp", placeholder: "https://wa.me/60123456789 or a channel link" },
 ];
+
+/** Catches links that open the wrong page. */
+function socialProblem(key: keyof Social, raw: string): string | null {
+  const v = raw.trim();
+  if (!v) return null;
+  if (!/^https?:\/\//i.test(v)) return "Start the link with https://";
+  if (key === "tiktok" && !/tiktok\.com\/@[^/]+/i.test(v)) return "TikTok profile links need an @, e.g. https://www.tiktok.com/@pacakkhemah";
+  if (key === "threads" && !/threads\.(net|com)\/@[^/]+/i.test(v)) return "Threads profile links need an @, e.g. https://www.threads.com/@pacakkhemah";
+  if (key === "instagram" && !/instagram\.com\/[^/]+/i.test(v)) return "Add your Instagram username after instagram.com/";
+  if (key === "whatsapp" && !/(wa\.me\/\d+|whatsapp\.com\/channel\/)/i.test(v)) return "Use a wa.me/60… link or a WhatsApp channel link";
+  return null;
+}
 
 export default function AdminSettingsTab({ initialSection }: { initialSection?: string }) {
   const [section, setSection] = useState<Section>(SECTIONS.some(s => s.key === initialSection) ? initialSection as Section : "payments");
@@ -225,10 +237,11 @@ export default function AdminSettingsTab({ initialSection }: { initialSection?: 
         <>
           <Card>
             <H2>Social links</H2>
-            <p className={hintCls}>Shown in the homepage footer. Leave a field empty to hide it.</p>
+            <p className={hintCls}>Shown as icons in the homepage footer. Leave a field empty to hide it.</p>
             {SOCIAL_FIELDS.map(f => (
               <Field key={f.key} id={`soc-${f.key}`} label={f.label}>
                 <input id={`soc-${f.key}`} type="url" value={social[f.key]} placeholder={f.placeholder} onChange={e => setSocial(s => ({ ...s, [f.key]: e.target.value }))} className={inputCls} />
+                {socialProblem(f.key, social[f.key]) && <p className="text-xs font-semibold text-amber-800">{socialProblem(f.key, social[f.key])}</p>}
               </Field>
             ))}
           </Card>
