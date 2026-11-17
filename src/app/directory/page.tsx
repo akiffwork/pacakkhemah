@@ -224,6 +224,8 @@ export default function DirectoryPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [events, setEvents] = useState<Event[]>([]);
   const [announcement, setAnnouncement] = useState<Announcement | null>(null);
+  // Admin › Site › Homepage and Admin › Settings › Site info
+  const [hero, setHero] = useState<{ title?: string; subtitle?: string; cta?: string; tagline?: string }>({});
   const [showAnnouncement, setShowAnnouncement] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -260,7 +262,15 @@ export default function DirectoryPage() {
     debounceRef.current = setTimeout(() => applySearch(val), 150);
   }
 
-  useEffect(() => { loadVendors(); loadEvents(); loadAnnouncement(); loadSocialLinks(); loadTestimonials(); }, []);
+  useEffect(() => { loadVendors(); loadEvents(); loadAnnouncement(); loadSocialLinks(); loadTestimonials(); loadHero(); }, []);
+
+  async function loadHero() {
+    try {
+      const [content, site] = await Promise.all([getDoc(doc(db, "settings", "content")), getDoc(doc(db, "settings", "site"))]);
+      const h = content.exists() ? content.data().homepage : null;
+      setHero({ title: h?.heroTitle?.trim(), subtitle: h?.heroSubtitle?.trim(), cta: h?.heroCta?.trim(), tagline: site.exists() ? site.data().tagline?.trim() : undefined });
+    } catch { }
+  }
 
   useEffect(() => {
     if (!reviews.length || !allVendors.length) return;
@@ -338,6 +348,12 @@ export default function DirectoryPage() {
   }
 
   async function loadTestimonials() {
+    // Admin › Site › Testimonials are shown when there are no customer reviews yet
+    try {
+      const t = await getDocs(collection(db, "testimonials"));
+      const list = t.docs.map(d => ({ id: d.id, ...d.data() } as Testimonial)).filter(x => x.text);
+      if (list.length) setTestimonials(list.slice(0, 6));
+    } catch { }
     try {
       const snap = await getDocs(query(
         collection(db, "reviews"),
@@ -475,7 +491,7 @@ export default function DirectoryPage() {
               <img src="/pacak-khemah.png" className="h-10 w-10 md:h-12 md:w-12 object-contain rounded-xl" alt="Pacak Khemah" draggable={false} />
               <div>
                 <h1 className="text-lg md:text-xl font-black tracking-tight leading-none">pacakkhemah</h1>
-                <p className="text-[7px] md:text-[8px] font-bold text-emerald-400 uppercase tracking-[0.15em]">Pacak. Rehat. Ulang.</p>
+                <p className="text-[7px] md:text-[8px] font-bold text-emerald-400 uppercase tracking-[0.15em]">{hero.tagline || "Pacak. Rehat. Ulang."}</p>
               </div>
             </div>
             <Link href="/store" className="text-[9px] md:text-xs font-bold text-white/60 hover:text-white transition-colors flex items-center gap-2 md:bg-white/10 md:border md:border-white/15 md:px-4 md:py-2.5 md:rounded-xl">
@@ -486,15 +502,20 @@ export default function DirectoryPage() {
           {/* Hero content */}
           <div className="text-center">
             <h2 className="text-2xl sm:text-3xl md:text-5xl lg:text-6xl font-black uppercase tracking-tight mb-3 md:mb-5 leading-tight md:leading-[1.05]">
-              Rent Camping Gear.<br/>
-              <span className="text-emerald-400">Without Hassle.</span>
+              {hero.title ? (() => {
+                // A new line in the admin text starts the green line
+                const lines = hero.title.split("\n").filter(Boolean);
+                const last = lines.length > 1 ? lines.pop() : null;
+                return <>{lines.join(" ")}{last && <><br/><span className="text-emerald-400">{last}</span></>}</>;
+              })() : <>Rent Camping Gear.<br/>
+              <span className="text-emerald-400">Without Hassle.</span></>}
             </h2>
             <p className="text-sm md:text-lg text-white/70 max-w-md md:max-w-2xl mx-auto mb-6 md:mb-9 leading-relaxed">
-              Rent quality camping gear from verified local vendors across Malaysia. Tents, sleeping bags, cooking equipment & more.
+              {hero.subtitle || "Rent quality camping gear from verified local vendors across Malaysia. Tents, sleeping bags, cooking equipment & more."}
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button onClick={scrollToVendors} className="bg-emerald-500 hover:bg-emerald-400 text-white px-6 py-3.5 md:px-8 md:py-4 rounded-xl font-black uppercase text-xs md:text-sm tracking-widest transition-all shadow-lg">
-                <i className="fas fa-search mr-2"></i> Find Vendors
+                <i className="fas fa-search mr-2"></i> {hero.cta || "Find Vendors"}
               </button>
               <Link href="/register-vendor" className="bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-3.5 md:px-8 md:py-4 rounded-xl font-black uppercase text-xs md:text-sm tracking-widest transition-all">
                 <i className="fas fa-store mr-2"></i> Become a Vendor

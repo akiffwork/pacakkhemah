@@ -4,7 +4,12 @@ service firebase.storage {
 
     // HELPER: Check if user is the specific Admin
     function isAdmin() {
-      return request.auth != null && request.auth.token.email == 'akiff.work@gmail.com';
+      return request.auth != null && (
+        request.auth.token.email == 'akiff.work@gmail.com' ||
+        (request.auth.token.email_verified == true &&
+         firestore.exists(/databases/(default)/documents/private/admins) &&
+         request.auth.token.email.lower() in firestore.get(/databases/(default)/documents/private/admins).data.emails)
+      );
     }
 
     // HELPER: Check if user owns the vendor doc (cross-service read into Firestore)
@@ -68,6 +73,14 @@ service firebase.storage {
     match /reviews/{allPaths=**} {
       allow read: if true;
       allow write: if request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // 7b. SITE IMAGES (admin only, e.g. the payment QR)
+    match /site/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin()
+                   && request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
     }
 

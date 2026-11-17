@@ -20,6 +20,7 @@ import PerformanceTab from "@/components/PerformanceTab";
 import ShopPageTab from "@/components/ShopPageTab";
 import CalendarView from "@/components/calendar/CalendarView";
 import { PageHeader, Toast, useToast } from "@/components/ui/kit";
+import { isAdminEmail } from "@/lib/adminAccess";
 import WelcomeTour from "@/components/vendor/WelcomeTour";
 import FirstItemTour from "@/components/vendor/FirstItemTour";
 import FirstOrderTour from "@/components/vendor/FirstOrderTour";
@@ -289,6 +290,7 @@ function Dashboard({ vendorData, vendorId, isAdminOverride }: { user: User; vend
           <div className="min-w-0 flex-1">
             <p className="text-[15px] font-bold text-[#062c24] truncate">{vendorData.name}</p>
             {vendorData.status === "pending" && <p className="text-xs font-semibold text-amber-800">Account waiting for approval</p>}
+            {vendorData.status === "suspended" && <p className="text-xs font-semibold text-red-800">Shop suspended. Contact support.</p>}
           </div>
           <button type="button" onClick={() => navigate("settings", { group: "account", section: "credits" })}
             className={`min-h-10 px-3 rounded-xl text-[13px] font-bold flex items-center gap-1.5 border ${credits > 10 ? "bg-emerald-50 border-emerald-200 text-emerald-900" : credits > 0 ? "bg-amber-100 border-amber-300 text-amber-900" : "bg-red-50 border-red-200 text-red-900"}`}
@@ -369,7 +371,6 @@ function StorePageContent() {
   const [noVendor, setNoVendor] = useState(false);
   const [isAdminOverride, setIsAdminOverride] = useState(false);
 
-  const ADMIN_EMAIL = "akiff.work@gmail.com";
   const adminOverrideId = searchParams.get("admin_override");
 
   useEffect(() => {
@@ -380,7 +381,7 @@ function StorePageContent() {
       setIsAdminOverride(false);
       
       if (u) {
-        const isAdmin = u.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        const isAdmin = adminOverrideId ? await isAdminEmail(u.email) : false;
 
         // If admin is using override parameter
         if (adminOverrideId && isAdmin) {

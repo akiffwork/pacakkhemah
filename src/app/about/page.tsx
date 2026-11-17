@@ -50,10 +50,15 @@ export default function AboutPage() {
   useEffect(() => {
     async function load() {
       try {
-        const snap = await getDoc(doc(db, "settings", "content"));
-        if (snap.exists() && snap.data().about) {
-          setContent({ ...DEFAULT_ABOUT, ...snap.data().about });
-        }
+        const [snap, site] = await Promise.all([getDoc(doc(db, "settings", "content")), getDoc(doc(db, "settings", "site"))]);
+        const about = snap.exists() && snap.data().about ? snap.data().about : {};
+        // Contact details live in Admin › Settings › Site info
+        const s = site.exists() ? site.data() : {};
+        setContent({
+          ...DEFAULT_ABOUT, ...about,
+          ...(s.contactEmail ? { contactEmail: s.contactEmail } : {}),
+          ...(s.contactWhatsApp ? { contactWhatsApp: String(s.contactWhatsApp).replace(/\D/g, "") } : {}),
+        });
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     }

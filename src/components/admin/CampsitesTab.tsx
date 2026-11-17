@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
+import { ConfirmSheet } from "@/components/ui/kit";
 import { 
   collection, getDocs, doc, addDoc, updateDoc, deleteDoc, serverTimestamp 
 } from "firebase/firestore";
@@ -16,7 +17,7 @@ type Campsite = {
   carousel?: string[];
   lat?: number;
   lng?: number;
-  createdAt?: any;
+  createdAt?: unknown;
 };
 
 const CATEGORIES = [
@@ -26,11 +27,12 @@ const CATEGORIES = [
 const CATEGORY_CONFIG: Record<string, { emoji: string; color: string; icon: string }> = {
   seaside: { emoji: "🌊", color: "bg-blue-50 text-blue-600 border-blue-200", icon: "fa-umbrella-beach" },
   river: { emoji: "🛶", color: "bg-cyan-50 text-cyan-600 border-cyan-200", icon: "fa-water" },
-  hilltop: { emoji: "⛰️", color: "bg-emerald-50 text-emerald-600 border-emerald-200", icon: "fa-mountain" },
+  hilltop: { emoji: "⛰️", color: "bg-emerald-50 text-emerald-800 border-emerald-200", icon: "fa-mountain" },
   waterfall: { emoji: "💧", color: "bg-indigo-50 text-indigo-600 border-indigo-200", icon: "fa-tint" },
 };
 
-export default function CampsitesTab() {
+export default function CampsitesTab({ notify }: { notify: (msg: string, tone?: "success" | "error") => void }) {
+  const [toDelete, setToDelete] = useState<{ id: string; name: string } | null>(null);
   const [campsites, setCampsites] = useState<Campsite[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -91,7 +93,7 @@ export default function CampsitesTab() {
 
   async function saveCampsite() {
     if (!form.name.trim()) {
-      alert("Campsite name is required");
+      notify("Add the campsite name first", "error");
       return;
     }
 
@@ -117,23 +119,25 @@ export default function CampsitesTab() {
       }
 
       setShowModal(false);
+      notify(editingCampsite ? "Campsite updated" : "Campsite added");
       loadCampsites();
     } catch (e) {
       console.error(e);
-      alert("Error saving campsite");
+      notify("Could not save the campsite", "error");
     } finally {
       setSaving(false);
     }
   }
 
-  async function deleteCampsite(id: string, name: string) {
-    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  function deleteCampsite(id: string, name: string) { setToDelete({ id, name }); }
+  async function doDeleteCampsite(id: string) {
     try {
       await deleteDoc(doc(db, "campsites", id));
+      notify("Campsite deleted");
       loadCampsites();
     } catch (e) {
       console.error(e);
-      alert("Error deleting campsite");
+      notify("Could not delete the campsite", "error");
     }
   }
 
@@ -189,7 +193,7 @@ export default function CampsitesTab() {
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-white p-4 rounded-2xl border border-slate-100 shadow-sm gap-4">
         <div className="flex items-center gap-4 w-full lg:w-auto">
           <div className="relative flex-1 lg:w-80">
-            <i className="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
+            <i className="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -202,21 +206,21 @@ export default function CampsitesTab() {
             onChange={e => setCategoryFilter(e.target.value)}
             className="bg-slate-50 border border-slate-100 px-4 py-3 rounded-xl text-xs font-bold outline-none focus:border-emerald-500"
           >
-            <option value="all">All Categories</option>
+            <option value="all">All categories</option>
             {CATEGORIES.map(cat => (
               <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
             ))}
           </select>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+          <span className="text-xs font-bold text-slate-600 ">
             {filtered.length} Campsites
           </span>
           <button
             onClick={openAddModal}
-            className="bg-emerald-500 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-sm flex items-center gap-2"
+            className="bg-[#062c24] text-white px-5 min-h-11 rounded-xl text-[13px] font-bold hover:bg-[#0a4135] transition-all shadow-sm flex items-center gap-2"
           >
-            <i className="fas fa-plus"></i> Add Campsite
+            <i className="fas fa-plus"></i> Add campsite
           </button>
         </div>
       </div>
@@ -234,16 +238,16 @@ export default function CampsitesTab() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-100 p-16 text-center">
-          <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-slate-300 text-2xl">
+          <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-slate-500 text-2xl">
             <i className="fas fa-campground"></i>
           </div>
-          <h3 className="text-sm font-black text-slate-400 uppercase mb-2">No Campsites Found</h3>
-          <p className="text-xs text-slate-400 mb-4">
+          <h3 style={{ textTransform: "none" }} className="text-sm font-bold text-slate-600 mb-2">No campsites found</h3>
+          <p className="text-xs text-slate-600 mb-4">
             {search || categoryFilter !== "all" ? "Try a different search or filter" : "Add your first campsite to get started"}
           </p>
           {!search && categoryFilter === "all" && (
-            <button onClick={openAddModal} className="text-emerald-600 font-bold text-xs hover:underline">
-              + Add Campsite
+            <button onClick={openAddModal} className="text-emerald-800 font-bold text-xs hover:underline">
+              + Add campsite
             </button>
           )}
         </div>
@@ -263,17 +267,17 @@ export default function CampsitesTab() {
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-slate-300">
+                  <div className="w-full h-full flex items-center justify-center text-slate-500">
                     <i className="fas fa-image text-3xl"></i>
                   </div>
                 )}
                 {/* Category badge */}
-                <span className={`absolute top-3 left-3 px-2 py-1 rounded-lg text-[8px] font-black uppercase border ${CATEGORY_CONFIG[campsite.category || ""]?.color || "bg-slate-50 text-slate-600 border-slate-200"}`}>
+                <span className={`absolute top-3 left-3 px-2 py-1 rounded-lg text-xs font-bold  border ${CATEGORY_CONFIG[campsite.category || ""]?.color || "bg-slate-50 text-slate-600 border-slate-200"}`}>
                   {CATEGORY_CONFIG[campsite.category || ""]?.emoji || "🏕️"} {campsite.category || "campsite"}
                 </span>
                 {/* Image count */}
                 {(campsite.carousel?.length || 0) > 1 && (
-                  <span className="absolute top-3 right-3 bg-black/60 text-white px-2 py-1 rounded-lg text-[8px] font-bold">
+                  <span className="absolute top-3 right-3 bg-black/60 text-white px-2 py-1 rounded-lg text-xs font-bold">
                     <i className="fas fa-images mr-1"></i> {campsite.carousel?.length}
                   </span>
                 )}
@@ -281,9 +285,9 @@ export default function CampsitesTab() {
 
               {/* Content */}
               <div className="p-4">
-                <h3 className="font-black text-[#062c24] text-sm uppercase mb-1 truncate">{campsite.name}</h3>
-                <p className="text-[10px] text-slate-400 font-medium truncate flex items-center gap-1">
-                  <i className="fas fa-map-marker-alt text-emerald-500"></i>
+                <h3 style={{ textTransform: "none" }} className="font-bold text-[#062c24] text-sm mb-1 truncate">{campsite.name}</h3>
+                <p className="text-xs text-slate-600 font-medium truncate flex items-center gap-1">
+                  <i className="fas fa-map-marker-alt text-emerald-700"></i>
                   {campsite.location || "No location set"}
                 </p>
 
@@ -294,7 +298,7 @@ export default function CampsitesTab() {
                       href={campsite.direction}
                       target="_blank"
                       rel="noreferrer"
-                      className="flex items-center gap-1 text-[9px] font-bold text-blue-500 hover:underline"
+                      className="flex items-center gap-1 text-xs font-bold text-blue-500 hover:underline"
                     >
                       <i className="fas fa-directions"></i> Maps
                     </a>
@@ -304,7 +308,7 @@ export default function CampsitesTab() {
                       href={campsite.whatsapp}
                       target="_blank"
                       rel="noreferrer"
-                      className="flex items-center gap-1 text-[9px] font-bold text-green-500 hover:underline"
+                      className="flex items-center gap-1 text-xs font-bold text-green-500 hover:underline"
                     >
                       <i className="fab fa-whatsapp"></i> WhatsApp
                     </a>
@@ -315,7 +319,7 @@ export default function CampsitesTab() {
                 <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100">
                   <button
                     onClick={() => openEditModal(campsite)}
-                    className="flex-1 bg-slate-50 text-slate-600 py-2 rounded-lg text-[10px] font-bold uppercase hover:bg-emerald-50 hover:text-emerald-600 transition-all"
+                    className="flex-1 min-h-10 border border-slate-300 bg-white text-slate-700 rounded-xl text-[13px] font-semibold hover:bg-slate-50"
                   >
                     <i className="fas fa-edit mr-1"></i> Edit
                   </button>
@@ -323,7 +327,7 @@ export default function CampsitesTab() {
                     onClick={() => deleteCampsite(campsite.id, campsite.name)}
                     className="w-9 h-9 bg-red-50 text-red-400 rounded-lg flex items-center justify-center hover:bg-red-500 hover:text-white transition-all"
                   >
-                    <i className="fas fa-trash text-[10px]"></i>
+                    <i className="fas fa-trash text-xs"></i>
                   </button>
                 </div>
               </div>
@@ -344,10 +348,10 @@ export default function CampsitesTab() {
                     <i className="fas fa-campground text-xl"></i>
                   </div>
                   <div>
-                    <h3 className="font-black uppercase text-lg">
-                      {editingCampsite ? "Edit Campsite" : "Add Campsite"}
+                    <h3 style={{ textTransform: "none" }} className="font-bold text-lg">
+                      {editingCampsite ? "Edit campsite" : "Add campsite"}
                     </h3>
-                    <p className="text-white/70 text-[10px] font-medium">
+                    <p className="text-white/70 text-xs font-medium">
                       {editingCampsite ? "Update campsite details" : "Add a new camping location"}
                     </p>
                   </div>
@@ -365,7 +369,7 @@ export default function CampsitesTab() {
             <div className="p-6 space-y-4 overflow-y-auto flex-1">
               {/* Name */}
               <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">
+                <label className="text-xs font-bold text-slate-600 mb-2 block">
                   Campsite Name *
                 </label>
                 <input
@@ -379,7 +383,7 @@ export default function CampsitesTab() {
 
               {/* Location */}
               <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">
+                <label className="text-xs font-bold text-slate-600 mb-2 block">
                   Address / Location
                 </label>
                 <input
@@ -393,7 +397,7 @@ export default function CampsitesTab() {
 
               {/* Category */}
               <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">
+                <label className="text-xs font-bold text-slate-600 mb-2 block">
                   Category
                 </label>
                 <div className="grid grid-cols-4 gap-2">
@@ -402,9 +406,9 @@ export default function CampsitesTab() {
                       key={cat}
                       type="button"
                       onClick={() => setForm(prev => ({ ...prev, category: cat }))}
-                      className={`p-2.5 rounded-xl text-[9px] font-bold uppercase transition-all border ${
+                      className={`p-2.5 rounded-xl text-xs font-bold  transition-all border ${
                         form.category === cat
-                          ? "bg-emerald-500 text-white border-emerald-500"
+                          ? "bg-[#062c24] text-white border-[#062c24]"
                           : "bg-slate-50 text-slate-500 border-slate-200 hover:border-emerald-300"
                       }`}
                     >
@@ -417,7 +421,7 @@ export default function CampsitesTab() {
 
               {/* Google Maps Link */}
               <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">
+                <label className="text-xs font-bold text-slate-600 mb-2 block">
                   Google Maps Link
                 </label>
                 <input
@@ -427,17 +431,17 @@ export default function CampsitesTab() {
                   placeholder="https://maps.google.com/maps?q=3.1234,101.5678"
                   className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 transition-all"
                 />
-                <p className="text-[9px] text-slate-400 mt-1">Coordinates will auto-fill if the URL contains them. For short links (goo.gl), open in browser first → copy the full URL from the address bar.</p>
+                <p className="text-xs text-slate-600 mt-1">Coordinates will auto-fill if the URL contains them. For short links (goo.gl), open in browser first → copy the full URL from the address bar.</p>
               </div>
 
               {/* Coordinates — auto-filled from Maps link */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                  <label className="text-xs font-bold text-slate-600 ">
                     Coordinates (for distance matching)
                   </label>
                   {form.lat && form.lng && (
-                    <span className="text-[8px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                    <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full">
                       <i className="fas fa-check-circle mr-0.5"></i>Auto-filled
                     </span>
                   )}
@@ -464,7 +468,7 @@ export default function CampsitesTab() {
 
               {/* WhatsApp Link */}
               <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">
+                <label className="text-xs font-bold text-slate-600 mb-2 block">
                   WhatsApp Link
                 </label>
                 <input
@@ -478,7 +482,7 @@ export default function CampsitesTab() {
 
               {/* Carousel Images */}
               <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">
+                <label className="text-xs font-bold text-slate-600 mb-2 block">
                   Images (URL)
                 </label>
                 <div className="space-y-2">
@@ -506,9 +510,9 @@ export default function CampsitesTab() {
                 <button
                   type="button"
                   onClick={addCarouselSlot}
-                  className="mt-2 text-[10px] font-bold text-emerald-600 hover:underline"
+                  className="mt-2 text-xs font-bold text-emerald-800 hover:underline"
                 >
-                  + Add Another Image
+                  + Add another image
                 </button>
               </div>
             </div>
@@ -518,27 +522,32 @@ export default function CampsitesTab() {
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowModal(false)}
-                  className="flex-1 bg-slate-200 text-slate-600 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-300 transition-all"
+                  className="flex-1 bg-slate-200 text-slate-600 py-3 rounded-xl font-bold text-xs  hover:bg-slate-300 transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={saveCampsite}
                   disabled={saving}
-                  className="flex-1 bg-emerald-500 text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 bg-[#062c24] text-white min-h-12 rounded-xl font-bold text-sm hover:bg-[#0a4135] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {saving ? (
                     <><i className="fas fa-spinner fa-spin mr-2"></i> Saving...</>
                   ) : editingCampsite ? (
-                    "Update Campsite"
+                    "Update campsite"
                   ) : (
-                    "Add Campsite"
+                    "Add campsite"
                   )}
                 </button>
               </div>
             </div>
           </div>
         </div>
+      )}
+      {toDelete && (
+        <ConfirmSheet title={`Delete ${toDelete.name}?`} confirmLabel="Delete campsite" tone="danger" onClose={() => setToDelete(null)}
+          body={<p>It is removed from the campsite directory. This cannot be undone.</p>}
+          onConfirm={() => { const id = toDelete.id; setToDelete(null); doDeleteCampsite(id); }} />
       )}
     </div>
   );

@@ -1,360 +1,201 @@
 "use client";
 
-import { useState, useEffect } from "react";
+// Admin › Orders: every order on the platform, with the vendor's view of it.
+
+import { useEffect, useMemo, useState } from "react";
+import { collection, getDocs, limit, orderBy, query } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, doc, updateDoc, query, orderBy, limit } from "firebase/firestore";
+import {
+  STAGES, formatDateRange, getNextAction, getPayment, getStage, toMillis, type Order,
+} from "@/lib/orderFlow";
+import { adminOrderAction, type AdminOrderAction } from "@/lib/adminOrders";
+import {
+  BottomSheet, Chip, ConfirmSheet, EmptyState, PageHeader, SearchInput, Segments, SummaryStrip, Toast, hintCls, smallBtn, useToast,
+} from "@/components/ui/kit";
 
-// Define the Order type based on your platform's data structure
-type Order = {
-  id: string;
-  vendorId: string;
-  vendorName?: string;
-  customerName?: string;
-  customerEmail?: string;
-  customerPhone?: string;
-  totalAmount: number;
-  status: "pending" | "confirmed" | "completed" | "cancelled" | "conflict";
-  createdAt: any;
-  startDate?: string;
-  endDate?: string;
-  items?: { name: string; price: number; quantity: number }[];
+type AOrder = Order & { id: string; vendorId: string; vendorName?: string; status: string };
+type StatusKey = "all" | "pending" | "confirmed" | "completed" | "cancelled" | "conflict";
+
+const STATUS: Record<string, { label: string; tone: "warn" | "info" | "good" | "danger" | "neutral" }> = {
+  pending: { label: "New request", tone: "warn" },
+  confirmed: { label: "Confirmed", tone: "info" },
+  completed: { label: "Completed", tone: "good" },
+  cancelled: { label: "Cancelled", tone: "neutral" },
+  conflict: { label: "Stock conflict", tone: "danger" },
 };
+const statusOf = (s?: string) => STATUS[s || ""] || { label: s || "Unknown", tone: "neutral" as const };
+const rm = (n: number) => `RM ${Math.round(n).toLocaleString()}`;
+const when = (ms: number) => (ms ? new Date(ms).toLocaleString("en-MY", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }) : "–");
 
-export default function OrdersTab() {
-  const [orders, setOrders] = useState<Order[]>([]);
+export default function OrdersTab({ initialStatus }: { initialStatus?: string }) {
+  const [orders, setOrders] = useState<AOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | Order["status"]>("all");
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
-  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
+  const [status, setStatus] = useState<StatusKey>((["pending", "confirmed", "completed", "cancelled", "conflict"] as StatusKey[]).includes(initialStatus as StatusKey) ? initialStatus as StatusKey : "all");
+  const [selected, setSelected] = useState<string | null>(null);
+  const [action, setAction] = useState<AdminOrderAction | null>(null);
+  const [busy, setBusy] = useState(false);
+  const { toast, show } = useToast();
 
-  useEffect(() => {
-    loadOrders();
-  }, []);
-
-  async function loadOrders() {
+  async function load() {
     setLoading(true);
     try {
-      // Fetch the latest 500 orders
-      const q = query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(500));
-      const snap = await getDocs(q);
-      setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order)));
-    } catch (e) {
-      console.error("Error loading orders:", e);
-    } finally {
-      setLoading(false);
-    }
+      const snap = await getDocs(query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(500)));
+      setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as AOrder)).filter(o => !o.deleted));
+    } catch (e) { console.error(e); show("Could not load orders", "error"); }
+    finally { setLoading(false); }
   }
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function updateOrderStatus(orderId: string, newStatus: Order["status"]) {
-    if (!confirm(`Are you sure you want to mark this order as ${newStatus}?`)) return;
-    
+  const count = (k: StatusKey) => (k === "all" ? orders.length : orders.filter(o => o.status === k).length);
+  const q = search.trim().toLowerCase();
+  const list = orders.filter(o => (status === "all" || o.status === status)
+    && (!q || [o.id, o.customerName, o.customerPhone, o.vendorName].some(x => x?.toLowerCase().includes(q))));
+
+  const totals = useMemo(() => ({
+    pending: orders.filter(o => o.status === "pending").length,
+    active: orders.filter(o => o.status === "confirmed").length,
+    value: orders.filter(o => o.status === "completed").reduce((a, o) => a + getPayment(o).rental, 0),
+  }), [orders]);
+
+  const order = orders.find(o => o.id === selected) || null;
+
+  async function doAction(reason: string) {
+    if (!order || !action) return;
+    setBusy(true);
     try {
-      await updateDoc(doc(db, "orders", orderId), { status: newStatus });
-      // Update local state to reflect the change immediately
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
-      if (selectedOrder?.id === orderId) {
-        setSelectedOrder(prev => prev ? { ...prev, status: newStatus } : null);
-      }
-      showToast(`Order marked as ${newStatus}`);
-    } catch (e) {
-      console.error("Error updating order status:", e);
-      showToast("Failed to update status", "error");
-    }
+      await adminOrderAction(order, action, reason);
+      show(action === "cancel" ? "Order cancelled" : action === "complete" ? "Order completed" : "Order confirmed");
+      setAction(null);
+      await load();
+    } catch (e) { console.error(e); show("Could not update the order", "error"); }
+    finally { setBusy(false); }
   }
-
-  // Filter logic
-  const filteredOrders = orders.filter(o => {
-    const matchesSearch = !search || 
-      o.id.toLowerCase().includes(search.toLowerCase()) ||
-      o.customerName?.toLowerCase().includes(search.toLowerCase()) ||
-      o.vendorName?.toLowerCase().includes(search.toLowerCase());
-    
-    const matchesStatus = statusFilter === "all" || o.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
-
-  // Calculate stats
-  const pendingCount = orders.filter(o => o.status === "pending").length;
-  const activeCount = orders.filter(o => o.status === "confirmed").length;
-  const completedRevenue = orders.filter(o => o.status === "completed").reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-
-  // Status visual configurations
-  const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; icon: string }> = {
-    pending: { label: "Pending", bg: "bg-amber-100", text: "text-amber-700", icon: "fa-clock" },
-    confirmed: { label: "Confirmed", bg: "bg-blue-100", text: "text-blue-700", icon: "fa-calendar-check" },
-    completed: { label: "Completed", bg: "bg-emerald-100", text: "text-emerald-700", icon: "fa-check-circle" },
-    cancelled: { label: "Cancelled", bg: "bg-red-100", text: "text-red-700", icon: "fa-times-circle" },
-    conflict: { label: "Conflict", bg: "bg-red-100", text: "text-red-700", icon: "fa-exclamation-triangle" },
-  };
-  const FALLBACK_STATUS = STATUS_CONFIG["pending"];
-  function getStatusConf(status?: string) { return STATUS_CONFIG[status ?? ""] ?? FALLBACK_STATUS; }
 
   return (
-    <div className="space-y-6">
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-amber-50 text-amber-500 rounded-xl flex items-center justify-center text-xl">
-            <i className="fas fa-hourglass-half"></i>
-          </div>
-          <div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pending Action</p>
-            <p className="text-2xl font-black text-[#062c24]">{pendingCount}</p>
-          </div>
-        </div>
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center text-xl">
-            <i className="fas fa-box-open"></i>
-          </div>
-          <div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Rentals</p>
-            <p className="text-2xl font-black text-[#062c24]">{activeCount}</p>
-          </div>
-        </div>
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-emerald-50 text-emerald-500 rounded-xl flex items-center justify-center text-xl">
-            <i className="fas fa-coins"></i>
-          </div>
-          <div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Completed GMV</p>
-            <p className="text-2xl font-black text-[#062c24]">RM {completedRevenue.toLocaleString()}</p>
-          </div>
-        </div>
-      </div>
+    <div className="flex flex-col gap-4">
+      <PageHeader title="Orders" subtitle="Every booking on the platform. Vendors handle their own orders; step in only when needed."
+        action={<button type="button" onClick={load} aria-label="Refresh" className="w-11 h-11 rounded-xl border border-slate-300 bg-white text-slate-700 flex items-center justify-center hover:bg-slate-50"><i className={`fas fa-rotate ${loading ? "fa-spin" : ""}`} aria-hidden="true"></i></button>} />
+      <SummaryStrip items={[
+        { value: totals.pending, label: "New requests" },
+        { value: totals.active, label: "Confirmed, in progress" },
+        { value: rm(totals.value), label: "Completed rental value" },
+      ]} />
+      <SearchInput id="order-search" value={search} onChange={setSearch} placeholder="Search customer, phone, shop or order ID" />
+      <Segments label="Order status" value={status} onChange={setStatus} items={([
+        ["all", "All"], ["pending", "New"], ["confirmed", "Confirmed"], ["completed", "Completed"], ["cancelled", "Cancelled"], ["conflict", "Conflict"],
+      ] as [StatusKey, string][]).filter(([k]) => k === "all" || k === status || count(k) > 0).map(([k, l]) => ({ key: k, label: `${l} · ${count(k)}` }))} />
 
-      {/* Toolbar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-2xl border border-slate-100 shadow-sm gap-4">
-        <div className="relative w-full sm:w-96">
-          <i className="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
-          <input 
-            value={search} 
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search Order ID, Customer, or Vendor..."
-            className="w-full bg-slate-50 border border-slate-100 pl-10 pr-4 py-3 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 transition-all" 
-          />
-        </div>
-        <div className="flex bg-slate-100 rounded-lg p-1 w-full sm:w-auto overflow-x-auto">
-          {(["all", "pending", "conflict", "confirmed", "completed", "cancelled"] as const).map(status => (
-            <button 
-              key={status} 
-              onClick={() => setStatusFilter(status)}
-              className={`px-4 py-2 rounded-md text-[10px] font-black uppercase transition-all whitespace-nowrap ${
-                statusFilter === status ? "bg-white text-[#062c24] shadow-sm" : "text-slate-400 hover:text-slate-600"
-              }`}
-            >
-              {status}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Orders Table */}
-      <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="flex justify-center items-center h-64 text-slate-300">
-            <i className="fas fa-spinner fa-spin text-3xl"></i>
-          </div>
-        ) : filteredOrders.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-300">
-            <i className="fas fa-receipt text-5xl mb-4"></i>
-            <p className="text-sm font-black uppercase tracking-widest text-slate-400">No Orders Found</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left min-w-[900px]">
-              <thead className="bg-slate-50 border-b border-slate-100">
-                <tr>
-                  <th className="p-5 pl-8 text-[10px] font-black uppercase text-slate-400 tracking-wider">Order Info</th>
-                  <th className="p-5 text-[10px] font-black uppercase text-slate-400 tracking-wider">Customer</th>
-                  <th className="p-5 text-[10px] font-black uppercase text-slate-400 tracking-wider">Vendor</th>
-                  <th className="p-5 text-[10px] font-black uppercase text-slate-400 tracking-wider">Amount</th>
-                  <th className="p-5 text-[10px] font-black uppercase text-slate-400 tracking-wider">Status</th>
-                  <th className="p-5 pr-8 text-right text-[10px] font-black uppercase text-slate-400 tracking-wider">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50 text-xs">
-                {filteredOrders.map(order => {
-                  const conf = getStatusConf(order.status);
-                  return (
-                    <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="p-5 pl-8">
-                        <p className="font-black text-[#062c24] uppercase text-[10px]">#{order.id.slice(-6)}</p>
-                        <p className="text-[9px] text-slate-400 font-bold mt-1">
-                          {order.createdAt?.toDate().toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        </p>
-                      </td>
-                      <td className="p-5">
-                        <p className="font-bold text-slate-700">{order.customerName || "Unknown Customer"}</p>
-                        {order.customerPhone && <p className="text-[9px] text-slate-400">{order.customerPhone}</p>}
-                      </td>
-                      <td className="p-5">
-                        <p className="font-bold text-slate-700">{order.vendorName || "Unknown Vendor"}</p>
-                      </td>
-                      <td className="p-5">
-                        <p className="font-black text-emerald-600">RM {order.totalAmount?.toFixed(2) || "0.00"}</p>
-                      </td>
-                      <td className="p-5">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase ${conf.bg} ${conf.text}`}>
-                          <i className={`fas ${conf.icon}`}></i> {conf.label}
-                        </span>
-                      </td>
-                      <td className="p-5 pr-8 text-right">
-                        <button 
-                          onClick={() => setSelectedOrder(order)}
-                          className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-[10px] font-bold uppercase hover:bg-emerald-500 hover:text-white transition-all"
-                        >
-                          View Details
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+      {loading && !orders.length ? <p className="text-sm text-slate-600" role="status">Loading orders</p>
+        : list.length === 0 ? <EmptyState icon="fa-receipt" title={q ? "No orders match your search" : "No orders here"} />
+        : (
+          <div className="flex flex-col gap-2.5">
+            {list.map(o => {
+              const st = statusOf(o.status);
+              const p = getPayment(o);
+              return (
+                <button key={o.id} type="button" onClick={() => setSelected(o.id)}
+                  className="text-left bg-white border border-slate-200 rounded-2xl px-4 py-3 flex items-center gap-3 hover:border-slate-400">
+                  <span className="flex-1 min-w-0 flex flex-col gap-0.5">
+                    <span className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[15px] font-bold text-slate-900 truncate">{o.customerName || o.customerPhone || "Customer"}</span>
+                      <Chip tone={st.tone}>{st.label}</Chip>
+                    </span>
+                    <span className="text-[13px] text-slate-600 truncate">{o.vendorName || "Unknown shop"} · {formatDateRange(o.bookingDates)}</span>
+                  </span>
+                  <span className="text-right shrink-0">
+                    <span className="block text-sm font-bold text-slate-900">{rm(p.total)}</span>
+                    <span className="text-xs text-slate-600">{p.fullyReceived ? "Paid" : p.nothingReceived ? "Unpaid" : "Part paid"}</span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         )}
-      </div>
 
-      {toast && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[500] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[10px] font-black uppercase tracking-widest ${
-          toast.type === "success" ? "bg-emerald-600" : "bg-red-500"
-        }`} style={{ animation: "toastIn 0.3s ease-out" }}>
-          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`}></i>
-          {toast.msg}
-        </div>
+      {order && !action && (
+        <BottomSheet title={order.customerName || order.customerPhone || "Order"} onClose={() => setSelected(null)}>
+          <OrderSummary order={order} />
+          <a href={`/store?admin_override=${order.vendorId}&tab=orders&order=${order.id}`} target="_blank" rel="noreferrer"
+            className="min-h-12 rounded-2xl bg-[#062c24] text-white text-[15px] font-bold flex items-center justify-center hover:bg-[#0a4135]">
+            <i className="fas fa-key mr-2" aria-hidden="true"></i>Open in the vendor&apos;s dashboard
+          </a>
+          <p className={`${hintCls} text-center -mt-2`}>Every step is there: payments, agreement, pickup, return and deposit.</p>
+          {order.status !== "cancelled" && order.status !== "completed" && (
+            <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
+              <p className="text-[13px] font-semibold text-slate-700">Step in as admin</p>
+              <div className="flex flex-wrap gap-2">
+                {(order.status === "pending" || order.status === "conflict") && <button type="button" className={smallBtn} onClick={() => setAction("confirm")}>Confirm</button>}
+                <button type="button" className={smallBtn} onClick={() => setAction("complete")}>Mark completed</button>
+                <button type="button" className={`${smallBtn} text-red-800 border-red-200`} onClick={() => setAction("cancel")}>Cancel order</button>
+              </div>
+            </div>
+          )}
+        </BottomSheet>
       )}
-      <style>{`@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
 
-      {/* Order Details Modal */}
-      {selectedOrder && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            
-            {/* Modal Header */}
-            <div className="bg-slate-50 p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
-              <div>
-                <h3 className="font-black text-xl text-[#062c24] uppercase flex items-center gap-3">
-                  Order #{selectedOrder.id.slice(-6)}
-                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-black ${getStatusConf(selectedOrder.status).bg} ${getStatusConf(selectedOrder.status).text}`}>
-                    {getStatusConf(selectedOrder.status).label}
-                  </span>
-                </h3>
-                <p className="text-[10px] font-bold text-slate-400 mt-1">
-                  Placed on {selectedOrder.createdAt?.toDate().toLocaleString('en-MY')}
-                </p>
-              </div>
-              <button 
-                onClick={() => setSelectedOrder(null)} 
-                className="w-10 h-10 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-200 transition-all"
-              >
-                <i className="fas fa-times"></i>
-              </button>
-            </div>
+      {order && action && (
+        <ConfirmSheet busy={busy} onClose={() => setAction(null)} onConfirm={doAction}
+          tone={action === "cancel" ? "danger" : "primary"}
+          title={action === "cancel" ? "Cancel this order?" : action === "complete" ? "Mark as completed?" : "Confirm this order?"}
+          confirmLabel={action === "cancel" ? "Cancel order" : action === "complete" ? "Mark completed" : "Confirm order"}
+          body={<p>{action === "cancel"
+            ? "The booking is cancelled and the dates are freed in the shop's calendar. The vendor sees your reason."
+            : action === "complete"
+              ? "The order is closed, the dates are freed and the review link becomes ready. Payments are not changed."
+              : "The order moves to confirmed. The vendor still records payments and pickup."}</p>}
+          reason={{ label: "Reason", placeholder: "Recorded in the order history", required: action === "cancel" }} />
+      )}
+      <Toast toast={toast} />
+    </div>
+  );
+}
 
-            {/* Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-6">
-              
-              {/* Info Grid */}
-              <div className="grid grid-cols-2 gap-6">
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2"><i className="fas fa-user mr-1"></i> Customer</p>
-                  <p className="font-bold text-sm text-slate-700">{selectedOrder.customerName || "N/A"}</p>
-                  <p className="text-xs text-slate-500 mt-1">{selectedOrder.customerEmail || "N/A"}</p>
-                  <p className="text-xs text-slate-500">{selectedOrder.customerPhone || "N/A"}</p>
-                </div>
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2"><i className="fas fa-store mr-1"></i> Vendor</p>
-                  <p className="font-bold text-sm text-slate-700">{selectedOrder.vendorName || "N/A"}</p>
-                  <p className="text-xs text-slate-500 mt-1">ID: {selectedOrder.vendorId}</p>
-                </div>
-              </div>
-
-              {/* Rental Dates */}
-              {(selectedOrder.startDate || selectedOrder.endDate) && (
-                <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex items-center gap-4">
-                  <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center">
-                    <i className="fas fa-calendar-alt"></i>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Rental Period</p>
-                    <p className="font-bold text-emerald-900 text-sm">
-                      {selectedOrder.startDate || "?"} <i className="fas fa-arrow-right mx-2 text-[10px]"></i> {selectedOrder.endDate || "?"}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Order Items */}
-              <div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Order Items</p>
-                <div className="border border-slate-100 rounded-2xl overflow-hidden">
-                  {selectedOrder.items && selectedOrder.items.length > 0 ? (
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50">
-                        <tr>
-                          <th className="p-3 font-bold text-slate-500">Item</th>
-                          <th className="p-3 font-bold text-slate-500 text-center">Qty</th>
-                          <th className="p-3 font-bold text-slate-500 text-right">Price</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {selectedOrder.items.map((item, idx) => (
-                          <tr key={idx}>
-                            <td className="p-3 font-medium text-slate-700">{item.name}</td>
-                            <td className="p-3 text-center text-slate-500">{item.quantity}</td>
-                            <td className="p-3 text-right font-bold text-slate-700">RM {(item.price * item.quantity).toFixed(2)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <p className="p-4 text-xs text-slate-400 italic text-center">No item details available.</p>
-                  )}
-                  <div className="bg-slate-50 p-4 border-t border-slate-100 flex justify-between items-center">
-                    <span className="font-black text-slate-500 uppercase text-[10px] tracking-widest">Total Amount</span>
-                    <span className="font-black text-lg text-emerald-600">RM {selectedOrder.totalAmount?.toFixed(2) || "0.00"}</span>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Admin Actions Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-wrap gap-2 justify-end shrink-0">
-              <p className="w-full text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 text-right">Admin Actions</p>
-              
-              {selectedOrder.status !== "cancelled" && (
-                <button 
-                  onClick={() => updateOrderStatus(selectedOrder.id, "cancelled")}
-                  className="px-4 py-2 bg-red-100 text-red-600 hover:bg-red-500 hover:text-white rounded-xl text-[10px] font-black uppercase transition-all"
-                >
-                  Force Cancel
-                </button>
-              )}
-              
-              {selectedOrder.status !== "confirmed" && selectedOrder.status !== "completed" && selectedOrder.status !== "cancelled" && (
-                <button 
-                  onClick={() => updateOrderStatus(selectedOrder.id, "confirmed")}
-                  className="px-4 py-2 bg-blue-100 text-blue-600 hover:bg-blue-500 hover:text-white rounded-xl text-[10px] font-black uppercase transition-all"
-                >
-                  Mark Confirmed
-                </button>
-              )}
-
-              {selectedOrder.status !== "completed" && selectedOrder.status !== "cancelled" && (
-                <button 
-                  onClick={() => updateOrderStatus(selectedOrder.id, "completed")}
-                  className="px-4 py-2 bg-emerald-500 text-white hover:bg-emerald-600 rounded-xl text-[10px] font-black uppercase shadow-sm transition-all"
-                >
-                  Mark Completed
-                </button>
-              )}
-            </div>
-
+function OrderSummary({ order }: { order: AOrder }) {
+  const p = getPayment(order);
+  const stage = getStage(order);
+  const next = getNextAction(order);
+  const idx = STAGES.findIndex(s => s.key === stage);
+  const row = (label: string, value: string) => <div className="flex justify-between gap-3 text-sm"><span className="text-slate-600">{label}</span><span className="font-semibold text-right">{value}</span></div>;
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap gap-1.5 -mt-1">
+        <Chip tone={statusOf(order.status).tone}>{statusOf(order.status).label}</Chip>
+        {stage !== "cancelled" && idx >= 0 && <Chip>Step {idx + 1} of {STAGES.length}: {STAGES[idx].label}</Chip>}
+      </div>
+      {next.reason && <p className="text-sm bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5"><b>Vendor&apos;s next step:</b> {next.label || next.reason}{next.label && next.reason ? ` (${next.reason})` : ""}</p>}
+      <div className="flex flex-col gap-1.5">
+        {row("Shop", order.vendorName || "Unknown")}
+        {row("Customer", [order.customerName, order.customerPhone].filter(Boolean).join(" · ") || "–")}
+        {row("Dates", formatDateRange(order.bookingDates))}
+        {order.pickupLocation && row(order.fulfillmentType === "delivery" ? "Delivery to" : "Pickup at", order.pickupLocation)}
+        {row("Booked", when(toMillis(order.createdAt)))}
+        {row("Order ID", order.id)}
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <p className="text-[13px] font-semibold text-slate-700">Items</p>
+        {(order.items || []).map((it, i) => (
+          <div key={i} className="flex justify-between gap-3 text-sm">
+            <span>{it.qty}× {it.name}{it.variantLabel ? ` (${it.variantLabel})` : ""}</span>
+            <span className="font-semibold">{rm(it.lineTotal ?? it.price * it.qty)}</span>
           </div>
+        ))}
+        {order.promoCode && <p className={hintCls}>Promo code {order.promoCode}</p>}
+      </div>
+      <div className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-3 flex flex-col gap-1.5">
+        {row("Rental", `${rm(p.rental)} · ${p.rentalReceived ? "received" : "not received"}`)}
+        {p.deposit > 0 && row("Deposit", `${rm(p.deposit)} · ${p.depositOutcome ? (p.depositOutcome === "refunded" ? "refunded" : `RM ${p.depositKept} kept`) : p.depositReceived ? "held" : "not received"}`)}
+        {row("Total", rm(p.total))}
+      </div>
+      {!!order.history?.length && (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-[13px] font-semibold text-slate-700">History</p>
+          {[...order.history].reverse().slice(0, 8).map((h, i) => (
+            <p key={i} className="text-[13px] text-slate-700">
+              <span className="text-slate-600">{new Date(h.at).toLocaleString("en-MY", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span>
+              {" · "}{h.type.replace(/_/g, " ")}{h.via === "admin" ? " (admin)" : ""}{h.note ? `: ${h.note}` : ""}
+            </p>
+          ))}
         </div>
       )}
     </div>

@@ -150,3 +150,31 @@ export async function rejectTopUp(id: string, reason: string): Promise<void> {
 export function matchesPackage(r: Pick<TopUpRequest, "credits" | "price">, packages: CreditPackage[]): boolean {
   return packages.some(p => p.credits === r.credits && p.price === r.price);
 }
+
+export type CreditChangeType = "purchase" | "bonus" | "refund" | "adjustment";
+
+/**
+ * Admin: the one way to change a vendor's credits by hand. Updates the balance
+ * and logs a `transactions` row together, so Money always matches.
+ * `credits` is how many to add (refunds remove them); `amount` is RM.
+ */
+export async function adjustCredits(args: {
+  vendorId: string; vendorName: string; type: CreditChangeType; credits: number; amount?: number; note?: string;
+}): Promise<void> {
+  const { vendorId, vendorName, type, credits, amount = 0, note = "" } = args;
+  if (!vendorId || !Number.isFinite(credits) || credits === 0 && amount === 0) throw new Error("Nothing to change");
+  const delta = type === "refund" ? -Math.abs(credits) : credits;
+  await runTransaction(db, async t => {
+    if (delta !== 0) t.update(doc(db, "vendors", vendorId), { credits: increment(delta) });
+    t.set(doc(collection(db, "transactions")), {
+      vendorId, vendorName: vendorName || "Unknown",
+      amount: Math.max(0, amount), credits: type === "adjustment" ? credits : Math.abs(credits), type,
+      note: note.trim(), source: "admin", createdAt: serverTimestamp(),
+    });
+  });
+}
+
+/** Money in minus refunds, for revenue figures. Bonus and adjustments are not revenue. */
+export function netRevenue(txs: { type?: string; amount?: number }[]): number {
+  return txs.reduce((s, t) => s + (t.type === "purchase" ? t.amount || 0 : t.type === "refund" ? -(t.amount || 0) : 0), 0);
+}
