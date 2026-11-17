@@ -25,6 +25,7 @@ import OrderGuideTab from "@/components/vendor/OrderGuideTab";
 import WelcomeTour from "@/components/vendor/WelcomeTour";
 import FirstItemTour from "@/components/vendor/FirstItemTour";
 import FirstOrderTour from "@/components/vendor/FirstOrderTour";
+import { summarize, type Order } from "@/lib/orderFlow";
 
 type VendorData = {
   name: string;
@@ -263,11 +264,12 @@ function Dashboard({ user, vendorData, vendorId, isAdminOverride }: { user: User
 
     const ordersQuery = query(collection(db, "orders"), where("vendorId", "==", vendorId));
     const unsub = onSnapshot(ordersQuery, (snap) => {
-      let pending = 0, todayCount = 0;
+      let todayCount = 0;
+      // Orders badge counts everything that needs the vendor's action, not only new orders
+      const pending = summarize(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order))).action;
       snap.docs.forEach((d) => {
         const o = d.data();
         if (o.deleted) return;
-        if (o.status === "pending") pending++;
         if ((o.status === "confirmed" || o.status === "pending") &&
             (o.bookingDates?.start === todayStr || o.bookingDates?.end === todayStr)) {
           todayCount++;

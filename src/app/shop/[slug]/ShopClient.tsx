@@ -1256,6 +1256,8 @@ function ShopPageContent({
           customerName: savedName,
           items: cart.map(i => ({
             id: i.id, name: i.name, qty: i.qty, price: i.price,
+            // Line total exactly as the cart showed it (price depends on nights)
+            lineTotal: Math.round(itemStayPrice(i, nights) * i.qty),
             addSetup: i.addSetup || false,
             setupFee: i.addSetup && i.setup?.fee ? i.setup.fee : 0,
             ...(i.selectedVariant ? {
@@ -1289,10 +1291,24 @@ function ShopPageContent({
           totalAmount: total,
           depositAmount: Math.round(dep),
           rentalAmount: Math.round(total - dep),
+          // Cart snapshot, so the vendor sees the same breakdown the customer saw
+          subtotal: Math.round(sub),
+          nights,
+          ...(fulfillmentType === "delivery" ? (useCombo && hasCombo ? {
+            comboApplied: true,
+            comboFee: Math.round(comboFee),
+            comboSavings: Math.round(comboSavings),
+          } : {
+            setupFeeTotal: Math.round(setupFee),
+            deliveryFee: Math.round(deliveryFee),
+            deliveryQuotePending: services?.delivery?.pricingType === "quote",
+            deliveryDistanceKm: services?.delivery?.pricingType === "per_km" && deliveryDistance ? Number(deliveryDistance) || null : null,
+          }) : {}),
           pickupLocation: fulfillmentType === "pickup" ? selectedHub : deliveryAddress,
           fulfillmentType,
           deliveryZone: selectedZone?.name || null,
           timeSlot: selectedTimeSlot?.label || null,
+          timeSlotTime: selectedTimeSlot?.time || null,
           bookingDates: { start: pickupDate, end: returnDate },
           pax: paxCount,
           campingLocation: campingLocation.trim(),

@@ -191,6 +191,35 @@ exports.onReviewCreated = (0, firestore_1.onDocumentCreated)("reviews/{docId}", 
             console.error(`Failed to update order ${orderId}:`, e);
         }
     }
+    // 1b. Reward: give the vendor 1 credit back for an order completed with a
+    // customer review. Once per order (flag set in the same transaction).
+    // Security rules already only accept a review for a completed order with
+    // a matching, unused review token.
+    if (orderId) {
+        try {
+            const orderRef = db.doc(`orders/${orderId}`);
+            const vendorRef = db.doc(`vendors/${vendorId}`);
+            let refunded = false;
+            await db.runTransaction(async (t) => {
+                const orderSnap = await t.get(orderRef);
+                const order = orderSnap.data();
+                if (!order || order.vendorId !== vendorId || order.status !== "completed" || order.creditRefunded)
+                    return;
+                t.update(orderRef, {
+                    creditRefunded: true,
+                    creditRefundedAt: firestore_2.FieldValue.serverTimestamp(),
+                    history: firestore_2.FieldValue.arrayUnion({ type: "credit_refunded", at: new Date().toISOString(), via: "review" }),
+                });
+                t.update(vendorRef, { credits: firestore_2.FieldValue.increment(1) });
+                refunded = true;
+            });
+            if (refunded)
+                console.log(`Credit refunded to vendor ${vendorId} for reviewed order ${orderId}`);
+        }
+        catch (e) {
+            console.error("Credit refund error:", e);
+        }
+    }
     // 2. Update vendor rating aggregates (overall + per-category)
     try {
         const vendorRef = db.doc(`vendors/${vendorId}`);
