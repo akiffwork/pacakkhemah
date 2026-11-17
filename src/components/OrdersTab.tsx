@@ -1,116 +1,74 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { db } from "@/lib/firebase";
 import {
   collection, query, where, onSnapshot, doc, updateDoc,
-  orderBy, serverTimestamp, getDocs, deleteDoc, getDoc,
+  orderBy, serverTimestamp, getDocs, deleteDoc, getDoc, arrayUnion,
 } from "firebase/firestore";
 import { generateInvoicePDF, type InvoiceData, type InvoiceVendor } from "@/lib/invoicePDF";
-
-type Order = {
-  id: string;
-  customerPhone: string;
-  customerName?: string;
-  items: { name: string; qty: number; price: number; variantId?: string; variantLabel?: string; variantColor?: string; linkedItems?: { itemId: string; name: string; qty: number; variantLabel?: string; variantColor?: string }[] }[];
-  totalAmount: number;
-  rentalAmount?: number;
-  depositAmount?: number;
-  serviceFee?: number;
-  promoCode?: string;
-  promoDiscount?: number;
-  promoType?: string;
-  autoDiscount?: number;
-  pickupLocation: string;
-  pax?: number | null;
-  campingLocation?: string;
-  bookingDates: { start: string; end: string };
-  status: "pending" | "confirmed" | "completed" | "cancelled" | "conflict";
-  paymentStatus?: "unpaid" | "deposit_paid" | "full_paid" | "refunded" | "deposit_burnt";
-  agreementSigned?: boolean;
-  agreementSignedAt?: any;
-  agreementId?: string;
-  calendarLinked?: boolean;
-  parentOrderId?: string;
-  stockConflict?: boolean;
-  stockConflictDetails?: string[];
-  reviewToken?: string;
-  reviewTokenUsed?: boolean;
-  reviewTokenSentAt?: any;
-  createdAt: any;
-  completedAt?: any;
-  deleted?: boolean;
-};
+import {
+  type Order, type Group, type DepositOutcome, type PaymentChange,
+  getNextAction, getPayment, getStage, paymentPatch, pickupGaps, canComplete,
+  summarize, sortForGroup,
+} from "@/lib/orderFlow";
+import { type MsgKind, type MsgLang, buildMessage, whatsappUrl } from "@/lib/orderMessages";
+import OrderCard from "@/components/orders/OrderCard";
+import OrderDetail, { type DetailHandlers, type UnlinkedAgreement } from "@/components/orders/OrderDetail";
+import { PaidSheet, SkipSheet, CancelSheet, SettleSheet, ConflictSheet } from "@/components/orders/OrderSheets";
 
 type OrdersTabProps = {
   vendorId: string;
   vendorName: string;
 };
 
-type UnlinkedAgreement = {
-  id: string;
-  customerName: string;
-  customerPhone?: string;
-  timestamp?: any;
-  orderId?: string | null;
-};
+type Sheet =
+  | { type: "paid"; mode: "payment" | "balance"; orderId: string }
+  | { type: "skip"; orderId: string }
+  | { type: "cancel"; orderId: string }
+  | { type: "settle"; orderId: string }
+  | { type: "conflict"; orderId: string };
 
-const statusColors: Record<string, string> = {
-  pending: "bg-amber-100 text-amber-700",
-  confirmed: "bg-blue-100 text-blue-700",
-  completed: "bg-emerald-100 text-emerald-700",
-  cancelled: "bg-red-100 text-red-700",
-  conflict: "bg-red-100 text-red-700",
-};
+const SEGMENTS: { key: Group; label: string }[] = [
+  { key: "action", label: "Needs action" },
+  { key: "waiting", label: "Waiting on customer" },
+  { key: "done", label: "Done" },
+];
 
-const statusIcons: Record<string, string> = {
-  pending: "fa-clock",
-  confirmed: "fa-check",
-  completed: "fa-flag-checkered",
-  cancelled: "fa-times",
-  conflict: "fa-exclamation-triangle",
-};
-
-const paymentColors: Record<string, string> = {
-  unpaid: "bg-red-50 text-red-500 border-red-100",
-  deposit_paid: "bg-amber-50 text-amber-600 border-amber-100",
-  full_paid: "bg-emerald-50 text-emerald-600 border-emerald-100",
-  refunded: "bg-slate-100 text-slate-500 border-slate-200",
-  deposit_burnt: "bg-orange-50 text-orange-700 border-orange-200",
-};
-
-const paymentLabels: Record<string, string> = {
-  unpaid: "Unpaid",
-  deposit_paid: "Deposit Paid",
-  full_paid: "Full Paid",
-  refunded: "Refunded",
-  deposit_burnt: "Deposit Burnt",
-};
+const LANG_KEY = "pk_order_msg_lang";
 
 export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | Order["status"]>("all");
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [showModal, setShowModal] = useState(false);
-  const [sendingReviewLink, setSendingReviewLink] = useState(false);
+  const [segment, setSegment] = useState<Group>("action");
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<Sheet | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [lang, setLangState] = useState<MsgLang>("en");
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [unlinkedAgreements, setUnlinkedAgreements] = useState<UnlinkedAgreement[]>([]);
-  const [showLinkPicker, setShowLinkPicker] = useState(false);
-  const [showParentPicker, setShowParentPicker] = useState(false);
-  const [parentSearch, setParentSearch] = useState("");
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [generatingInvoice, setGeneratingInvoice] = useState(false);
-  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); }
+  // Re-evaluate "today" every few minutes so urgency stays right on a long-open tab
+  const [now, setNow] = useState(() => new Date());
+
+  function showToast(msg: string, type: "success" | "error" = "success") { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); }
+
+  useEffect(() => {
+    try { const saved = localStorage.getItem(LANG_KEY); if (saved === "bm" || saved === "en") setLangState(saved); } catch { /* ignore */ }
+    const t = setInterval(() => setNow(new Date()), 5 * 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  function setLang(l: MsgLang) {
+    setLangState(l);
+    try { localStorage.setItem(LANG_KEY, l); } catch { /* ignore */ }
+  }
 
   // Real-time orders listener
   useEffect(() => {
-    const q = query(
-      collection(db, "orders"),
-      where("vendorId", "==", vendorId),
-      orderBy("createdAt", "desc")
-    );
-
+    const q = query(collection(db, "orders"), where("vendorId", "==", vendorId), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(q, (snap) => {
       setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() } as Order)).filter(o => !o.deleted));
       setLoading(false);
@@ -118,46 +76,77 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
       console.error("Orders listener error:", error);
       setLoading(false);
     });
-
     return () => unsub();
   }, [vendorId]);
 
   // Real-time unlinked agreements listener
   useEffect(() => {
-    const q = query(
-      collection(db, "agreements"),
-      where("vendorId", "==", vendorId),
-      orderBy("timestamp", "desc")
-    );
+    const q = query(collection(db, "agreements"), where("vendorId", "==", vendorId), orderBy("timestamp", "desc"));
     const unsub = onSnapshot(q, (snap) => {
-      setUnlinkedAgreements(
-        snap.docs
-          .map(d => ({ id: d.id, ...d.data() } as UnlinkedAgreement))
-          .filter(a => !a.orderId)
-      );
-    }, (error) => {
-      console.error("Agreements listener error:", error);
-    });
+      setUnlinkedAgreements(snap.docs.map(d => ({ id: d.id, ...d.data() } as UnlinkedAgreement)).filter(a => !a.orderId));
+    }, (error) => { console.error("Agreements listener error:", error); });
     return () => unsub();
   }, [vendorId]);
 
-  // Generate agreement link with orderId and embedded booking data
+  const summary = useMemo(() => summarize(orders, now), [orders, now]);
+  const selectedOrder = selectedId ? orders.find(o => o.id === selectedId) || null : null;
+  const sheetOrder = sheet ? orders.find(o => o.id === sheet.orderId) || null : null;
+  const parentIds = useMemo(() => new Set(orders.map(o => o.parentOrderId).filter(Boolean) as string[]), [orders]);
+
+  const visible = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return sortForGroup(orders, segment, now);
+    const match = (o: Order) =>
+      (o.customerName || "").toLowerCase().includes(term) ||
+      (o.customerPhone || "").includes(term) ||
+      o.id.toLowerCase().includes(term) ||
+      o.items.some(i => i.name.toLowerCase().includes(term));
+    return (["action", "waiting", "done"] as Group[]).flatMap(g => sortForGroup(orders, g, now)).filter(match);
+  }, [orders, segment, search, now]);
+
+  // ── Firestore helpers ─────────────────────────────────────────────────────
+
+  /** Update an order and append one line to its history. */
+  async function patch(orderId: string, data: Record<string, unknown>, event: string, note?: string) {
+    await updateDoc(doc(db, "orders", orderId), {
+      ...data,
+      history: arrayUnion({ type: event, at: new Date().toISOString(), via: "orders_tab", ...(note ? { note } : {}) }),
+    });
+  }
+
+  async function run(fn: () => Promise<void>, failMsg = "Could not update the order. Please try again.") {
+    setBusy(true);
+    try { await fn(); } catch (e) { console.error("Order update error:", e); showToast(failMsg, "error"); } finally { setBusy(false); }
+  }
+
+  async function releaseCalendar(orderId: string) {
+    try {
+      const availSnap = await getDocs(query(collection(db, "vendors", vendorId, "availability"), where("orderId", "==", orderId)));
+      for (const d of availSnap.docs) await deleteDoc(doc(db, "vendors", vendorId, "availability", d.id));
+    } catch (e) { console.error("Calendar sync error:", e); }
+  }
+
+  // ── Links and messages ────────────────────────────────────────────────────
+
+  // Agreement link with orderId and embedded booking data
   function getAgreementLink(order: Order) {
     if (typeof window === "undefined") return "";
     const base = `${window.location.origin}/agreement?v=${vendorId}&o=${order.id}`;
     try {
       const discounts: { label: string; amount: number }[] = [];
       if (order.autoDiscount) discounts.push({ label: "Extended Stay Discount", amount: order.autoDiscount });
+      if (order.minSpendDiscount) discounts.push({ label: "Spend Reward", amount: order.minSpendDiscount });
+      if (order.bundleDiscount) discounts.push({ label: "Bundle Deal", amount: order.bundleDiscount });
       if (order.promoCode && order.promoDiscount) {
         const promoLabel = order.promoType === "fixed"
           ? `Promo Code "${order.promoCode}" (RM${order.promoDiscount} off)`
           : `Promo Code "${order.promoCode}"`;
         discounts.push({ label: promoLabel, amount: order.promoDiscount });
       }
-      const total = (order as any).manualPrice || order.totalAmount;
+      const total = order.manualPrice || order.totalAmount;
       const depositAmount = order.depositAmount;
       const rentalAmount = order.rentalAmount ?? (depositAmount != null ? total - depositAmount : undefined);
-      const summary = {
+      const summaryData = {
         items: order.items.map(i => ({
           name: i.name, qty: i.qty, price: i.price,
           ...(i.variantLabel ? { variantLabel: i.variantLabel, variantColor: i.variantColor } : {}),
@@ -169,202 +158,238 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
         ...(depositAmount != null ? { depositAmount } : {}),
         total,
       };
-      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(summary))));
+      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(summaryData))));
       return `${base}&d=${encoded}`;
     } catch {
       return base;
     }
   }
 
-  // Share agreement link via WhatsApp
-  function sendAgreementWhatsApp(order: Order) {
-    const link = getAgreementLink(order);
-    const msg = `Sila lengkapkan pengesahan identiti untuk tempahan anda:\n\n${link}\n\n1. Masukkan nama penuh\n2. Masukkan nombor WhatsApp\n3. Muat naik gambar IC (depan & belakang)\n4. Tandatangan waiver\n\nTerima kasih!`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+  function getReviewLink(order: Order): string {
+    if (!order.reviewToken || typeof window === "undefined") return "";
+    return `${window.location.origin}/review/${order.reviewToken}`;
   }
 
-  // Manual link: attach an unlinked agreement to this order
+  /** Open WhatsApp with a ready message. Must run first in a click handler, before any await. */
+  function openWhatsApp(order: Order, kind: MsgKind) {
+    const msg = buildMessage(kind, lang, order, {
+      vendorName,
+      agreementLink: kind === "agreement" ? getAgreementLink(order) : undefined,
+      reviewLink: kind === "review" ? getReviewLink(order) : undefined,
+    });
+    window.open(whatsappUrl(order.customerPhone, msg), "_blank");
+  }
+
+  // ── Pipeline actions ──────────────────────────────────────────────────────
+
+  function confirmOrder(order: Order) {
+    openWhatsApp(order, "confirm");
+    run(async () => {
+      await patch(order.id, {
+        status: "confirmed", confirmedAt: serverTimestamp(), stockConflict: false,
+        paymentRequestedAt: serverTimestamp(),
+      }, "confirmed");
+      // Calendar: replace the "Pending Order" placeholder with the customer's name
+      try {
+        const name = order.customerName || order.customerPhone || "Customer";
+        const availSnap = await getDocs(query(collection(db, "vendors", vendorId, "availability"), where("orderId", "==", order.id)));
+        for (const d of availSnap.docs) {
+          if (d.data().customer === "Pending Order") await updateDoc(doc(db, "vendors", vendorId, "availability", d.id), { customer: name });
+        }
+      } catch (e) { console.error("Calendar sync error:", e); }
+      setSheet({ type: "paid", mode: "payment", orderId: order.id });
+    });
+  }
+
+  async function completeOrder(order: Order) {
+    await patch(order.id, {
+      status: "completed", completedAt: serverTimestamp(),
+      reviewToken: order.id, reviewTokenUsed: false,
+    }, "completed");
+    await releaseCalendar(order.id);
+    showToast("Order completed. The review link is ready to send.");
+  }
+
+  function markPickedUp(order: Order, reason?: string) {
+    const gaps = pickupGaps(order);
+    run(async () => {
+      const at = new Date().toISOString();
+      await patch(order.id, {
+        pickedUpAt: serverTimestamp(),
+        ...(gaps.length && reason ? { skips: arrayUnion(...gaps.map(g => ({ step: g.step, reason, at }))) } : {}),
+      }, "picked_up", gaps.length && reason ? `with ${gaps.map(g => g.label).join(", ")} (${reason})` : undefined);
+      setSheet(null);
+      showToast("Marked as picked up");
+    });
+  }
+
+  function markReturned(order: Order) {
+    run(async () => {
+      await patch(order.id, { returnedAt: serverTimestamp(), ...(order.pickedUpAt ? {} : { pickedUpAt: serverTimestamp() }) }, "returned");
+      // Gear is back, so the stock is free again
+      await releaseCalendar(order.id);
+      const p = getPayment(order);
+      if (p.rentalReceived && !p.depositHeld) {
+        await completeOrder(order);
+      } else if (p.depositHeld) {
+        setSheet({ type: "settle", orderId: order.id });
+      } else {
+        showToast(`Marked as returned. Rental RM ${p.rental} is still unpaid.`);
+      }
+    });
+  }
+
+  function applyPayment(order: Order, change: PaymentChange, opts: { closeSheet?: boolean } = {}) {
+    run(async () => {
+      const data = paymentPatch(order, change, serverTimestamp());
+      if (!Object.keys(data).length) return;
+      const event = change.kind === "deposit" ? (change.received ? "deposit_received" : "deposit_undone")
+        : change.kind === "rental" ? (change.received ? "rental_received" : "rental_undone")
+        : change.kind === "full" ? "full_payment_received"
+        : change.kind === "settle" ? "deposit_settled" : "deposit_unsettled";
+      const note = change.kind === "settle"
+        ? (data.depositOutcome === "refunded" ? "refunded in full" : data.depositOutcome === "kept" ? `kept in full (${change.reason || "no reason"})` : `RM ${data.depositKeptAmount} kept (${change.reason || "no reason"})`)
+        : undefined;
+      await patch(order.id, data, event, note);
+      if (opts.closeSheet) setSheet(null);
+      const after = { ...order, ...data } as Order;
+      if (canComplete(after)) {
+        await completeOrder(after);
+      } else if (change.kind === "settle") {
+        showToast("Deposit settled");
+      } else if (change.kind === "full") {
+        showToast("Full payment recorded");
+      } else if (change.kind === "deposit" || change.kind === "rental") {
+        showToast(change.received ? `${change.kind === "deposit" ? "Deposit" : "Rental"} marked received` : "Undone");
+      } else {
+        showToast("Undone");
+      }
+    });
+  }
+
+  function cancelOrder(order: Order, reason: string) {
+    run(async () => {
+      await patch(order.id, { status: "cancelled", cancelledAt: serverTimestamp(), cancelReason: reason }, "cancelled", reason);
+      await releaseCalendar(order.id);
+      setSheet(null);
+      setSelectedId(null);
+      showToast("Order cancelled");
+    });
+  }
+
+  function sendFollowUp(order: Order, kind: MsgKind) {
+    openWhatsApp(order, kind);
+    const stamp: Partial<Record<MsgKind, [string, string]>> = {
+      request_payment: ["paymentRequestedAt", "payment_requested"],
+      request_balance: ["balanceRequestedAt", "balance_requested"],
+      agreement: ["agreementSentAt", "agreement_sent"],
+      pickup_reminder: ["pickupReminderSentAt", "pickup_reminder_sent"],
+      return_reminder: ["returnReminderSentAt", "return_reminder_sent"],
+      review: ["reviewTokenSentAt", "review_sent"],
+    };
+    const entry = stamp[kind];
+    run(async () => {
+      if (entry) await patch(order.id, { [entry[0]]: serverTimestamp() }, entry[1]);
+      if (kind === "request_payment") setSheet({ type: "paid", mode: "payment", orderId: order.id });
+      else if (kind === "request_balance") setSheet({ type: "paid", mode: "balance", orderId: order.id });
+      else if (kind === "agreement") showToast("Agreement link opened in WhatsApp. It updates here once signed.");
+    });
+  }
+
+  /** The one main button on a card or in the detail view. */
+  function runAction(order: Order) {
+    const a = getNextAction(order, new Date());
+    switch (a.key) {
+      case "resolve_conflict": setSheet({ type: "conflict", orderId: order.id }); break;
+      case "confirm": confirmOrder(order); break;
+      case "request_payment": sendFollowUp(order, "request_payment"); break;
+      case "request_balance": sendFollowUp(order, "request_balance"); break;
+      case "send_agreement": sendFollowUp(order, "agreement"); break;
+      case "pickup_reminder": sendFollowUp(order, "pickup_reminder"); break;
+      case "return_reminder": sendFollowUp(order, "return_reminder"); break;
+      case "send_review": sendFollowUp(order, "review"); break;
+      case "mark_picked_up": requestPickup(order); break;
+      case "mark_returned": markReturned(order); break;
+      case "settle_deposit": setSheet({ type: "settle", orderId: order.id }); break;
+      case "complete": run(() => completeOrder(order)); break;
+      default: break;
+    }
+  }
+
+  function requestPickup(order: Order) {
+    if (pickupGaps(order).length) setSheet({ type: "skip", orderId: order.id });
+    else markPickedUp(order);
+  }
+
+  // ── Less common actions (unchanged behaviour) ─────────────────────────────
+
   async function linkAgreementToOrder(agreementId: string, order: Order) {
     try {
-      const agSnap = unlinkedAgreements.find(a => a.id === agreementId);
-      if (!agSnap) return;
-
-      // Update order with customer info from agreement
+      const ag = unlinkedAgreements.find(a => a.id === agreementId);
+      if (!ag) return;
       await updateDoc(doc(db, "orders", order.id), {
-        customerName: agSnap.customerName,
-        customerPhone: agSnap.customerPhone || "",
+        customerName: ag.customerName,
+        customerPhone: ag.customerPhone || "",
         agreementSigned: true,
         agreementSignedAt: serverTimestamp(),
         agreementId,
       });
-
-      // Update agreement with orderId
-      await updateDoc(doc(db, "agreements", agreementId), {
-        orderId: order.id,
-      });
-
-      // Update calendar entries with real customer name
+      await updateDoc(doc(db, "agreements", agreementId), { orderId: order.id });
       try {
-        const availSnap = await getDocs(
-          query(collection(db, "vendors", vendorId, "availability"), where("orderId", "==", order.id))
-        );
+        const availSnap = await getDocs(query(collection(db, "vendors", vendorId, "availability"), where("orderId", "==", order.id)));
         for (const d of availSnap.docs) {
           if (d.data().customer === "Pending Order") {
-            await updateDoc(doc(db, "vendors", vendorId, "availability", d.id), {
-              customer: agSnap.customerName,
-              phone: agSnap.customerPhone || "",
-            });
+            await updateDoc(doc(db, "vendors", vendorId, "availability", d.id), { customer: ag.customerName, phone: ag.customerPhone || "" });
           }
         }
       } catch (e) { console.error("Calendar update error:", e); }
-
-      setShowLinkPicker(false);
-      showToast("Agreement linked!");
+      showToast("Agreement linked");
     } catch (e) {
       console.error("Link error:", e);
-      showToast("Failed to link agreement.", "error");
+      showToast("Failed to link agreement", "error");
     }
   }
 
-  // Filter orders
-  const filteredOrders = filter === "all" 
-    ? orders 
-    : orders.filter(o => o.status === filter);
-
-  // Update order status
-  async function updateStatus(orderId: string, newStatus: Order["status"]) {
-    const updates: any = { status: newStatus };
-    
-    if (newStatus === "completed") {
-      updates.completedAt = serverTimestamp();
-      updates.reviewToken = orderId;
-      updates.reviewTokenUsed = false;
-    }
-
-    await updateDoc(doc(db, "orders", orderId), updates);
-
-    // Sync calendar availability
-    try {
-      const availSnap = await getDocs(
-        query(collection(db, "vendors", vendorId, "availability"), where("orderId", "==", orderId))
-      );
-
-      if (newStatus === "cancelled") {
-        // Delete all availability entries for this order
-        for (const d of availSnap.docs) {
-          await deleteDoc(doc(db, "vendors", vendorId, "availability", d.id));
-        }
-      } else if (newStatus === "completed") {
-        // Clean up availability — gear is returned, free the stock
-        for (const d of availSnap.docs) {
-          await deleteDoc(doc(db, "vendors", vendorId, "availability", d.id));
-        }
-      } else if (newStatus === "confirmed") {
-        // Update "Pending Order" to actual customer name
-        const order = orders.find(o => o.id === orderId);
-        const customerName = order?.customerName || order?.customerPhone || "Customer";
-        for (const d of availSnap.docs) {
-          if (d.data().customer === "Pending Order") {
-            await updateDoc(doc(db, "vendors", vendorId, "availability", d.id), {
-              customer: customerName,
-            });
-          }
-        }
-      }
-    } catch (e) {
-      console.error("Calendar sync error:", e);
-    }
-
-    setShowModal(false);
-    const labels: Record<string, string> = { pending: "Pending", confirmed: "✅ Confirmed", completed: "🏁 Completed", cancelled: "❌ Cancelled", conflict: "⚠️ Conflict" };
-    showToast(labels[newStatus] || newStatus);
-  }
-
-  async function deleteOrder(orderId: string) {
+  async function deleteOrder(order: Order) {
     if (!confirm("Delete this order? This action cannot be undone.")) return;
     try {
-      await updateDoc(doc(db, "orders", orderId), { deleted: true });
-
-      // Clean up calendar entries
-      try {
-        const availSnap = await getDocs(
-          query(collection(db, "vendors", vendorId, "availability"), where("orderId", "==", orderId))
-        );
-        for (const d of availSnap.docs) {
-          await deleteDoc(doc(db, "vendors", vendorId, "availability", d.id));
-        }
-      } catch (e) { console.error("Calendar cleanup error:", e); }
-
-      setShowModal(false);
-      setSelectedOrder(null);
-      showToast("Order deleted!");
-    } catch (e) { console.error("Delete order error:", e); }
+      await updateDoc(doc(db, "orders", order.id), { deleted: true });
+      await releaseCalendar(order.id);
+      setSelectedId(null);
+      showToast("Order deleted");
+    } catch (e) { console.error("Delete order error:", e); showToast("Failed to delete order", "error"); }
   }
 
-  async function linkToParentOrder(parentOrder: Order) {
-    if (!selectedOrder) return;
+  async function linkToParentOrder(order: Order, parentOrder: Order) {
     try {
-      await updateDoc(doc(db, "orders", selectedOrder.id), {
+      await updateDoc(doc(db, "orders", order.id), {
         parentOrderId: parentOrder.id,
         agreementSigned: true,
         agreementId: parentOrder.agreementId || null,
         depositAmount: 0,
-        rentalAmount: selectedOrder.totalAmount,
+        rentalAmount: order.totalAmount,
       });
-      setShowParentPicker(false);
-      setParentSearch("");
-      showToast("Linked as additional order!");
+      showToast("Linked as add-on order");
     } catch (e) { console.error(e); showToast("Failed to link order", "error"); }
   }
 
-  async function unlinkParentOrder() {
-    if (!selectedOrder || !confirm("Remove link to parent order?")) return;
+  async function unlinkParentOrder(order: Order) {
+    if (!confirm("Remove link to the main order?")) return;
     try {
-      await updateDoc(doc(db, "orders", selectedOrder.id), {
+      await updateDoc(doc(db, "orders", order.id), {
         parentOrderId: null,
         agreementSigned: false,
         agreementId: null,
-        depositAmount: selectedOrder.depositAmount,
+        depositAmount: order.depositAmount,
       });
       showToast("Link removed");
-    } catch (e) { showToast("Failed to remove link", "error"); }
+    } catch { showToast("Failed to remove link", "error"); }
   }
 
-  // Generate review link
-  function getReviewLink(order: Order): string {
-    if (!order.reviewToken) return "";
-    // Replace with your actual domain
-    return `${window.location.origin}/review/${order.reviewToken}`;
-  }
-
-  // Copy review link
   function copyReviewLink(order: Order) {
-    const link = getReviewLink(order);
-    navigator.clipboard.writeText(link);
+    navigator.clipboard.writeText(getReviewLink(order));
     setCopiedLink(order.id);
     setTimeout(() => setCopiedLink(null), 2000);
-  }
-
-  // Send review link via WhatsApp
-  async function sendReviewLinkWhatsApp(order: Order) {
-    setSendingReviewLink(true);
-    
-    const link = getReviewLink(order);
-    const message = encodeURIComponent(
-      `🏕️ Thanks for camping with ${vendorName}!\n\n` +
-      `We hope you had an amazing experience.\n\n` +
-      `🔥 Rate your rental:\n${link}\n\n` +
-      `Your feedback helps other campers find great gear!`
-    );
-
-    // Mark as sent
-    await updateDoc(doc(db, "orders", order.id), {
-      reviewTokenSentAt: serverTimestamp(),
-    });
-
-    // Open WhatsApp
-    window.open(`https://wa.me/${order.customerPhone}?text=${message}`, "_blank");
-    setSendingReviewLink(false);
   }
 
   async function handleGenerateInvoice(order: Order) {
@@ -372,14 +397,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
     try {
       const vendorSnap = await getDoc(doc(db, "vendors", vendorId));
       const vd = vendorSnap.data() || {};
-
-      const vendor: InvoiceVendor = {
-        name: vendorName,
-        phone: vd.phone,
-        city: vd.city,
-        taxProfile: vd.taxProfile,
-      };
-
+      const vendor: InvoiceVendor = { name: vendorName, phone: vd.phone, city: vd.city, taxProfile: vd.taxProfile };
       const invoiceData: InvoiceData = {
         orderId: order.id,
         vendor,
@@ -387,12 +405,7 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
         customerPhone: order.customerPhone,
         bookingDates: order.bookingDates,
         pickupLocation: order.pickupLocation || "",
-        items: order.items.map(i => ({
-          name: i.name,
-          qty: i.qty,
-          price: i.price,
-          variantLabel: i.variantLabel,
-        })),
+        items: order.items.map(i => ({ name: i.name, qty: i.qty, price: i.price, variantLabel: i.variantLabel })),
         rentalAmount: order.rentalAmount ?? (order.depositAmount != null ? order.totalAmount - order.depositAmount : order.totalAmount),
         depositAmount: order.depositAmount,
         serviceFee: order.serviceFee,
@@ -404,7 +417,6 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
         paymentStatus: order.paymentStatus,
         createdAt: order.createdAt?.toDate?.() || new Date(),
       };
-
       generateInvoicePDF(invoiceData);
     } catch (e) {
       console.error("Invoice generation error:", e);
@@ -414,1031 +426,198 @@ export default function OrdersTab({ vendorId, vendorName }: OrdersTabProps) {
     }
   }
 
-  // Format date
-  function formatDate(timestamp: any): string {
-    if (!timestamp?.toDate) return "-";
-    return timestamp.toDate().toLocaleDateString("en-MY", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  }
-
-  // Stats
-  const stats = {
-    total: orders.length,
-    pending: orders.filter(o => o.status === "pending").length,
-    conflict: orders.filter(o => o.status === "conflict").length,
-    confirmed: orders.filter(o => o.status === "confirmed").length,
-    completed: orders.filter(o => o.status === "completed").length,
-    awaitingReview: orders.filter(o => o.status === "completed" && !o.reviewTokenUsed).length,
-    unpaid: orders.filter(o => !o.paymentStatus || o.paymentStatus === "unpaid").filter(o => o.status !== "cancelled").length,
+  const handlers: DetailHandlers = {
+    onAction: runAction,
+    onMessage: sendFollowUp,
+    onPayment: (order, change) => applyPayment(order, change),
+    onSettle: (order) => setSheet({ type: "settle", orderId: order.id }),
+    onPickup: requestPickup,
+    onUndoPickup: (order) => run(async () => { await patch(order.id, { pickedUpAt: null }, "pickup_undone"); showToast("Undone"); }),
+    onCancel: (order) => setSheet({ type: "cancel", orderId: order.id }),
+    onDelete: deleteOrder,
+    onInvoice: handleGenerateInvoice,
+    onCopyReview: copyReviewLink,
+    onLinkAgreement: linkAgreementToOrder,
+    onLinkParent: linkToParentOrder,
+    onUnlinkParent: unlinkParentOrder,
+    onSelect: setSelectedId,
   };
 
+  const counts: Record<Group, number> = { action: summary.action, waiting: summary.waiting, done: summary.done };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-black text-[#062c24] uppercase">Orders</h2>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-            Manage bookings & send review requests
-          </p>
+      <div>
+        <h2 className="text-3xl font-black text-[#062c24] uppercase">Orders</h2>
+        <p className="text-xs font-semibold text-slate-600">Every order shows the one thing to do next</p>
+      </div>
+
+      {/* Summary */}
+      <div className="bg-[#062c24] rounded-2xl px-4 py-3.5 grid grid-cols-3 gap-2 text-white">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[22px] font-bold leading-tight">{summary.action}</span>
+          <span className="text-xs text-emerald-100">Need action</span>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[22px] font-bold leading-tight">{summary.waiting}</span>
+          <span className="text-xs text-emerald-100">Waiting on customer</span>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[22px] font-bold leading-tight">RM {summary.toCollect.toLocaleString()}</span>
+          <span className="text-xs text-emerald-100">To collect</span>
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <div className="bg-white rounded-xl p-4 border border-slate-100">
-          <p className="text-[9px] font-black text-slate-400 uppercase">Total</p>
-          <p className="text-2xl font-black text-[#062c24]">{stats.total}</p>
-          <p className="text-[8px] text-slate-300 mt-1">All time orders</p>
-        </div>
-        <div className="bg-amber-50 rounded-xl p-4 border border-amber-100">
-          <p className="text-[9px] font-black text-amber-600 uppercase">Pending</p>
-          <p className="text-2xl font-black text-amber-700">{stats.pending}{stats.conflict > 0 ? <span className="text-red-600 text-sm ml-1">+{stats.conflict}</span> : ""}</p>
-          <p className="text-[8px] text-amber-500 mt-1">Needs your action</p>
-        </div>
-        <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
-          <p className="text-[9px] font-black text-blue-600 uppercase">Confirmed</p>
-          <p className="text-2xl font-black text-blue-700">{stats.confirmed}</p>
-          <p className="text-[8px] text-blue-500 mt-1">Active bookings</p>
-        </div>
-        <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
-          <p className="text-[9px] font-black text-emerald-600 uppercase">Completed</p>
-          <p className="text-2xl font-black text-emerald-700">{stats.completed}</p>
-          <p className="text-[8px] text-emerald-500 mt-1">Gear returned</p>
-        </div>
-        <div className="bg-red-50 rounded-xl p-4 border border-red-100">
-          <p className="text-[9px] font-black text-red-600 uppercase">Unpaid</p>
-          <p className="text-2xl font-black text-red-700">{stats.unpaid}</p>
-          <p className="text-[8px] text-red-500 mt-1">Awaiting payment</p>
-        </div>
+      {/* Search */}
+      <div className="relative">
+        <label htmlFor="orders-search" className="sr-only">Search orders</label>
+        <i className="fas fa-search absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-sm" aria-hidden="true"></i>
+        <input id="orders-search" type="search" value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Search by name, phone or item"
+          className="w-full min-h-11 bg-white border border-slate-300 rounded-xl pl-10 pr-3 text-base text-slate-900 placeholder:text-slate-500" />
       </div>
 
-      {/* Filter Tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
-        {(["all", "pending", "conflict", "confirmed", "completed", "cancelled"] as const).map(status => (
-          <button
-            key={status}
-            onClick={() => setFilter(status)}
-            className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase whitespace-nowrap transition-all ${
-              filter === status
-                ? status === "conflict" ? "bg-red-600 text-white" : "bg-[#062c24] text-white"
-                : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300"
-            }`}
-          >
-            {status === "all" ? "All Orders" : status}
-            {status !== "all" && (
-              <span className="ml-2 opacity-60">
-                ({orders.filter(o => o.status === status).length})
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+      {/* Segments */}
+      {!search.trim() && (
+        <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }} role="tablist" aria-label="Order groups">
+          {SEGMENTS.map(s => (
+            <button key={s.key} type="button" role="tab" aria-selected={segment === s.key} onClick={() => setSegment(s.key)}
+              className={`min-h-11 px-3.5 rounded-xl text-[13px] font-semibold whitespace-nowrap ${
+                segment === s.key ? "bg-[#062c24] text-white" : "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50"
+              }`}>
+              {s.label}{s.key !== "done" || counts[s.key] ? ` · ${counts[s.key]}` : ""}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Orders List */}
+      {/* List */}
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => (
-            <div key={i} className="bg-white rounded-xl p-4 border border-slate-100 animate-pulse">
+            <div key={i} className="bg-white rounded-2xl p-4 border border-slate-200 animate-pulse">
               <div className="h-4 bg-slate-100 rounded w-1/3 mb-3"></div>
-              <div className="h-3 bg-slate-100 rounded w-1/2"></div>
+              <div className="h-3 bg-slate-100 rounded w-1/2 mb-4"></div>
+              <div className="h-12 bg-slate-100 rounded-xl"></div>
             </div>
           ))}
         </div>
-      ) : filteredOrders.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-100 p-8">
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <i className="fas fa-inbox text-slate-300 text-2xl"></i>
-            </div>
-            <p className="text-sm font-bold text-slate-400">
-              {filter === "all" ? "No orders yet" : `No ${filter} orders`}
-            </p>
-            <p className="text-xs text-slate-300 mt-1">
-              {filter === "all" 
-                ? "Orders will appear here when customers book via WhatsApp" 
-                : "Try viewing all orders instead"}
-            </p>
+      ) : visible.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 text-center">
+          <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <i className={`fas ${segment === "action" && orders.length ? "fa-check" : "fa-inbox"} text-slate-500 text-xl`} aria-hidden="true"></i>
           </div>
+          <p className="text-sm font-bold text-slate-800">
+            {search.trim() ? "No orders match your search"
+              : orders.length === 0 ? "No orders yet"
+              : segment === "action" ? "Nothing needs your action"
+              : segment === "waiting" ? "No orders are waiting on a customer"
+              : "No completed or cancelled orders yet"}
+          </p>
+          <p className="text-[13px] text-slate-600 mt-1">
+            {search.trim() ? "Try a different name, phone number or item."
+              : orders.length === 0 ? "Orders appear here when customers book through your shop."
+              : segment === "action" ? "New orders and follow-ups will show up here."
+              : "Check the other groups above."}
+          </p>
 
-          {/* Order Flow Guide - Only show when no orders at all */}
-          {filter === "all" && orders.length === 0 && (
-            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-5">
-              <h4 className="text-xs font-black text-emerald-700 uppercase mb-4 flex items-center gap-2">
-                <i className="fas fa-route"></i> How Orders Work
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="text-center">
-                  <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-2 text-sm font-black">1</div>
-                  <p className="text-[10px] font-black text-slate-600 uppercase">Pending</p>
-                  <p className="text-[9px] text-slate-400 mt-1">Customer submits order via WhatsApp</p>
-                </div>
-                <div className="text-center">
-                  <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-2 text-sm font-black">2</div>
-                  <p className="text-[10px] font-black text-slate-600 uppercase">Confirmed</p>
-                  <p className="text-[9px] text-slate-400 mt-1">You accept the booking</p>
-                </div>
-                <div className="text-center">
-                  <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2 text-sm font-black">3</div>
-                  <p className="text-[10px] font-black text-slate-600 uppercase">Completed</p>
-                  <p className="text-[9px] text-slate-400 mt-1">Gear returned, mark as done</p>
-                </div>
-                <div className="text-center">
-                  <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-2 text-sm font-black">
-                    <i className="fas fa-star text-xs"></i>
-                  </div>
-                  <p className="text-[10px] font-black text-slate-600 uppercase">Review</p>
-                  <p className="text-[9px] text-slate-400 mt-1">Customer rates their experience</p>
-                </div>
-              </div>
-              <p className="text-[10px] text-emerald-600 text-center mt-4 font-medium">
-                <i className="fas fa-lightbulb mr-1"></i>
-                Mark orders "Completed" to automatically send review requests!
-              </p>
+          {orders.length === 0 && !search.trim() && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mt-5 text-left">
+              <h3 className="text-sm font-extrabold text-[#062c24] mb-3">How an order moves</h3>
+              <ol className="flex flex-col gap-2.5 text-[13px] text-slate-700">
+                {[
+                  ["New", "A customer books through your shop. Confirm or decline."],
+                  ["Confirmed", "Collect the deposit or full payment and get the agreement signed."],
+                  ["Picked up", "Hand over the gear."],
+                  ["Returned", "Check the gear, then refund or keep the deposit."],
+                  ["Completed", "The order closes itself and the review link is ready to send."],
+                ].map(([t, d], i) => (
+                  <li key={t} className="flex gap-3">
+                    <span className="w-6 h-6 rounded-full bg-[#062c24] text-white text-xs font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+                    <span><span className="font-bold text-slate-900">{t}.</span> {d}</span>
+                  </li>
+                ))}
+              </ol>
             </div>
           )}
         </div>
       ) : (
-        <div className="space-y-3">
-          {filteredOrders.map(order => (
-            <div
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {visible.map(order => (
+            <OrderCard
               key={order.id}
-              className="bg-white rounded-xl p-4 border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all"
-            >
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                {/* Left: Order Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${statusColors[order.status]}`}>
-                      <i className={`fas ${statusIcons[order.status]} mr-1`}></i>
-                      {order.status}
-                    </span>
-                    {order.status === "completed" && !order.reviewTokenUsed && (
-                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-orange-100 text-orange-600">
-                        <i className="fas fa-star mr-1"></i> Review Pending
-                      </span>
-                    )}
-                    {order.status === "completed" && order.reviewTokenUsed && (
-                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-emerald-100 text-emerald-600">
-                        <i className="fas fa-check mr-1"></i> Reviewed
-                      </span>
-                    )}
-                    {order.agreementSigned ? (
-                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-emerald-50 text-emerald-600">
-                        <i className="fas fa-file-signature mr-1"></i> Signed
-                      </span>
-                    ) : (
-                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-slate-100 text-slate-400">
-                        <i className="fas fa-file-signature mr-1"></i> Unsigned
-                      </span>
-                    )}
-                    {order.calendarLinked && (
-                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-blue-50 text-blue-600">
-                        <i className="fas fa-calendar-check mr-1"></i> Booked
-                      </span>
-                    )}
-                    {order.parentOrderId && (
-                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-violet-50 text-violet-600">
-                        <i className="fas fa-link mr-1"></i> Add-on
-                      </span>
-                    )}
-                    {!order.parentOrderId && orders.some(o => o.parentOrderId === order.id) && (
-                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-violet-50 text-violet-500">
-                        <i className="fas fa-sitemap mr-1"></i> Has Add-ons
-                      </span>
-                    )}
-                    {order.paymentStatus && order.paymentStatus !== "unpaid" && (
-                      <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase border ${paymentColors[order.paymentStatus]}`}>
-                        <i className="fas fa-money-bill-wave mr-1"></i>{paymentLabels[order.paymentStatus]}
-                      </span>
-                    )}
-                    {order.stockConflict && (
-                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-red-100 text-red-600 animate-pulse">
-                        <i className="fas fa-exclamation-triangle mr-1"></i> Stock Conflict
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-3 text-sm">
-                    <span className={`font-black ${order.customerName ? "text-[#062c24]" : "text-slate-400 italic"}`}>
-                      {order.customerName || "Customer (awaiting agreement)"}
-                    </span>
-                    {order.customerPhone && (
-                      <>
-                        <span className="text-slate-300">•</span>
-                        <span className="text-emerald-600 text-xs font-bold">
-                          <i className="fab fa-whatsapp mr-0.5"></i>{order.customerPhone}
-                        </span>
-                      </>
-                    )}
-                    <span className="text-slate-300">•</span>
-                    <span className="text-slate-500">
-                      {order.bookingDates.start} → {order.bookingDates.end}
-                    </span>
-                  </div>
-
-                  <div className="text-xs text-slate-400 mt-1">
-                    {order.items.map(i => `${i.name}${i.variantLabel ? ` (${i.variantLabel})` : ""} x${i.qty}`).join(", ")}
-                  </div>
-                </div>
-
-                {/* Right: Amount & Actions */}
-                <div className="flex items-center gap-3">
-                  <div className="text-right">
-                    {order.depositAmount ? (
-                      <>
-                        <p className="text-lg font-black text-emerald-600">
-                          RM {order.rentalAmount ?? (order.totalAmount - order.depositAmount)}
-                        </p>
-                        <p className="text-[8px] text-slate-400 font-bold">+RM {order.depositAmount} deposit</p>
-                      </>
-                    ) : (
-                      <p className="text-lg font-black text-emerald-600">RM {order.totalAmount}</p>
-                    )}
-                    {order.depositAmount && order.paymentStatus === "deposit_paid" ? (
-                      <p className="text-[8px] text-amber-600 font-bold">Baki: RM{order.rentalAmount ?? (order.totalAmount - order.depositAmount)}</p>
-                    ) : order.paymentStatus === "refunded" ? (
-                      <p className="text-[8px] text-blue-600 font-bold">Deposit refunded</p>
-                    ) : order.paymentStatus === "deposit_burnt" ? (
-                      <p className="text-[8px] text-orange-600 font-bold">Deposit burnt</p>
-                    ) : !order.depositAmount ? (
-                      <p className="text-[9px] text-slate-400">{formatDate(order.createdAt)}</p>
-                    ) : null}
-                  </div>
-
-                  <button
-                    onClick={() => { setSelectedOrder(order); setShowModal(true); }}
-                    className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-colors"
-                  >
-                    <i className="fas fa-ellipsis-v"></i>
-                  </button>
-                </div>
-              </div>
-
-              {/* Review Link Section (for completed orders) */}
-              {order.status === "completed" && !order.reviewTokenUsed && (
-                <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[9px] font-black text-orange-600 uppercase mb-1">
-                      <i className="fas fa-fire mr-1"></i> Send Review Request
-                    </p>
-                    <p className="text-[10px] text-slate-400 truncate">
-                      {getReviewLink(order)}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => copyReviewLink(order)}
-                      className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${
-                        copiedLink === order.id
-                          ? "bg-emerald-500 text-white"
-                          : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                      }`}
-                    >
-                      <i className={`fas ${copiedLink === order.id ? "fa-check" : "fa-copy"} mr-1`}></i>
-                      {copiedLink === order.id ? "Copied!" : "Copy"}
-                    </button>
-                    <button
-                      onClick={() => sendReviewLinkWhatsApp(order)}
-                      disabled={sendingReviewLink}
-                      className="px-3 py-2 rounded-lg text-[9px] font-black uppercase bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
-                    >
-                      <i className="fab fa-whatsapp mr-1"></i>
-                      {order.reviewTokenSentAt ? "Resend" : "Send"} via WhatsApp
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+              order={order}
+              action={getNextAction(order, now)}
+              hasAddOns={parentIds.has(order.id)}
+              busy={busy}
+              onOpen={() => setSelectedId(order.id)}
+              onAction={() => runAction(order)}
+              onDecline={() => setSheet({ type: "cancel", orderId: order.id })}
+            />
           ))}
         </div>
       )}
 
-      {/* Order Detail Modal */}
-      {showModal && selectedOrder && (
-        <div className="fixed inset-0 bg-[#062c24]/90 backdrop-blur-sm z-[500] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-black text-[#062c24] uppercase">Order Details</h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500"
-              >
-                <i className="fas fa-times"></i>
-              </button>
-            </div>
+      {/* Order detail */}
+      {selectedOrder && (
+        <OrderDetail
+          key={`${selectedOrder.id}-${getStage(selectedOrder)}`}
+          order={selectedOrder}
+          orders={orders}
+          action={getNextAction(selectedOrder, now)}
+          lang={lang}
+          setLang={setLang}
+          busy={busy}
+          generatingInvoice={generatingInvoice}
+          copiedReview={copiedLink === selectedOrder.id}
+          unlinkedAgreements={unlinkedAgreements}
+          handlers={handlers}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
 
-            {/* Status Badge */}
-            <div className="mb-4 flex flex-wrap gap-2">
-              <span className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase ${statusColors[selectedOrder.status]}`}>
-                <i className={`fas ${statusIcons[selectedOrder.status]} mr-1`}></i>
-                {selectedOrder.status}
-              </span>
-              {selectedOrder.agreementSigned ? (
-                <span className="px-3 py-1.5 rounded-lg text-xs font-black uppercase bg-emerald-50 text-emerald-600">
-                  <i className="fas fa-file-signature mr-1"></i> Agreement Signed
-                </span>
-              ) : (
-                <span className="px-3 py-1.5 rounded-lg text-xs font-black uppercase bg-slate-100 text-slate-400">
-                  <i className="fas fa-file-signature mr-1"></i> Awaiting Agreement
-                </span>
-              )}
-              {selectedOrder.calendarLinked && (
-                <span className="px-3 py-1.5 rounded-lg text-xs font-black uppercase bg-blue-50 text-blue-600">
-                  <i className="fas fa-calendar-check mr-1"></i> Calendar Booked
-                </span>
-              )}
-              {selectedOrder.parentOrderId && (
-                <span className="px-3 py-1.5 rounded-lg text-xs font-black uppercase bg-violet-50 text-violet-600">
-                  <i className="fas fa-link mr-1"></i> Add-on Order
-                </span>
-              )}
-            </div>
-
-            {/* Customer Info */}
-            <div className="bg-slate-50 rounded-xl p-4 mb-4">
-              <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Customer</p>
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${selectedOrder.customerName ? "bg-emerald-100 text-emerald-600" : "bg-slate-200 text-slate-400"}`}>
-                  <i className="fas fa-user"></i>
-                </div>
-                <div>
-                  <p className={`font-bold ${selectedOrder.customerName ? "text-[#062c24]" : "text-slate-400 italic"}`}>
-                    {selectedOrder.customerName || "Customer (awaiting agreement)"}
-                  </p>
-                  {selectedOrder.customerPhone ? (
-                    <p className="text-xs text-slate-500"><i className="fab fa-whatsapp text-emerald-500 mr-1"></i>{selectedOrder.customerPhone}</p>
-                  ) : (
-                    <p className="text-xs text-slate-400 italic">Awaiting agreement sign</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Booking Details */}
-            <div className="bg-slate-50 rounded-xl p-4 mb-4">
-              <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Booking</p>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Dates</span>
-                  <span className="font-bold">{selectedOrder.bookingDates.start} → {selectedOrder.bookingDates.end}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Pickup</span>
-                  <span className="font-bold">{selectedOrder.pickupLocation}</span>
-                </div>
-                {selectedOrder.pax ? (
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Pax</span>
-                    <span className="font-bold">{selectedOrder.pax} pax</span>
-                  </div>
-                ) : null}
-                {selectedOrder.campingLocation ? (
-                  <div className="flex justify-between gap-4">
-                    <span className="text-slate-500 shrink-0">Camping at</span>
-                    <span className="font-bold text-right">{selectedOrder.campingLocation}</span>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            {/* Items */}
-            <div className="bg-slate-50 rounded-xl p-4 mb-4">
-              <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Items</p>
-              <div className="space-y-2">
-                {selectedOrder.items.map((item, i) => (
-                  <div key={i}>
-                    <div className="flex justify-between items-center text-sm">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        {item.variantColor && <span className="w-3 h-3 rounded-full border border-slate-200 shrink-0" style={{ backgroundColor: item.variantColor }}></span>}
-                        <span className="text-slate-600 truncate">
-                          {item.name} x{item.qty}
-                          {item.variantLabel && <span className="text-[9px] text-teal-600 ml-1">({item.variantLabel})</span>}
-                        </span>
-                        {item.linkedItems?.length ? <span className="text-[8px] font-black bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded shrink-0">PKG</span> : null}
-                      </div>
-                      <span className="font-bold shrink-0 ml-2">RM {item.price * item.qty}</span>
-                    </div>
-                    {item.linkedItems?.map((li, j) => (
-                      <div key={j} className="flex items-center gap-1.5 ml-3 mt-1">
-                        <div className="w-px h-3 bg-slate-200 shrink-0" />
-                        {li.variantColor && <span className="w-2.5 h-2.5 rounded-full border border-slate-200 shrink-0" style={{ backgroundColor: li.variantColor }}></span>}
-                        <span className="text-[11px] text-slate-400 truncate">
-                          {li.name} x{li.qty * item.qty}
-                          {li.variantLabel && <span className="text-teal-500 ml-1">({li.variantLabel})</span>}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-                <div className="border-t border-slate-200 pt-2 space-y-1">
-                  {selectedOrder.depositAmount ? (
-                    <>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-slate-500">Rental</span>
-                        <span className="font-bold text-[#062c24]">RM {selectedOrder.rentalAmount ?? (selectedOrder.totalAmount - selectedOrder.depositAmount)}</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-slate-500">Deposit (Refundable)</span>
-                        <span className="font-bold text-slate-400">RM {selectedOrder.depositAmount}</span>
-                      </div>
-                      <div className="flex justify-between pt-1 border-t border-slate-100">
-                        <span className="font-black text-[#062c24]">Total</span>
-                        <span className="font-black text-emerald-600 text-lg">RM {selectedOrder.totalAmount}</span>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex justify-between">
-                      <span className="font-black text-[#062c24]">Total</span>
-                      <span className="font-black text-emerald-600 text-lg">RM {selectedOrder.totalAmount}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Stock Conflict Warning */}
-            {selectedOrder.stockConflict && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
-                <p className="text-xs font-black text-red-700 uppercase mb-2"><i className="fas fa-exclamation-triangle mr-1"></i>Stock Conflict Detected</p>
-                <div className="space-y-1">
-                  {(selectedOrder.stockConflictDetails || []).map((detail, i) => (
-                    <p key={i} className="text-[10px] text-red-600">• {detail}</p>
-                  ))}
-                </div>
-                <p className="text-[9px] text-red-500 mt-2">Please check inventory or cancel this order.</p>
-              </div>
-            )}
-
-            {/* Payment Status */}
-            <div className="mb-4">
-              <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Payment Status</p>
-              <div className="grid grid-cols-4 gap-1.5">
-                {(["unpaid", "deposit_paid", "full_paid", "refunded", "deposit_burnt"] as const).map(ps => (
-                  <button
-                    key={ps}
-                    onClick={async () => {
-                      try {
-                        await updateDoc(doc(db, "orders", selectedOrder.id), { paymentStatus: ps });
-                        showToast(`Payment: ${paymentLabels[ps]}`);
-                      } catch (e) { console.error("Payment status error:", e); showToast("Failed to update payment", "error"); }
-                    }}
-                    className={`py-2.5 rounded-xl text-[8px] font-black uppercase text-center transition-all border ${
-                      (selectedOrder.paymentStatus || "unpaid") === ps
-                        ? paymentColors[ps] + " ring-2 ring-offset-1 ring-current"
-                        : "bg-white border-slate-200 text-slate-400 hover:border-slate-300"
-                    }`}
-                  >
-                    {paymentLabels[ps]}
-                  </button>
-                ))}
-              </div>
-
-              {/* Payment Summary — changes based on status */}
-              {selectedOrder.depositAmount ? (() => {
-                const ps = selectedOrder.paymentStatus || "unpaid";
-                const deposit = selectedOrder.depositAmount || 0;
-                const rental = selectedOrder.rentalAmount ?? (selectedOrder.totalAmount - deposit);
-                const total = selectedOrder.totalAmount;
-
-                return (
-                  <div className={`mt-3 p-3 rounded-xl border text-xs ${
-                    ps === "unpaid" ? "bg-red-50 border-red-100" :
-                    ps === "deposit_paid" ? "bg-amber-50 border-amber-100" :
-                    ps === "full_paid" ? "bg-emerald-50 border-emerald-100" :
-                    "bg-slate-50 border-slate-200"
-                  }`}>
-                    {ps === "unpaid" && (
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between">
-                          <span className="text-red-500 font-bold">Amount Due</span>
-                          <span className="font-black text-red-600">RM {total}</span>
-                        </div>
-                        <p className="text-[9px] text-red-400">Customer belum buat sebarang bayaran</p>
-                      </div>
-                    )}
-                    {ps === "deposit_paid" && (
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between">
-                          <span className="text-emerald-600 font-bold"><i className="fas fa-check-circle mr-1"></i>Deposit Paid</span>
-                          <span className="font-black text-emerald-600">RM {deposit}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-amber-600 font-bold"><i className="fas fa-clock mr-1"></i>Remaining Balance</span>
-                          <span className="font-black text-amber-700">RM {rental}</span>
-                        </div>
-                        <p className="text-[9px] text-amber-500">Baki RM{rental} perlu dibayar sebelum pickup</p>
-                      </div>
-                    )}
-                    {ps === "full_paid" && (
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between">
-                          <span className="text-emerald-600 font-bold"><i className="fas fa-check-circle mr-1"></i>Rental Paid</span>
-                          <span className="font-black text-emerald-600">RM {rental}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-emerald-600 font-bold"><i className="fas fa-check-circle mr-1"></i>Deposit Paid</span>
-                          <span className="font-black text-emerald-600">RM {deposit}</span>
-                        </div>
-                        <div className="flex justify-between pt-1.5 border-t border-emerald-200">
-                          <span className="text-emerald-700 font-black">Total Collected</span>
-                          <span className="font-black text-emerald-700">RM {total}</span>
-                        </div>
-                        <p className="text-[9px] text-emerald-500">Semua bayaran telah diterima. Deposit RM{deposit} akan dipulangkan selepas gear dipulangkan.</p>
-                      </div>
-                    )}
-                    {ps === "refunded" && (
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between">
-                          <span className="text-slate-500 font-bold"><i className="fas fa-check-circle mr-1"></i>Rental Collected</span>
-                          <span className="font-black text-slate-600">RM {rental}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-blue-600 font-bold"><i className="fas fa-undo mr-1"></i>Deposit Refunded</span>
-                          <span className="font-black text-blue-600">− RM {deposit}</span>
-                        </div>
-                        <div className="flex justify-between pt-1.5 border-t border-slate-200">
-                          <span className="text-[#062c24] font-black">Net Revenue</span>
-                          <span className="font-black text-[#062c24]">RM {rental}</span>
-                        </div>
-                        <p className="text-[9px] text-slate-400">Deposit RM{deposit} telah dipulangkan kepada pelanggan</p>
-                      </div>
-                    )}
-                    {ps === "deposit_burnt" && (
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between">
-                          <span className="text-slate-600 font-bold"><i className="fas fa-check-circle mr-1"></i>Rental Collected</span>
-                          <span className="font-black text-slate-600">RM {rental}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-orange-600 font-bold"><i className="fas fa-fire mr-1"></i>Deposit Kept (Dispute)</span>
-                          <span className="font-black text-orange-600">RM {deposit}</span>
-                        </div>
-                        <div className="flex justify-between pt-1.5 border-t border-orange-200">
-                          <span className="text-[#062c24] font-black">Net Revenue</span>
-                          <span className="font-black text-emerald-700">RM {total}</span>
-                        </div>
-                        <p className="text-[9px] text-orange-500">Deposit tidak dipulangkan — dikira sebagai hasil.</p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })() : null}
-            </div>
-
-            {/* Status Actions */}
-            <div className="space-y-2">
-              <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Update Status</p>
-              
-              {selectedOrder.status === "pending" && (
-                <>
-                  <p className="text-[10px] text-slate-400 mb-2">
-                    <i className="fas fa-info-circle mr-1"></i>
-                    This order is waiting for your confirmation
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => updateStatus(selectedOrder.id, "confirmed")}
-                      className="py-3 rounded-xl font-black uppercase text-xs bg-blue-500 text-white hover:bg-blue-600"
-                      title="Accept this booking"
-                    >
-                      <i className="fas fa-check mr-2"></i>Confirm
-                    </button>
-                    <button
-                      onClick={() => updateStatus(selectedOrder.id, "cancelled")}
-                      className="py-3 rounded-xl font-black uppercase text-xs bg-red-100 text-red-600 hover:bg-red-200"
-                      title="Reject or cancel this booking"
-                    >
-                      <i className="fas fa-times mr-2"></i>Cancel
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {selectedOrder.status === "conflict" && (
-                <>
-                  <p className="text-[10px] text-red-500 mb-2">
-                    <i className="fas fa-exclamation-triangle mr-1"></i>
-                    Stock conflict detected. Confirm to override or cancel.
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={async () => {
-                        await updateDoc(doc(db, "orders", selectedOrder.id), { stockConflict: false });
-                        await updateStatus(selectedOrder.id, "confirmed");
-                      }}
-                      className="py-3 rounded-xl font-black uppercase text-xs bg-amber-500 text-white hover:bg-amber-600"
-                    >
-                      <i className="fas fa-check mr-2"></i>Override & Confirm
-                    </button>
-                    <button
-                      onClick={() => updateStatus(selectedOrder.id, "cancelled")}
-                      className="py-3 rounded-xl font-black uppercase text-xs bg-red-100 text-red-600 hover:bg-red-200"
-                    >
-                      <i className="fas fa-times mr-2"></i>Cancel
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {selectedOrder.status === "confirmed" && (
-                <>
-                  <p className="text-[10px] text-slate-400 mb-2">
-                    <i className="fas fa-info-circle mr-1"></i>
-                    Mark as completed after gear is returned
-                  </p>
-                  <button
-                    onClick={() => updateStatus(selectedOrder.id, "completed")}
-                    className="w-full py-3 rounded-xl font-black uppercase text-xs bg-emerald-500 text-white hover:bg-emerald-600"
-                    title="Mark as done - sends review link to customer"
-                  >
-                    <i className="fas fa-flag-checkered mr-2"></i>Mark as Completed
-                  </button>
-                </>
-              )}
-
-              {selectedOrder.status === "completed" && !selectedOrder.reviewTokenUsed && (
-                <>
-                  <p className="text-[10px] text-slate-400 mb-2">
-                    <i className="fas fa-info-circle mr-1"></i>
-                    Remind customer to leave a review
-                  </p>
-                  <button
-                    onClick={() => sendReviewLinkWhatsApp(selectedOrder)}
-                    className="w-full py-3 rounded-xl font-black uppercase text-xs bg-gradient-to-r from-orange-500 to-amber-500 text-white hover:from-orange-600 hover:to-amber-600"
-                    title="Send review link via WhatsApp"
-                  >
-                    <i className="fas fa-fire mr-2"></i>Send Review Request
-                  </button>
-                </>
-              )}
-
-              {selectedOrder.status === "completed" && selectedOrder.reviewTokenUsed && (
-                <div className="text-center py-4 bg-emerald-50 rounded-xl">
-                  <i className="fas fa-check-circle text-emerald-500 text-2xl mb-2"></i>
-                  <p className="text-sm font-bold text-emerald-700">Customer has reviewed!</p>
-                </div>
-              )}
-            </div>
-
-            {/* Calendar Booking */}
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Calendar Booking</p>
-              
-              {selectedOrder.calendarLinked ? (
-                <div className="bg-blue-50 rounded-xl p-4 flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
-                    <i className="fas fa-calendar-check"></i>
-                  </div>
-                  <div>
-                    <p className="text-xs font-black text-blue-700">Booking Created</p>
-                    <p className="text-[10px] text-blue-600">
-                      Items blocked on calendar
-                      {(selectedOrder as any).calendarDates?.start ? ` • ${(selectedOrder as any).calendarDates.start} → ${(selectedOrder as any).calendarDates.end}` : ""}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <a
-                  href={`/calendar?order=${selectedOrder.id}`}
-                  className="w-full py-3 rounded-xl font-black uppercase text-xs bg-blue-500 text-white hover:bg-blue-600 flex items-center justify-center gap-2 transition-all"
-                >
-                  <i className="fas fa-calendar-plus"></i> Create Booking on Calendar
-                </a>
-              )}
-            </div>
-
-            {/* Agreement Section */}
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Agreement</p>
-
-              {selectedOrder.parentOrderId ? (
-                <div className="bg-violet-50 rounded-xl p-4 flex items-center gap-3">
-                  <div className="w-10 h-10 bg-violet-100 rounded-full flex items-center justify-center text-violet-600">
-                    <i className="fas fa-link"></i>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-black text-violet-700">Covered by Parent Order</p>
-                    <p className="text-[10px] text-violet-500 break-all">#{selectedOrder.parentOrderId.slice(-8)}</p>
-                  </div>
-                </div>
-              ) : selectedOrder.agreementSigned ? (
-                <div className="bg-emerald-50 rounded-xl p-4 flex items-center gap-3">
-                  <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600">
-                    <i className="fas fa-file-signature"></i>
-                  </div>
-                  <div>
-                    <p className="text-xs font-black text-emerald-700">Agreement Signed</p>
-                    <p className="text-[10px] text-emerald-600">
-                      {selectedOrder.customerName} • {selectedOrder.agreementSignedAt?.toDate?.()?.toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" }) || ""}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {/* Send agreement link via WhatsApp */}
-                  <button
-                    onClick={() => sendAgreementWhatsApp(selectedOrder)}
-                    className="w-full py-3 rounded-xl font-black uppercase text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200 flex items-center justify-center gap-2 transition-all"
-                  >
-                    <i className="fas fa-paper-plane"></i> Send Agreement Link
-                  </button>
-
-                  {/* Manual link from unlinked agreements */}
-                  {unlinkedAgreements.length > 0 && (
-                    <>
-                      <button
-                        onClick={() => setShowLinkPicker(!showLinkPicker)}
-                        className="w-full py-3 rounded-xl font-black uppercase text-[10px] bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center gap-2 transition-all"
-                      >
-                        <i className="fas fa-link"></i> Link Existing Agreement ({unlinkedAgreements.length})
-                      </button>
-                      {showLinkPicker && (
-                        <div className="bg-slate-50 rounded-xl p-3 space-y-2 max-h-40 overflow-y-auto border border-slate-200">
-                          {unlinkedAgreements.map(a => (
-                            <button
-                              key={a.id}
-                              onClick={() => linkAgreementToOrder(a.id, selectedOrder)}
-                              className="w-full flex items-center justify-between bg-white p-3 rounded-lg border border-slate-100 hover:border-indigo-300 transition-all text-left"
-                            >
-                              <div>
-                                <p className="text-xs font-bold text-[#062c24]">{a.customerName}</p>
-                                <p className="text-[9px] text-slate-400">
-                                  {a.timestamp?.toDate?.()?.toLocaleDateString("en-MY", { day: "numeric", month: "short" }) || ""}
-                                  {a.customerPhone ? ` • ${a.customerPhone}` : ""}
-                                </p>
-                              </div>
-                              <i className="fas fa-arrow-right text-slate-300 text-xs"></i>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Additional Order / Parent Linking Section */}
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <p className="text-[9px] font-black text-slate-400 uppercase mb-3">
-                <i className="fas fa-link mr-1"></i>Additional Order
-              </p>
-
-              {selectedOrder.parentOrderId ? (
-                <div className="space-y-2">
-                  <div className="bg-violet-50 border border-violet-100 rounded-xl p-4">
-                    <p className="text-[10px] font-black text-violet-700 mb-1">This is an add-on order</p>
-                    <p className="text-[9px] text-violet-500">No separate deposit or agreement needed — covered by the parent booking.</p>
-                    {(() => {
-                      const parent = orders.find(o => o.id === selectedOrder.parentOrderId);
-                      return parent ? (
-                        <button
-                          onClick={() => { setSelectedOrder(parent); setShowParentPicker(false); }}
-                          className="mt-2 text-[9px] font-black text-violet-600 hover:text-violet-800"
-                        >
-                          <i className="fas fa-arrow-left mr-1"></i>View Parent Order ({parent.customerName || parent.customerPhone})
-                        </button>
-                      ) : null;
-                    })()}
-                  </div>
-                  <button
-                    onClick={unlinkParentOrder}
-                    className="w-full py-2.5 rounded-xl font-black uppercase text-[9px] bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-400 transition-all"
-                  >
-                    <i className="fas fa-unlink mr-1"></i>Remove Link
-                  </button>
-                </div>
-              ) : (() => {
-                // Candidate parent orders: same dates, not cancelled, not itself, not already a child
-                const candidates = orders.filter(o =>
-                  o.id !== selectedOrder.id &&
-                  !o.parentOrderId &&
-                  o.status !== "cancelled" &&
-                  !o.deleted &&
-                  o.bookingDates.start === selectedOrder.bookingDates.start &&
-                  o.bookingDates.end === selectedOrder.bookingDates.end
-                );
-                const filtered = parentSearch.trim()
-                  ? candidates.filter(o =>
-                      (o.customerName || "").toLowerCase().includes(parentSearch.toLowerCase()) ||
-                      (o.customerPhone || "").includes(parentSearch) ||
-                      o.id.includes(parentSearch)
-                    )
-                  : candidates;
-
-                // Check if any child orders link to this one
-                const childOrders = orders.filter(o => o.parentOrderId === selectedOrder.id);
-
-                return (
-                  <div className="space-y-3">
-                    {childOrders.length > 0 && (
-                      <div className="bg-violet-50 border border-violet-100 rounded-xl p-3">
-                        <p className="text-[9px] font-black text-violet-700 mb-2">Add-on Orders ({childOrders.length})</p>
-                        <div className="space-y-1.5">
-                          {childOrders.map(child => (
-                            <button
-                              key={child.id}
-                              onClick={() => setSelectedOrder(child)}
-                              className="w-full flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-violet-100 hover:border-violet-300 transition-all text-left"
-                            >
-                              <div>
-                                <p className="text-[10px] font-bold text-[#062c24]">{child.items.map(i => i.name).join(", ")}</p>
-                                <p className="text-[9px] text-slate-400">RM {child.totalAmount} • {child.status}</p>
-                              </div>
-                              <i className="fas fa-arrow-right text-violet-300 text-xs"></i>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {candidates.length > 0 && (
-                      <>
-                        <button
-                          onClick={() => { setShowParentPicker(p => !p); setParentSearch(""); }}
-                          className="w-full py-3 rounded-xl font-black uppercase text-[10px] bg-violet-50 text-violet-600 hover:bg-violet-100 border border-violet-100 flex items-center justify-center gap-2 transition-all"
-                        >
-                          <i className="fas fa-link"></i>Link as Add-on to Existing Order
-                        </button>
-
-                        {showParentPicker && (
-                          <div className="space-y-2">
-                            <input
-                              type="text"
-                              value={parentSearch}
-                              onChange={e => setParentSearch(e.target.value)}
-                              placeholder="Search by name or phone…"
-                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs outline-none focus:border-violet-400"
-                            />
-                            <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                              {filtered.length === 0 ? (
-                                <p className="text-center text-[10px] text-slate-300 py-3">No matching orders found</p>
-                              ) : filtered.map(o => (
-                                <button
-                                  key={o.id}
-                                  onClick={() => linkToParentOrder(o)}
-                                  className="w-full flex items-center justify-between bg-white rounded-xl px-3 py-2.5 border border-slate-100 hover:border-violet-300 transition-all text-left"
-                                >
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-bold text-[#062c24] truncate">{o.customerName || o.customerPhone || "Unknown"}</p>
-                                    <p className="text-[9px] text-slate-400">{o.items.map(i => i.name).join(", ")} • RM {o.totalAmount}</p>
-                                    <p className="text-[8px] text-slate-300">{o.bookingDates.start} → {o.bookingDates.end}</p>
-                                  </div>
-                                  <i className="fas fa-link text-violet-300 text-xs ml-2 shrink-0"></i>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Invoice / Receipt */}
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <p className="text-[9px] font-black text-slate-400 uppercase mb-3">
-                <i className="fas fa-file-invoice text-emerald-500 mr-1"></i>Invoice / Receipt
-              </p>
-              {selectedOrder.status !== "cancelled" ? (
-                <div className="space-y-2">
-                  <p className="text-[10px] text-slate-400">
-                    Generates a print-ready LHDN-compliant invoice/receipt PDF for this order.
-                    Ensure your <strong>TIN</strong> is set in Settings → Tax &amp; Invoice Profile.
-                  </p>
-                  <button
-                    onClick={() => handleGenerateInvoice(selectedOrder)}
-                    disabled={generatingInvoice}
-                    className="w-full py-3 rounded-xl font-black uppercase text-xs bg-emerald-600 text-white hover:bg-emerald-700 flex items-center justify-center gap-2 transition-all disabled:opacity-60"
-                  >
-                    {generatingInvoice
-                      ? <><i className="fas fa-spinner fa-spin"></i> Generating…</>
-                      : <><i className="fas fa-file-invoice"></i> Generate Invoice / Receipt</>}
-                  </button>
-                </div>
-              ) : (
-                <p className="text-[10px] text-slate-400 italic">Invoice not available for cancelled orders.</p>
-              )}
-            </div>
-
-            {/* WhatsApp Quick Messages */}
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <p className="text-[9px] font-black text-slate-400 uppercase mb-3"><i className="fab fa-whatsapp text-emerald-500 mr-1"></i>Quick Messages</p>
-              {selectedOrder.customerPhone ? (() => {
-                const phone = selectedOrder.customerPhone.replace(/[\s\-\+\(\)]/g, "");
-                const name = selectedOrder.customerName || "pelanggan";
-                const items = selectedOrder.items.map(i => i.name).join(", ");
-                const dates = selectedOrder.bookingDates;
-                const total = selectedOrder.totalAmount;
-                const rental = selectedOrder.rentalAmount ?? total;
-                const deposit = selectedOrder.depositAmount ?? Math.round(total - rental);
-
-                const templates = [
-                  {
-                    label: "Confirm Booking",
-                    icon: "fa-check-circle",
-                    color: "bg-blue-50 text-blue-700 border-blue-100",
-                    show: selectedOrder.status === "pending" || selectedOrder.status === "confirmed",
-                    msg: `Assalamualaikum ${name} 👋\n\n✅ *Tempahan anda telah disahkan!*\n\n📦 Item: ${items}\n📅 Tarikh: ${dates.start} → ${dates.end}\n💰 Sewaan: RM${rental}\n💳 Deposit: RM${deposit}\n💵 Jumlah: RM${total}\n\nSila buat bayaran deposit RM${deposit} ke akaun berikut untuk mengesahkan tempahan:\n\n🏦 [Bank/No Akaun]\n\nSelepas bayaran, sila hantar bukti pembayaran di sini.\n\nTerima kasih! 🏕️`,
-                  },
-                  {
-                    label: "Deposit Received",
-                    icon: "fa-money-bill-wave",
-                    color: "bg-emerald-50 text-emerald-700 border-emerald-100",
-                    show: true,
-                    msg: `Assalamualaikum ${name} 👋\n\n💚 *Deposit telah diterima!*\n\nTempahan anda kini telah dikunci:\n📦 ${items}\n📅 ${dates.start} → ${dates.end}\n\nKami akan hubungi anda sehari sebelum tarikh pickup untuk pengesahan lokasi dan masa.\n\nTerima kasih! 🏕️`,
-                  },
-                  {
-                    label: "Pickup Reminder",
-                    icon: "fa-map-marker-alt",
-                    color: "bg-amber-50 text-amber-700 border-amber-100",
-                    show: selectedOrder.status === "confirmed",
-                    msg: `Assalamualaikum ${name} 👋\n\n📍 *Peringatan Pickup Esok!*\n\n📦 Item: ${items}\n📅 Tarikh Pickup: ${dates.start}\n📍 Lokasi: ${selectedOrder.pickupLocation || "TBD"}\n\nSila hubungi kami jika ada sebarang perubahan.\n\nJumpa esok! 🏕️`,
-                  },
-                  {
-                    label: "Return Reminder",
-                    icon: "fa-undo",
-                    color: "bg-orange-50 text-orange-700 border-orange-100",
-                    show: selectedOrder.status === "confirmed",
-                    msg: `Assalamualaikum ${name} 👋\n\n🔄 *Peringatan Pemulangan*\n\n📦 Item: ${items}\n📅 Tarikh Pulang: ${dates.end}\n📍 Lokasi: ${selectedOrder.pickupLocation || "TBD"}\n\nSila pastikan semua peralatan dalam keadaan baik dan bersih.\n\nTerima kasih atas sokongan anda! 🙏`,
-                  },
-                  {
-                    label: "Gear Ready",
-                    icon: "fa-box-open",
-                    color: "bg-teal-50 text-teal-700 border-teal-100",
-                    show: selectedOrder.status === "confirmed",
-                    msg: `Assalamualaikum ${name} 👋\n\n📦 *Peralatan anda sudah siap!*\n\n✅ ${items}\n\nSemua item telah diperiksa dan dalam keadaan baik. Anda boleh pickup pada:\n📅 ${dates.start}\n📍 ${selectedOrder.pickupLocation || "TBD"}\n\nSelamat berkemah! 🏕️🔥`,
-                  },
-                  {
-                    label: "Full Payment",
-                    icon: "fa-receipt",
-                    color: "bg-purple-50 text-purple-700 border-purple-100",
-                    show: true,
-                    msg: `Assalamualaikum ${name} 👋\n\n💰 *Peringatan Baki Bayaran*\n\nBaki yang perlu dijelaskan:\n📦 ${items}\n💵 Sewaan: RM${rental}\n💳 Deposit dibayar: RM${deposit}\n💰 Baki sewaan: RM${rental - deposit > 0 ? rental - deposit : 0}\n💵 Jumlah keseluruhan: RM${total}\n\nSila buat bayaran sebelum tarikh pickup.\n\n🏦 [Bank/No Akaun]\n\nTerima kasih! 🙏`,
-                  },
-                  {
-                    label: "Thank You",
-                    icon: "fa-heart",
-                    color: "bg-pink-50 text-pink-700 border-pink-100",
-                    show: selectedOrder.status === "completed",
-                    msg: `Assalamualaikum ${name} 👋\n\n🙏 *Terima kasih!*\n\nKami harap anda menikmati pengalaman berkemah dengan peralatan kami! 🏕️\n\nJika anda berpuas hati, kami amat menghargai jika anda boleh tinggalkan ulasan:\n⭐ ${typeof window !== "undefined" ? window.location.origin : ""}/review/${selectedOrder.reviewToken || ""}\n\nJumpa lagi di trip seterusnya! 🔥`,
-                  },
-                  {
-                    label: "Custom Message",
-                    icon: "fa-comment-dots",
-                    color: "bg-slate-50 text-slate-700 border-slate-200",
-                    show: true,
-                    msg: `Assalamualaikum ${name} 👋\n\n`,
-                  },
-                ].filter(t => t.show);
-
-                return (
-                  <div className="grid grid-cols-2 gap-2">
-                    {templates.map(t => (
-                      <a
-                        key={t.label}
-                        href={`https://wa.me/${phone}?text=${encodeURIComponent(t.msg)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={`py-2.5 px-3 rounded-xl text-[9px] font-black uppercase flex items-center gap-1.5 transition-all border hover:shadow-sm ${t.color}`}
-                      >
-                        <i className={`fas ${t.icon} text-[10px]`}></i>
-                        <span className="truncate">{t.label}</span>
-                      </a>
-                    ))}
-                  </div>
-                );
-              })() : (
-                <div className="w-full py-3 rounded-xl font-black uppercase text-xs bg-slate-100 text-slate-400 flex items-center justify-center gap-2">
-                  <i className="fab fa-whatsapp"></i>No Phone Number Yet
-                </div>
-              )}
-            </div>
-
-            {/* Delete Order */}
-            <button
-              onClick={() => deleteOrder(selectedOrder.id)}
-              className="w-full mt-2 py-3 rounded-xl font-black uppercase text-[10px] bg-white border border-red-200 text-red-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center gap-2 transition-all"
-            >
-              <i className="fas fa-trash-alt"></i>Delete Order
-            </button>
-          </div>
-        </div>
+      {/* Prompts */}
+      {sheet && sheetOrder && sheet.type === "paid" && (
+        <PaidSheet
+          order={sheetOrder}
+          mode={sheet.mode}
+          onFull={() => applyPayment(sheetOrder, { kind: "full" }, { closeSheet: true })}
+          onDeposit={() => applyPayment(sheetOrder, { kind: "deposit", received: true }, { closeSheet: true })}
+          onBalance={() => applyPayment(sheetOrder, { kind: "full" }, { closeSheet: true })}
+          onNotYet={() => setSheet(null)}
+          onClose={() => setSheet(null)}
+        />
+      )}
+      {sheet && sheetOrder && sheet.type === "skip" && (
+        <SkipSheet order={sheetOrder} onConfirm={(reason) => markPickedUp(sheetOrder, reason)} onClose={() => setSheet(null)} />
+      )}
+      {sheet && sheetOrder && sheet.type === "cancel" && (
+        <CancelSheet order={sheetOrder} onConfirm={(reason) => cancelOrder(sheetOrder, reason)} onClose={() => setSheet(null)} />
+      )}
+      {sheet && sheetOrder && sheet.type === "settle" && (
+        <SettleSheet
+          order={sheetOrder}
+          onConfirm={(outcome: DepositOutcome, keptAmount: number, reason: string) =>
+            applyPayment(sheetOrder, { kind: "settle", outcome, keptAmount, reason }, { closeSheet: true })}
+          onClose={() => setSheet(null)}
+        />
+      )}
+      {sheet && sheetOrder && sheet.type === "conflict" && (
+        <ConflictSheet
+          order={sheetOrder}
+          onOverride={() => { setSheet(null); confirmOrder(sheetOrder); }}
+          onCancel={() => setSheet({ type: "cancel", orderId: sheetOrder.id })}
+          onClose={() => setSheet(null)}
+        />
       )}
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[500] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[10px] font-black uppercase tracking-widest ${
-          toast.type === "success" ? "bg-emerald-600" : "bg-red-500"
+        <div role="status" className={`fixed bottom-24 left-1/2 -translate-x-1/2 z-[700] max-w-[90vw] px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-white text-[13px] font-semibold ${
+          toast.type === "success" ? "bg-emerald-700" : "bg-red-700"
         }`} style={{ animation: "toastIn 0.3s ease-out" }}>
-          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`}></i>
+          <i className={`fas ${toast.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`} aria-hidden="true"></i>
           {toast.msg}
         </div>
       )}
