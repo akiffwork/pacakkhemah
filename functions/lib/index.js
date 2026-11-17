@@ -2,13 +2,18 @@
 // functions/index.ts
 // Deploy with: firebase deploy --only functions
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onOrderCreated = exports.onReviewCreated = exports.onAgreementSigned = exports.onNewOrder = void 0;
+exports.onOrderCreated = exports.onReviewCreated = exports.onAgreementSigned = exports.onNewOrder = exports.toyyibpayCallback = exports.confirmTopUp = exports.createTopUpBill = void 0;
 const firestore_1 = require("firebase-functions/v2/firestore");
 const app_1 = require("firebase-admin/app");
 const firestore_2 = require("firebase-admin/firestore");
 const messaging_1 = require("firebase-admin/messaging");
 (0, app_1.initializeApp)();
 const db = (0, firestore_2.getFirestore)();
+// Credit top-ups (ToyyibPay), verified on the server
+var topup_1 = require("./topup");
+Object.defineProperty(exports, "createTopUpBill", { enumerable: true, get: function () { return topup_1.createTopUpBill; } });
+Object.defineProperty(exports, "confirmTopUp", { enumerable: true, get: function () { return topup_1.confirmTopUp; } });
+Object.defineProperty(exports, "toyyibpayCallback", { enumerable: true, get: function () { return topup_1.toyyibpayCallback; } });
 // Helper: send data-only push (no "notification" key = no browser auto-display = no duplicates)
 async function sendPush(token, title, body, extraData = {}) {
     await (0, messaging_1.getMessaging)().send({

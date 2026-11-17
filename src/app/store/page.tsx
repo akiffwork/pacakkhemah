@@ -246,7 +246,14 @@ function Dashboard({ vendorData, vendorId, isAdminOverride }: { user: User; vend
   const { toast, show } = useToast();
   useEffect(() => {
     if (!vendorId || isAdminOverride) return;
-    handleTopUpReturn(vendorId).then(n => { if (n) show(`${n} credits added`); }).catch(() => show("Could not add the credits. Contact support.", "error"));
+    handleTopUpReturn()
+      .then(r => {
+        if (!r) return;
+        if (r.status === "paid") show(`${r.credits} credits added`);
+        else if (r.status === "pending") show("Payment received. Your credits will show here once ToyyibPay confirms it.");
+        else show("Payment was not completed. No credits were added.", "error");
+      })
+      .catch(() => show("We could not check your payment yet. If you paid, your credits will show here shortly.", "error"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vendorId]);
 

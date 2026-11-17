@@ -6,7 +6,7 @@ import { auth } from "@/lib/firebase";
 import { type VendorSettings, type TaxProfile, invoiceSummary, taxProfileComplete } from "@/lib/vendorSettings";
 import { type CreditPackage, DEFAULT_PACKAGES, loadPaymentConfig, startTopUp } from "@/lib/credits";
 import { enablePush, disablePush, pushPermission, pushSupported } from "@/lib/pushRegistration";
-import { Card, H2, Field, Section, SwitchRow, inputCls, hintCls, smallBtn, primarySmallBtn } from "./ui";
+import { Card, H2, Field, Section, SwitchRow, inputCls, hintCls, smallBtn } from "./ui";
 
 type Props = {
   vendorId: string;
@@ -41,7 +41,7 @@ export default function AccountGroup({ vendorId, v, set, openSection, setOpenSec
   async function topUp(p: CreditPackage) {
     if (!config) { toast("Payments are not available right now. Please try again later.", "error"); return; }
     setPaying(p.credits);
-    try { await startTopUp(config, p, v.name || "Vendor"); }
+    try { await startTopUp(vendorId, p); }
     catch { toast("Could not open the payment page", "error"); setPaying(null); }
   }
   const toggle = (s: string) => setOpenSection(openSection === s ? null : s);

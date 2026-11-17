@@ -10,6 +10,9 @@ initializeApp();
 
 const db = getFirestore();
 
+// Credit top-ups (ToyyibPay), verified on the server
+export { createTopUpBill, confirmTopUp, toyyibpayCallback } from "./topup";
+
 // Helper: send data-only push (no "notification" key = no browser auto-display = no duplicates)
 async function sendPush(token: string, title: string, body: string, extraData: Record<string, string> = {}) {
   await getMessaging().send({
