@@ -5,9 +5,10 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 
 const addDoc = jest.fn((..._a: unknown[]) => Promise.resolve({ id: 'ag1' }));
 jest.mock('@/lib/firebase', () => ({ db: {} }));
+const vendorDoc = () => Promise.resolve({ exists: () => true, data: () => ({ name: 'Camping Dengan Kita', slug: 'camping-dengan-kita', rules: ['Return gear clean.'] }) });
 jest.mock('firebase/firestore', () => ({
   doc: jest.fn((_db, ...p: string[]) => ({ path: p.join('/') })),
-  getDoc: jest.fn(() => Promise.resolve({ exists: () => true, data: () => ({ name: 'Camping Dengan Kita', rules: ['Return gear clean.'] }) })),
+  getDoc: jest.fn(() => vendorDoc()),
   collection: jest.fn((_db, p: string) => ({ path: p })),
   addDoc: (...a: unknown[]) => addDoc(...a),
   serverTimestamp: () => 'now',
@@ -17,17 +18,20 @@ jest.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams
 
 import AgreementPage from '@/app/agreement/page';
 
-beforeEach(() => { addDoc.mockClear(); window.alert = jest.fn(); localStorage.clear(); });
+beforeEach(() => { addDoc.mockClear(); (jest.requireMock('firebase/firestore') as { getDoc: jest.Mock }).getDoc.mockImplementation(() => vendorDoc()); window.alert = jest.fn(); localStorage.clear(); });
 
 async function renderPage() {
   await act(async () => { render(<AgreementPage />); });
-  await screen.findByText('Camping Dengan Kita');
+  await screen.findByText('Equipment Rental Agreement');
 }
 
 function fillParties() {
-  fireEvent.change(screen.getByPlaceholderText('FULL NAME AS PER IC / PASSPORT'), { target: { value: 'ali bin ahmad' } });
+  fireEvent.change(screen.getByLabelText('Full name (as per IC / passport)'), { target: { value: 'ali bin ahmad' } });
   fireEvent.change(screen.getByPlaceholderText('012-345 6789'), { target: { value: '0123456789' } });
   fireEvent.click(screen.getByRole('checkbox'));
+}
+function sign(name = 'ali bin ahmad') {
+  fireEvent.change(screen.getByLabelText('Type your full name to sign'), { target: { value: name } });
 }
 
 test('there is no photo upload, only an ID number field', async () => {
@@ -43,22 +47,24 @@ test('formats the IC number and saves it with the agreement', async () => {
   const input = screen.getByLabelText('IC number') as HTMLInputElement;
   fireEvent.change(input, { target: { value: '900101145678' } });
   expect(input.value).toBe('900101-14-5678');
-  await act(async () => { fireEvent.click(screen.getByText('Sign & Confirm Booking')); });
+  sign();
+  await act(async () => { fireEvent.click(screen.getByText('Sign agreement')); });
   expect(addDoc).toHaveBeenCalledTimes(1);
   const data = addDoc.mock.calls[0][1] as Record<string, unknown>;
   expect(data).toMatchObject({ idType: 'ic', idNumber: '900101-14-5678', customerName: 'ALI BIN AHMAD', customerPhone: '60123456789' });
   expect(data).not.toHaveProperty('icFrontPath');
-  await screen.findByText('Agreement Signed');
+  await screen.findByText('Agreement signed');
 });
 
 test('blocks submit with an incomplete IC and shows why', async () => {
   await renderPage();
   fillParties();
   fireEvent.change(screen.getByLabelText('IC number'), { target: { value: '900101' } });
-  await act(async () => { fireEvent.click(screen.getByText('Sign & Confirm Booking')); });
+  sign();
+  await act(async () => { fireEvent.click(screen.getByText('Sign agreement')); });
   expect(addDoc).not.toHaveBeenCalled();
   expect(screen.getByLabelText('IC number')).toHaveAttribute('aria-invalid', 'true');
-  expect(screen.getByText(/12 digits/)).toBeInTheDocument();
+  expect(screen.getAllByText(/12 digits/).length).toBeGreaterThan(0);
 });
 
 test('passport option saves a passport number', async () => {
@@ -66,7 +72,8 @@ test('passport option saves a passport number', async () => {
   fillParties();
   fireEvent.click(screen.getByRole('radio', { name: 'Passport' }));
   fireEvent.change(screen.getByLabelText('Passport number'), { target: { value: 'k12 345 678' } });
-  await act(async () => { fireEvent.click(screen.getByText('Sign & Confirm Booking')); });
+  sign();
+  await act(async () => { fireEvent.click(screen.getByText('Sign agreement')); });
   expect(addDoc.mock.calls[0][1]).toMatchObject({ idType: 'passport', idNumber: 'K12345678' });
 });
 
@@ -91,12 +98,44 @@ test('shows the order exactly as the order details do', async () => {
     expect(screen.getByText('Free item')).toBeInTheDocument();
     expect(screen.getByText('Security deposit (refundable)')).toBeInTheDocument();
     expect(screen.getByText('RM 240')).toBeInTheDocument();
-    expect(screen.getByText('2 nights')).toBeInTheDocument();
+    expect(screen.getAllByText(/16 May 2026 – 18 May 2026 · 2 nights/).length).toBeGreaterThan(0);
     fillParties();
     fireEvent.change(screen.getByLabelText('IC number'), { target: { value: '900101145678' } });
-    await act(async () => { fireEvent.click(screen.getByText('Sign & Confirm Booking')); });
+    sign();
+    await act(async () => { fireEvent.click(screen.getByText('Sign agreement')); });
     const saved = addDoc.mock.calls[0][1] as { orderId: string; rentalSummary: { rows: { label: string }[] } };
     expect(saved.orderId).toBe('o1');
     expect(saved.rentalSummary.rows.at(-1)).toMatchObject({ label: 'Total', amount: 240 });
   } finally { mockQuery = 'v=v1'; }
+});
+
+test('the typed signature must match the full name', async () => {
+  await renderPage();
+  fillParties();
+  fireEvent.change(screen.getByLabelText('IC number'), { target: { value: '900101145678' } });
+  sign('ali');
+  await act(async () => { fireEvent.click(screen.getByText('Sign agreement')); });
+  expect(addDoc).not.toHaveBeenCalled();
+  expect(screen.getByRole('alert')).toHaveTextContent('Your signature must match your full name exactly.');
+});
+
+test('signing records both digital signatures, the terms and a verification code', async () => {
+  await renderPage();
+  expect(screen.getByText('Return gear clean.')).toBeInTheDocument();          // vendor rule
+  expect(screen.getByText(/Electronic Commerce Act 2006/)).toBeInTheDocument(); // validity clause
+  fillParties();
+  fireEvent.change(screen.getByLabelText('IC number'), { target: { value: '900101145678' } });
+  sign('  Ali   bin ahmad ');
+  await act(async () => { fireEvent.click(screen.getByText('Sign agreement')); });
+  const data = addDoc.mock.calls[0][1] as Record<string, unknown>;
+  expect(data.vendorTerms).toEqual(['Return gear clean.']);
+  expect((data.generalTerms as string[]).length).toBeGreaterThan(3);
+  expect(data.customerSignature).toBe('ALI   BIN AHMAD');
+  expect(data.verificationCode).toMatch(/^[0-9A-F]{4}(-[0-9A-F]{4}){3}$/);
+  expect(typeof data.customerSignedAt).toBe('string');
+  expect(typeof data.vendorSignedAt).toBe('string');
+  await screen.findByText('Agreement signed');
+  expect(screen.getAllByText('Digitally signed')).toHaveLength(2);
+  expect(screen.getByText(data.verificationCode as string)).toBeInTheDocument();
+  expect(screen.queryByText('Sign agreement')).toBeNull();
 });

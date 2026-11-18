@@ -1,275 +1,23 @@
 /**
- * Agreement PDF Generator
- * Shared utility for generating professional rental agreement PDFs
+ * Agreement PDF
+ * Prints the rental agreement with the same sections and wording as the
+ * agreement page (see agreementDocument.ts). Header (logo, shop address) and
+ * footer (contact + social links) repeat on every printed page.
  * Used by: Orders › Agreements and the order detail (vendor), Agreement page (customer)
  */
 
 import { idLine } from "./customerId";
 import { durationLabel, formatLongDate, rowAmount, type RentalSummary } from "./rentalSummary";
+import {
+  AGREEMENT_TITLE, SECTION_TITLES, declarationText, formatSignedAt, shopAddress, socialLinks,
+  type AgreementDoc,
+} from "./agreementDocument";
+import { iconSvg } from "./agreementIcons";
 
-type PDFVendor = {
-  name: string;
-  phone?: string;
-  city?: string;
-};
-
-/** Items and price rows, exactly as the cart showed them (see rentalSummary). */
-type PDFBooking = RentalSummary;
-
-type PDFAgreement = {
-  customerName: string;
-  customerPhone?: string;
-  /** "ic" or "passport"; older agreements have neither. */
-  idType?: string;
-  idNumber?: string;
-  refNo: string;
-  signedDate: string;
-  signedFull: string;
-};
-
-type PDFImages = {
-  frontUrl?: string;
-  backUrl?: string;
-};
-
-const DEFAULT_RULES = [
-  "Equipment must be returned in the same condition as received.",
-  "Renter is liable for full replacement cost of lost or damaged items.",
-  "Late return will incur additional charges per day as agreed.",
-  "The renter must inspect all equipment upon collection and report any defects immediately.",
-  "Subletting or transferring the rented equipment to a third party is strictly prohibited.",
-];
-
-function buildHeader(vendorName: string) {
-  return `
-    <div class="header-name">${vendorName.toUpperCase()}</div>
-    <div class="header-line"></div>`;
-}
-
-function buildFooter(vendor: PDFVendor) {
-  return `
-    <div class="footer">
-      ${vendor.phone ? `<div>Phone: ${vendor.phone}</div>` : ""}
-      ${vendor.city ? `<div>Location: ${vendor.city}</div>` : ""}
-      <div>Platform: pacakkhemah.com</div>
-    </div>`;
-}
-
-function buildStyles() {
-  return `
-<style>
-  /* Side margins live on the body, not only in @page: some browsers and print
-     settings (Margins: None, phone "Save as PDF") drop @page margins, which
-     puts text on the paper edge and cuts off the right side. */
-  @page { size: A4; margin: 14mm 0; }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  html { background:#fff; }
-  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color:#1a1a2e; font-size:11px; line-height:1.5;
-         max-width:210mm; margin:0 auto; padding:4mm 16mm 6mm; overflow-wrap:anywhere; }
-  /* Pages 2+ start on a new sheet via an inline page-break-before. */
-  .page { position: relative; }
-  .header-name { font-size: 22px; font-weight: 900; color: #062c24; text-transform: uppercase; letter-spacing: 2px; }
-  .header-line { height: 3px; background: #062c24; margin-top: 8px; margin-bottom: 24px; }
-  .section { margin-bottom: 20px; page-break-inside: avoid; }
-  .section-title { font-size: 13px; font-weight: 700; margin-bottom: 12px; color: #1a1a2e; }
-  table { width: 100%; border-collapse: collapse; }
-  .footer { font-size: 9px; color: #888; margin-top: 20px; padding-top: 12px; border-top: 1px solid #ddd; line-height: 1.7; }
-  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-</style>`;
-}
-
-function buildPage1(vendor: PDFVendor, agreement: PDFAgreement, booking: PDFBooking | null, rules: string[]) {
-  const td = "padding:8px 12px;border:1px solid #ddd;font-size:11px;vertical-align:top;";
-  const sub = "font-size:10px;color:#555;margin-top:3px;font-weight:400;";
-  const lines = booking?.lines || [];
-  const free = booking?.freeItems || [];
-
-  const itemsRows = lines.length || free.length
-    ? lines.map(i => {
-        const extras = [
-          i.variantLabel ? `<div style="${sub}">${i.variantColor ? `<span style="display:inline-block;width:8px;height:8px;border-radius:99px;border:1px solid #999;background:${i.variantColor};margin-right:5px;vertical-align:-1px;"></span>` : ""}${i.variantLabel}</div>` : "",
-          i.calc ? `<div style="${sub}color:#777;">${i.calc}</div>` : "",
-          i.includes.length ? `<div style="${sub}border-left:2px solid #ccc;padding-left:7px;">${i.includes.map(li => `Includes: ${li.qty} × ${li.name}${li.variantLabel ? ` (${li.variantLabel})` : ""}`).join("<br>")}</div>` : "",
-        ].join("");
-        const setup = i.setupFee != null ? `
-      <tr>
-        <td style="${td}padding-left:24px;color:#555;font-size:10px;">Add-on: setup at campsite</td>
-        <td style="${td}"></td>
-        <td style="${td}text-align:right;color:#555;font-size:10px;">${i.setupFee ? `RM ${i.setupFee}` : "Included"}</td>
-      </tr>` : "";
-        return `
-      <tr>
-        <td style="${td}font-weight:700;">${i.name}${extras}</td>
-        <td style="${td}text-align:center;">${i.qty}</td>
-        <td style="${td}text-align:right;font-weight:700;">${i.amount != null ? `RM ${i.amount}` : "—"}</td>
-      </tr>${setup}`;
-      }).join("") + free.map(f => `
-      <tr>
-        <td style="${td}font-weight:700;">${f.name}</td>
-        <td style="${td}text-align:center;">${f.qty}</td>
-        <td style="${td}text-align:right;"><span style="font-size:9px;background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:99px;font-weight:700;">FREE ITEM</span></td>
-      </tr>`).join("")
-    : `<tr><td colspan="3" style="padding:12px;border:1px solid #ddd;color:#999;font-style:italic;font-size:11px;">Items as discussed via WhatsApp / Chat Record</td></tr>`;
-
-  const priceRows = (booking?.rows || []).map(r => {
-    if (r.kind === "total") return `
-        <tr style="background:#062c24;">
-          <td colspan="2" style="padding:10px 12px;border:1px solid #062c24;text-align:right;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">${r.label}</td>
-          <td style="padding:10px 12px;border:1px solid #062c24;text-align:right;font-size:14px;font-weight:900;color:#fff;">${rowAmount(r)}</td>
-        </tr>`;
-    const color = r.kind === "discount" ? "#047857" : r.kind === "strong" ? "#062c24" : "#555";
-    const weight = r.kind === "strong" ? 800 : 600;
-    const bg = r.kind === "strong" ? "background:#f0fdf4;" : "";
-    const code = r.code ? ` <span style="font-size:9px;border:1px dashed #555;color:#111;padding:1px 5px;border-radius:4px;margin-left:4px;">${r.code}</span>` : "";
-    return `
-        <tr style="${bg}">
-          <td colspan="2" style="padding:7px 12px;border:1px solid #ddd;font-size:11px;font-weight:${weight};color:${color};">${r.label}${code}</td>
-          <td style="padding:7px 12px;border:1px solid #ddd;text-align:right;font-size:11px;font-weight:${weight + 100};color:${color};white-space:nowrap;">${rowAmount(r)}</td>
-        </tr>`;
-  }).join("");
-  const noteRow = booking?.note ? `<p style="font-size:9px;color:#888;margin-top:6px;">${booking.note}</p>` : "";
-
-  const rulesHtml = rules.map(r => `
-    <li style="margin-bottom:6px;font-size:11px;color:#333;line-height:1.6;">${r}</li>`).join("");
-
-  const dateRange = booking?.dates ? ` (${formatLongDate(booking.dates.start)} – ${formatLongDate(booking.dates.end)})` : "";
-  const period = booking?.dates
-    ? `${formatLongDate(booking.dates.start)} — ${formatLongDate(booking.dates.end)}${booking.nights != null ? ` · ${durationLabel(booking.nights)}` : ""}`
-    : "As agreed in chat";
-
-  return `
-<div class="page">
-  ${buildHeader(vendor.name)}
-
-  <div style="margin-bottom:20px;">
-    <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:11px;"><span style="color:#888;">Date:</span><span style="font-weight:700;">${agreement.signedDate}</span></div>
-    <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:11px;"><span style="color:#888;">Our Ref:</span><span style="font-weight:700;">${agreement.refNo}</span></div>
-  </div>
-
-  <h1 style="font-size:14px;font-weight:800;text-transform:uppercase;color:#062c24;margin-bottom:20px;">
-    EQUIPMENT RENTAL AGREEMENT${dateRange}
-  </h1>
-
-  <div class="section">
-    <div class="section-title">1) &nbsp; CONTRACTING PARTIES</div>
-    <div style="margin-bottom:12px;">
-      <p style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:2px;">The Vendor (Owner)</p>
-      <p style="font-size:12px;font-weight:800;color:#062c24;">${vendor.name}</p>
-      ${vendor.phone ? `<p style="font-size:11px;color:#444;">Phone: ${vendor.phone}</p>` : ""}
-      ${vendor.city ? `<p style="font-size:11px;color:#444;">${vendor.city}</p>` : ""}
-    </div>
-    <div style="margin-bottom:12px;">
-      <p style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:2px;">The Customer (Renter)</p>
-      <p style="font-size:12px;font-weight:800;color:#062c24;">${agreement.customerName}</p>
-      ${agreement.customerPhone ? `<p style="font-size:11px;color:#444;">Phone: ${agreement.customerPhone}</p>` : ""}
-      ${agreement.idNumber ? `<p style="font-size:11px;color:#444;">${idLine(agreement.idType, agreement.idNumber)}</p>` : ""}
-    </div>
-    <div style="background:#fffbeb;border:1px solid #fde68a;padding:10px 14px;font-size:10px;color:#92400e;font-weight:600;line-height:1.6;">
-      <strong>LEGAL NOTICE:</strong> This agreement is entered into solely between the Vendor and the Customer. "Pacak Khemah" is a technology platform provider and is NOT a party to this rental contract.
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">2) &nbsp; SUBJECT OF RENTAL</div>
-    <div style="margin-bottom:8px;"><span style="font-size:10px;color:#888;font-weight:700;">Rental Period:</span> <span style="font-size:11px;font-weight:700;">${period}</span></div>
-    <table>
-      <thead><tr style="background:#f5f5f5;">
-        <th style="padding:8px 12px;border:1px solid #ddd;text-align:left;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;">Item</th>
-        <th style="padding:8px 12px;border:1px solid #ddd;text-align:center;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;width:60px;">Qty</th>
-        <th style="padding:8px 12px;border:1px solid #ddd;text-align:right;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;width:110px;">Amount</th>
-      </tr></thead>
-      <tbody>${itemsRows}</tbody>
-      <tfoot>${priceRows}</tfoot>
-    </table>
-    ${noteRow}
-  </div>
-
-  <div class="section">
-    <div class="section-title">3) &nbsp; SERVICE TERMS AND CONDITIONS</div>
-    <ul style="padding-left:20px;">${rulesHtml}</ul>
-  </div>
-
-  ${buildFooter(vendor)}
-</div>`;
-}
-
-function buildPage2(vendor: PDFVendor, agreement: PDFAgreement, hasPhotos: boolean) {
-  const idDeclaration = agreement.idNumber
-    ? `I certify that the identity number given (${idLine(agreement.idType, agreement.idNumber)}) is mine and correct, and that it will be kept by the Vendor for this rental only.`
-    : hasPhotos
-      ? `I certify that the identification documents provided are genuine and belong to me, and that they will be kept by the Vendor for this rental only.`
-      : "";
-  const idLabel = agreement.idType === "passport" ? "Passport No." : "IC No.";
-  return `
-<div class="page" style="page-break-before:always;">
-  ${buildHeader(vendor.name)}
-
-  <div class="section">
-    <div class="section-title">4) &nbsp; DECLARATION & ACKNOWLEDGEMENT</div>
-    <p style="font-size:11px;color:#333;line-height:1.8;margin-bottom:16px;">
-      I, <strong>${agreement.customerName}</strong>, hereby acknowledge that I have read, understood, and agreed to all the Terms & Conditions stated above.
-      ${idDeclaration}
-      I accept full responsibility for the rented equipment during the rental period and agree to return all items in the same condition as received.
-    </p>
-  </div>
-
-  <div class="section">
-    <div class="section-title">5) &nbsp; ACCEPTANCE</div>
-    <p style="font-size:11px;color:#333;line-height:1.7;margin-bottom:28px;">
-      The signatures below indicate acceptance of the details, terms, and conditions in this agreement and provide approval to rent the items as specified.
-    </p>
-
-    <div style="margin-bottom:40px;">
-      <p style="font-size:11px;color:#333;margin-bottom:4px;">For, <strong>${vendor.name}</strong></p>
-      <div style="margin-top:50px;border-top:1px solid #333;width:250px;padding-top:6px;">
-        <p style="font-size:11px;font-weight:700;">${vendor.name}</p>
-      </div>
-    </div>
-
-    <div style="margin-bottom:20px;">
-      <p style="font-size:11px;font-weight:700;color:#333;margin-bottom:16px;">For <strong>Customer,</strong></p>
-      <div style="display:flex;gap:40px;margin-bottom:20px;">
-        <div style="flex:1;"><p style="font-size:10px;color:#888;margin-bottom:4px;">Signature:</p><div style="border-bottom:1px solid #333;height:40px;"></div></div>
-      </div>
-      <div style="display:flex;gap:40px;margin-bottom:20px;">
-        <div style="flex:1;"><p style="font-size:10px;color:#888;margin-bottom:4px;">Name:</p><p style="font-size:12px;font-weight:700;border-bottom:1px solid #333;padding-bottom:4px;">${agreement.customerName}</p></div>
-        <div style="flex:1;"><p style="font-size:10px;color:#888;margin-bottom:4px;">Phone:</p><p style="font-size:12px;font-weight:700;border-bottom:1px solid #333;padding-bottom:4px;">${agreement.customerPhone || "—"}</p></div>
-      </div>
-      ${agreement.idNumber ? `<div style="display:flex;gap:40px;margin-bottom:20px;">
-        <div style="flex:1;"><p style="font-size:10px;color:#888;margin-bottom:4px;">${idLabel}</p><p style="font-size:12px;font-weight:700;border-bottom:1px solid #333;padding-bottom:4px;letter-spacing:0.5px;">${agreement.idNumber}</p></div>
-        <div style="flex:1;"></div>
-      </div>` : ""}
-      <div style="display:flex;gap:40px;">
-        <div style="flex:1;"><p style="font-size:10px;color:#888;margin-bottom:4px;">Date:</p><p style="font-size:12px;font-weight:700;border-bottom:1px solid #333;padding-bottom:4px;">${agreement.signedFull}</p></div>
-        <div style="flex:1;"><p style="font-size:10px;color:#888;margin-bottom:4px;">Digitally Signed:</p><p style="font-size:10px;font-weight:600;color:#059669;">✓ Verified via Pacak Khemah Platform</p></div>
-      </div>
-    </div>
-  </div>
-
-  ${buildFooter(vendor)}
-</div>`;
-}
-
-function buildICPage(vendor: PDFVendor, images: PDFImages) {
-  if (!images.frontUrl || !images.backUrl) return "";
-  return `
-<div class="page" style="page-break-before:always;">
-  ${buildHeader(vendor.name)}
-
-  <h2 style="font-size:13px;font-weight:700;margin-bottom:20px;">6) &nbsp; IDENTITY DOCUMENTS</h2>
-  <p style="font-size:11px;color:#555;margin-bottom:20px;">Identification photos submitted by the Customer with this agreement (agreements signed before ID numbers replaced photo uploads).</p>
-  <div style="margin-bottom:24px;">
-    <p style="font-size:10px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:8px;">Front — IC / MyKad</p>
-    <img src="${images.frontUrl}" style="width:100%;max-height:280px;object-fit:contain;border:1px solid #ddd;">
-  </div>
-  <div style="margin-bottom:24px;">
-    <p style="font-size:10px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:8px;">Back — IC / MyKad</p>
-    <img src="${images.backUrl}" style="width:100%;max-height:280px;object-fit:contain;border:1px solid #ddd;">
-  </div>
-
-  ${buildFooter(vendor)}
-</div>`;
-}
+const GREEN = "#062c24";
+const ACCENT = "#16895B";
+const HEADER_H = 32; // mm, space reserved on every page
+const FOOTER_H = 18;
 
 /** Escape text for HTML. Agreement data is typed by anyone with the link,
  *  so it must never be able to inject markup into the print window. */
@@ -277,9 +25,10 @@ function esc(v: string): string {
   return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-/** Deep-copy a value with every string HTML-escaped. */
+/** Deep-copy a value with every string HTML-escaped (Dates kept). */
 export function escapeDeep<T>(v: T): T {
   if (typeof v === "string") return esc(v) as T;
+  if (v instanceof Date) return v;
   if (Array.isArray(v)) return v.map(escapeDeep) as T;
   if (v && typeof v === "object") {
     return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, escapeDeep(x)])) as T;
@@ -287,60 +36,279 @@ export function escapeDeep<T>(v: T): T {
   return v;
 }
 
-/** The full print document. Exported for tests. */
-export function buildAgreementHTML(
-  rawVendor: PDFVendor,
-  rawAgreement: PDFAgreement,
-  rawBooking: PDFBooking | null,
-  rawRules?: string[],
-  rawImages?: PDFImages,
-): string {
-  const vendor = escapeDeep(rawVendor);
-  const agreement = escapeDeep(rawAgreement);
-  const booking = escapeDeep(rawBooking);
-  const finalRules = escapeDeep(rawRules?.length ? rawRules : DEFAULT_RULES);
-  // Only https URLs (Firebase Storage) are allowed into <img src>.
-  const images = rawImages && [rawImages.frontUrl, rawImages.backUrl].every(u => u && /^https:\/\//.test(u))
-    ? escapeDeep(rawImages) : undefined;
-  const hasPhotos = !!images;
+const httpsOnly = (u?: string) => (u && /^https:\/\//.test(u) ? u : undefined);
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Agreement ${agreement.refNo}</title>
-${buildStyles()}
+function initials(name: string): string {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "PK";
+}
+
+function styles() {
+  return `
+<style>
+  /* No page margins: the header, footer and side padding are part of the
+     document, so it prints the same with any browser margin setting. */
+  @page { size: A4; margin: 0; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { background:#fff; }
+  body { font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif; color:#1f2937; font-size:10.5px; line-height:1.55;
+         max-width:210mm; margin:0 auto; overflow-wrap:anywhere; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .hdr { position:fixed; top:0; left:0; right:0; height:${HEADER_H}mm; padding:10mm 16mm 0; background:#fff; max-width:210mm; margin:0 auto; }
+  .hdr-in { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-bottom:4mm; border-bottom:2px solid ${GREEN}; }
+  .ftr { position:fixed; bottom:0; left:0; right:0; height:${FOOTER_H}mm; padding:0 16mm 8mm; background:#fff; max-width:210mm; margin:0 auto; display:flex; flex-direction:column; justify-content:flex-end; }
+  .ftr-in { display:flex; align-items:center; justify-content:space-between; gap:10px; padding-top:3mm; border-top:1px solid #d1d5db; font-size:8.5px; color:#6b7280; }
+  .socials { display:flex; flex-wrap:wrap; gap:4px 12px; }
+  .socials span { display:inline-flex; align-items:center; gap:4px; color:#374151; }
+  table.layout { width:100%; border-collapse:collapse; }
+  table.layout > thead td { height:${HEADER_H + 4}mm; }
+  table.layout > tfoot td { height:${FOOTER_H + 2}mm; }
+  table.layout > tbody > tr > td { padding:0 16mm; vertical-align:top; }
+  .title { font-size:19px; font-weight:800; color:${GREEN}; letter-spacing:-0.2px; }
+  .sub { font-size:10px; color:#6b7280; margin-top:2px; }
+  .sec { margin-top:16px; break-inside:avoid; page-break-inside:avoid; }
+  .sec-h { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .sec-n { font-size:9px; font-weight:800; color:#fff; background:${GREEN}; border-radius:4px; padding:2px 5px; letter-spacing:0.5px; }
+  .sec-t { font-size:10.5px; font-weight:800; color:${GREEN}; text-transform:uppercase; letter-spacing:1.2px; }
+  .sec-rule { flex:1; height:1px; background:#e5e7eb; }
+  .lbl { font-size:8px; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:1px; margin-bottom:3px; }
+  .party { flex:1; border:1px solid #e5e7eb; border-radius:8px; padding:10px 12px; }
+  .party b { font-size:12px; color:${GREEN}; display:block; margin-bottom:2px; }
+  .party div { color:#374151; }
+  ol.terms { padding-left:18px; }
+  ol.terms li { margin-bottom:5px; padding-left:2px; }
+  table.items { width:100%; border-collapse:collapse; }
+  table.items th { padding:7px 10px; background:#f3f4f6; border:1px solid #e5e7eb; font-size:8.5px; font-weight:700; color:#4b5563; text-transform:uppercase; letter-spacing:0.6px; }
+  table.items td { padding:7px 10px; border:1px solid #e5e7eb; vertical-align:top; }
+  .note { font-size:8.5px; color:#6b7280; margin-top:5px; }
+  .decl { background:#f9fafb; border-left:3px solid ${ACCENT}; padding:10px 12px; border-radius:0 6px 6px 0; }
+  .sig { flex:1; border:1px solid #d1d5db; border-radius:8px; padding:10px 12px; break-inside:avoid; }
+  .sig-name { font-family: Georgia, 'Times New Roman', serif; font-style:italic; font-size:19px; color:#111827; border-bottom:1px solid #9ca3af; padding:6px 0 4px; margin:4px 0 6px; min-height:34px; }
+  .stamp { display:inline-flex; align-items:center; gap:5px; font-size:9px; font-weight:700; color:${ACCENT}; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:99px; padding:2px 8px; }
+  .pending { color:#92400e; background:#fffbeb; border-color:#fde68a; }
+  .verify { margin-top:10px; display:flex; justify-content:space-between; gap:10px; font-size:9px; color:#4b5563; border:1px dashed #d1d5db; border-radius:6px; padding:7px 10px; }
+  .mono { font-family: 'SFMono-Regular', Consolas, monospace; font-weight:700; color:#111827; letter-spacing:0.5px; }
+</style>`;
+}
+
+function header(d: AgreementDoc) {
+  const v = d.vendor;
+  const logo = httpsOnly(v.image) || (v.image?.startsWith("/") ? v.image : undefined);
+  return `
+<div class="hdr"><div class="hdr-in">
+  <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+    ${logo
+      ? `<img src="${logo}" alt="" style="width:13mm;height:13mm;object-fit:contain;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">`
+      : `<div style="width:13mm;height:13mm;border-radius:8px;background:${GREEN};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;">${initials(v.name)}</div>`}
+    <div style="min-width:0;">
+      <div style="font-size:15px;font-weight:800;color:${GREEN};line-height:1.2;">${v.name}</div>
+      <div style="font-size:9px;color:#4b5563;display:flex;align-items:center;gap:4px;margin-top:2px;">${iconSvg("globe", ACCENT)} ${shopAddress(v.slug)}</div>
+      ${v.city ? `<div style="font-size:9px;color:#6b7280;">${v.city}</div>` : ""}
+    </div>
+  </div>
+  <div style="text-align:right;white-space:nowrap;">
+    <div style="font-size:8px;font-weight:800;letter-spacing:1.5px;color:${ACCENT};text-transform:uppercase;">Rental Agreement</div>
+    ${d.refNo ? `<div style="font-size:9px;color:#374151;margin-top:2px;">Ref <span class="mono">${d.refNo}</span></div>` : ""}
+    ${d.customerSignedAt ? `<div style="font-size:9px;color:#6b7280;">${formatLongDate(isoDate(d.customerSignedAt))}</div>` : ""}
+  </div>
+</div></div>`;
+}
+
+function footer(d: AgreementDoc) {
+  const links = socialLinks(d.vendor);
+  return `
+<div class="ftr"><div class="ftr-in">
+  <div class="socials">${links.map(l => `<span>${iconSvg(l.icon, GREEN)} ${l.label}</span>`).join("") || `<span>${d.vendor.name}</span>`}</div>
+  <div style="white-space:nowrap;">Issued via <b style="color:${GREEN};">Pacak Khemah</b> · pacakkhemah.com</div>
+</div></div>`;
+}
+
+function isoDate(d: Date): string {
+  const p = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  return p; // YYYY-MM-DD
+}
+
+function sectionHead(n: number) {
+  return `<div class="sec-h"><span class="sec-n">${String(n).padStart(2, "0")}</span><span class="sec-t">${SECTION_TITLES[n - 1]}</span><span class="sec-rule"></span></div>`;
+}
+
+function itemsTable(r: RentalSummary | null) {
+  const sub = "font-size:9.5px;color:#4b5563;margin-top:2px;font-weight:400;";
+  const lines = r?.lines || [];
+  const free = r?.freeItems || [];
+  const body = lines.length || free.length
+    ? lines.map(i => {
+        const extras = [
+          i.variantLabel ? `<div style="${sub}">${i.variantColor && /^#[0-9a-f]{3,8}$/i.test(i.variantColor) ? `<span style="display:inline-block;width:8px;height:8px;border-radius:99px;border:1px solid #9ca3af;background:${i.variantColor};margin-right:5px;vertical-align:-1px;"></span>` : ""}${i.variantLabel}</div>` : "",
+          i.calc ? `<div style="${sub}color:#6b7280;">${i.calc}</div>` : "",
+          i.includes.length ? `<div style="${sub}border-left:2px solid #d1d5db;padding-left:7px;">${i.includes.map(li => `Includes: ${li.qty} × ${li.name}${li.variantLabel ? ` (${li.variantLabel})` : ""}`).join("<br>")}</div>` : "",
+        ].join("");
+        const setup = i.setupFee != null ? `
+        <tr><td style="padding-left:22px;color:#4b5563;font-size:9.5px;">Add-on: setup at campsite</td><td></td>
+        <td style="text-align:right;color:#4b5563;font-size:9.5px;">${i.setupFee ? `RM ${i.setupFee}` : "Included"}</td></tr>` : "";
+        return `
+        <tr><td style="font-weight:700;color:#111827;">${i.name}${extras}</td>
+        <td style="text-align:center;">${i.qty}</td>
+        <td style="text-align:right;font-weight:700;color:#111827;white-space:nowrap;">${i.amount != null ? `RM ${i.amount}` : "—"}</td></tr>${setup}`;
+      }).join("") + free.map(f => `
+        <tr><td style="font-weight:700;color:#111827;">${f.name}</td><td style="text-align:center;">${f.qty}</td>
+        <td style="text-align:right;"><span style="font-size:8px;background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:99px;font-weight:700;">FREE ITEM</span></td></tr>`).join("")
+    : `<tr><td colspan="3" style="color:#6b7280;font-style:italic;">Items as discussed via WhatsApp / chat</td></tr>`;
+
+  const rows = (r?.rows || []).map(row => {
+    if (row.kind === "total") return `
+        <tr style="background:${GREEN};"><td colspan="2" style="border-color:${GREEN};text-align:right;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.6px;">${row.label}</td>
+        <td style="border-color:${GREEN};text-align:right;font-size:13px;font-weight:900;color:#fff;white-space:nowrap;">${rowAmount(row)}</td></tr>`;
+    const color = row.kind === "discount" ? "#047857" : row.kind === "strong" ? GREEN : "#4b5563";
+    const weight = row.kind === "strong" ? 800 : 600;
+    const code = row.code ? ` <span style="font-size:8.5px;border:1px dashed #6b7280;color:#111827;padding:1px 5px;border-radius:4px;margin-left:4px;">${row.code}</span>` : "";
+    return `
+        <tr${row.kind === "strong" ? ' style="background:#f0fdf4;"' : ""}><td colspan="2" style="font-weight:${weight};color:${color};">${row.label}${code}</td>
+        <td style="text-align:right;font-weight:${weight + 100};color:${color};white-space:nowrap;">${rowAmount(row)}</td></tr>`;
+  }).join("");
+
+  return `
+    <table class="items">
+      <thead><tr><th style="text-align:left;">Item</th><th style="width:48px;">Qty</th><th style="text-align:right;width:96px;">Amount</th></tr></thead>
+      <tbody>${body}</tbody>
+      <tfoot>${rows}</tfoot>
+    </table>
+    ${r?.note ? `<p class="note">${r.note}</p>` : ""}`;
+}
+
+/** "Validity. Text…" → bold lead-in. */
+function clause(t: string) {
+  const m = t.match(/^([^.]{2,40})\.\s+(.*)$/);
+  return m ? `<b style="color:#111827;">${m[1]}.</b> ${m[2]}` : t;
+}
+
+function signatures(d: AgreementDoc) {
+  const vendorBox = `
+    <div class="sig">
+      <div class="lbl">The Vendor (Owner)</div>
+      <div class="sig-name">${d.vendor.name}</div>
+      <div><span class="stamp">${iconSvg("check", ACCENT)} Digitally signed</span></div>
+      <div style="margin-top:6px;color:#374151;">${d.vendorSignedAt ? formatSignedAt(d.vendorSignedAt) : "On issue"}</div>
+      <div style="font-size:9px;color:#6b7280;">Issued through the Vendor's Pacak Khemah account</div>
+    </div>`;
+  const signed = !!d.customerSignedAt;
+  const customerBox = `
+    <div class="sig">
+      <div class="lbl">The Customer (Renter)</div>
+      <div class="sig-name">${signed ? d.customerSignature || d.customer.name : ""}</div>
+      <div>${signed
+        ? `<span class="stamp">${iconSvg("check", ACCENT)} Digitally signed</span>`
+        : `<span class="stamp pending">Awaiting signature</span>`}</div>
+      <div style="margin-top:6px;color:#374151;">${signed ? formatSignedAt(d.customerSignedAt) : "&nbsp;"}</div>
+      <div style="font-size:9px;color:#6b7280;">${d.customer.name}${d.customer.idNumber ? ` · ${idLine(d.customer.idType, d.customer.idNumber)}` : ""}</div>
+    </div>`;
+  return `
+    <div style="display:flex;gap:12px;">${vendorBox}${customerBox}</div>
+    ${d.verificationCode || d.refNo ? `
+    <div class="verify">
+      <span style="display:inline-flex;align-items:center;gap:5px;">${iconSvg("shield", GREEN)} Signed electronically on Pacak Khemah. This document is valid without a handwritten signature.</span>
+      <span style="white-space:nowrap;">${d.verificationCode ? `Verification <span class="mono">${d.verificationCode}</span>` : `Ref <span class="mono">${d.refNo}</span>`}</span>
+    </div>` : ""}`;
+}
+
+function photosPage(d: AgreementDoc) {
+  const p = d.photos;
+  if (!p?.frontUrl || !p?.backUrl) return "";
+  return `
+    <div style="break-before:page;page-break-before:always;">
+      <div class="sec-h"><span class="sec-n">A</span><span class="sec-t">Appendix: Identity Documents</span><span class="sec-rule"></span></div>
+      <p style="color:#4b5563;margin-bottom:12px;">Identification photos submitted by the Customer with this agreement (agreements signed before ID numbers replaced photo uploads).</p>
+      <div class="lbl">Front — IC / MyKad</div>
+      <img src="${p.frontUrl}" alt="" style="width:100%;max-height:85mm;object-fit:contain;border:1px solid #e5e7eb;margin-bottom:14px;">
+      <div class="lbl">Back — IC / MyKad</div>
+      <img src="${p.backUrl}" alt="" style="width:100%;max-height:85mm;object-fit:contain;border:1px solid #e5e7eb;">
+    </div>`;
+}
+
+/** The full print document. Exported for tests. */
+export function buildAgreementHTML(raw: AgreementDoc): string {
+  const photos = raw.photos && httpsOnly(raw.photos.frontUrl) && httpsOnly(raw.photos.backUrl) ? raw.photos : undefined;
+  const d = escapeDeep({ ...raw, photos });
+  const r = d.rental;
+  const idText = d.customer.idNumber ? idLine(d.customer.idType, d.customer.idNumber) : "";
+  const period = r?.dates
+    ? `${formatLongDate(r.dates.start)} – ${formatLongDate(r.dates.end)}${r.nights != null ? ` · ${durationLabel(r.nights)}` : ""}`
+    : "As agreed in chat";
+
+  const content = `
+    <div class="title">${AGREEMENT_TITLE}</div>
+    <div class="sub">Between ${d.vendor.name} and ${d.customer.name || "the Customer"} · ${period}</div>
+
+    <div class="sec">${sectionHead(1)}
+      <div style="display:flex;gap:12px;">
+        <div class="party"><div class="lbl">The Vendor (Owner)</div><b>${d.vendor.name}</b>
+          <div>${shopAddress(d.vendor.slug)}</div>
+          ${d.vendor.phone ? `<div>Phone: ${d.vendor.phone}</div>` : ""}
+          ${d.vendor.city ? `<div>${d.vendor.city}</div>` : ""}
+        </div>
+        <div class="party"><div class="lbl">The Customer (Renter)</div><b>${d.customer.name || "—"}</b>
+          ${d.customer.phone ? `<div>Phone: ${d.customer.phone}</div>` : ""}
+          ${idText ? `<div>${idText}</div>` : ""}
+        </div>
+      </div>
+    </div>
+
+    <div class="sec">${sectionHead(2)}
+      <div style="margin-bottom:6px;"><span class="lbl" style="display:inline;">Rental period</span> &nbsp;<b style="color:#111827;">${period}</b></div>
+      ${itemsTable(r)}
+    </div>
+
+    <div class="sec">${sectionHead(3)}
+      <p style="color:#6b7280;margin-bottom:6px;">Set by ${d.vendor.name}.</p>
+      <ol class="terms">${d.vendorTerms.map(t => `<li>${t}</li>`).join("")}</ol>
+    </div>
+
+    <div class="sec">${sectionHead(4)}
+      <ol class="terms">${d.generalTerms.map(t => `<li>${clause(t)}</li>`).join("")}</ol>
+    </div>
+
+    <div class="sec">${sectionHead(5)}
+      <p class="decl">${declarationText(d.customer, idText)}</p>
+    </div>
+
+    <div class="sec">${sectionHead(6)}
+      ${signatures(d)}
+    </div>
+    ${photosPage(d)}`;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${AGREEMENT_TITLE}${d.refNo ? ` ${d.refNo}` : ""}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+${styles()}
 </head><body>
-${buildPage1(vendor, agreement, booking, finalRules)}
-${buildPage2(vendor, agreement, hasPhotos)}
-${images ? buildICPage(vendor, images) : ""}
+${header(d)}
+${footer(d)}
+<table class="layout">
+  <thead><tr><td></td></tr></thead>
+  <tfoot><tr><td></td></tr></tfoot>
+  <tbody><tr><td>${content}</td></tr></tbody>
+</table>
 <script>
-  window.onload = () => {
+  window.onload = async () => {
+    try { await document.fonts.ready; } catch (e) {}
     const imgs = Array.from(document.querySelectorAll('img'));
-    if (!imgs.length) { window.print(); return; }
-    let pending = imgs.length;
-    const done = () => { if (--pending === 0) window.print(); };
-    imgs.forEach(img => { if (img.complete) done(); else { img.onload = done; img.onerror = done; } });
+    await Promise.all(imgs.map(img => img.complete ? null : new Promise(r => { img.onload = r; img.onerror = r; })));
+    window.print();
   };
 <\/script>
 </body></html>`;
 }
 
-export function generateAgreementPDF(
-  vendor: PDFVendor,
-  agreement: PDFAgreement,
-  booking: PDFBooking | null,
-  rules?: string[],
-  images?: PDFImages,
-) {
-  const html = buildAgreementHTML(vendor, agreement, booking, rules, images);
-
+export function generateAgreementPDF(doc: AgreementDoc) {
+  const html = buildAgreementHTML(doc);
   // Open via blob: URL so the print window has a real origin (pacakkhemah.com)
-  // instead of null (about:blank). Null-origin windows block external image loads,
-  // which prevents Firebase Storage IC photos (older agreements) from rendering.
+  // instead of null (about:blank). Null-origin windows block external image
+  // loads (shop logo, older agreements' IC photos).
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
   const blobUrl = URL.createObjectURL(blob);
   window.open(blobUrl, "_blank");
   setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
 }
 
-/** Helper to generate ref number and formatted dates from a Date */
+/** Reference number and dates from a Date. */
 export function buildAgreementMeta(date: Date, uniqueId: string) {
   return {
     refNo: `PK-${date.getFullYear()}${String(date.getMonth()+1).padStart(2,"0")}${String(date.getDate()).padStart(2,"0")}-${uniqueId.substring(0, 6).toUpperCase()}`,
