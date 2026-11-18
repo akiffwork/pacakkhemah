@@ -63,9 +63,14 @@ export function buildInvoiceMeta(date: Date, orderId: string) {
 function styles(): string {
   return `
 <style>
-  @page { size: A4; margin: 18mm 18mm 22mm 18mm; }
+  /* The side margins live on the body, not only in @page: some browsers and
+     print settings (e.g. Margins: None, phone "Save as PDF") drop @page
+     margins, which put the text on the paper edge and cut off the right side. */
+  @page { size: A4; margin: 12mm 0; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'Segoe UI',system-ui,-apple-system,sans-serif; color:#1a1a2e; font-size:11px; line-height:1.5; }
+  html { background:#fff; }
+  body { font-family:'Segoe UI',system-ui,-apple-system,sans-serif; color:#1a1a2e; font-size:11px; line-height:1.5;
+         max-width:210mm; margin:0 auto; padding:6mm 16mm 10mm; overflow-wrap:anywhere; }
   .header-name { font-size:22px; font-weight:900; color:#062c24; text-transform:uppercase; letter-spacing:2px; }
   .header-line { height:3px; background:#062c24; margin-top:8px; margin-bottom:22px; }
   .badge { display:inline-block; font-size:9px; font-weight:700; text-transform:uppercase; padding:2px 7px; border-radius:99px; }
@@ -118,7 +123,7 @@ function metaBlock(meta: ReturnType<typeof buildInvoiceMeta>, data: InvoiceData)
   const psColor = ps === "full_paid" || ps === "refunded" ? "#059669" :
                   ps === "deposit_paid" ? "#d97706" : "#dc2626";
   return `
-    <div style="text-align:right;min-width:180px;">
+    <div style="text-align:right;flex:0 1 auto;max-width:36%;white-space:nowrap;">
       <p style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px;">Invoice Details</p>
       <p style="font-size:11px;font-weight:700;color:#062c24;">No: ${meta.invoiceNo}</p>
       <p style="font-size:10px;color:#475569;">Date: ${meta.dateStr}</p>
@@ -298,10 +303,10 @@ function paymentStampBlock(data: InvoiceData): string {
 </div>`;
 }
 
-function buildHTML(data: InvoiceData): string {
+export function buildInvoiceHTML(data: InvoiceData): string {
   const meta = buildInvoiceMeta(data.createdAt, data.orderId);
   return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Invoice ${meta.invoiceNo}</title>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Invoice ${meta.invoiceNo}</title>
 ${styles()}
 </head><body>
 
@@ -349,7 +354,7 @@ ${paymentStampBlock(data)}
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export function generateInvoicePDF(data: InvoiceData): void {
-  const html = buildHTML(data);
+  const html = buildInvoiceHTML(data);
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   window.open(url, "_blank");
