@@ -6,18 +6,9 @@ import { getDownloadURL, getStorage, ref } from "firebase/storage";
 import { db } from "@/lib/firebase";
 import { generateAgreementPDF, buildAgreementMeta } from "@/lib/agreementPDF";
 import { idLine } from "@/lib/customerId";
+import { summaryFromLegacy, summaryFromOrder, type LegacyBooking, type RentalSummary } from "@/lib/rentalSummary";
+import type { Order } from "@/lib/orderFlow";
 import { EmptyState, SectionTitle, Chip, smallBtn, hintCls } from "@/components/ui/kit";
-
-type BookingDetails = {
-  items: { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string; linkedItems?: { name: string; qty: number; variantLabel?: string }[] }[];
-  dates: { start: string; end: string };
-  subtotal?: number;
-  discounts?: { label: string; amount: number }[];
-  serviceFee?: number;
-  rentalAmount?: number;
-  depositAmount?: number;
-  total: number;
-};
 
 export type Agreement = {
   id: string;
@@ -30,7 +21,10 @@ export type Agreement = {
   /** Older agreements only: private IC photo paths. */
   icFrontPath?: string;
   icBackPath?: string;
-  bookingDetails?: BookingDetails | string;
+  /** The cart as the customer saw it when signing (newer agreements). */
+  rentalSummary?: RentalSummary | null;
+  /** Older agreements: a small summary, or "Manual/Chat Booking". */
+  bookingDetails?: LegacyBooking | string;
   orderId?: string | null;
 };
 
@@ -52,18 +46,27 @@ export async function downloadAgreement(a: Agreement, vendor: VendorBits): Promi
       [frontUrl, backUrl] = await Promise.all([getDownloadURL(ref(storage, a.icFrontPath)), getDownloadURL(ref(storage, a.icBackPath))]);
     } catch (e) { console.warn("IC photos unavailable for PDF:", e); }
   }
-  const booking = a.bookingDetails && typeof a.bookingDetails !== "string" ? a.bookingDetails : null;
+  const booking = await agreementSummary(a);
   const ts = a.timestamp?.toDate?.() || new Date();
   generateAgreementPDF(
     { name: vendor.name || "", phone: vendor.phone, city: vendor.city },
     { customerName: a.customerName, customerPhone: a.customerPhone, idType: a.idType, idNumber: a.idNumber, ...buildAgreementMeta(ts, a.id) },
-    booking ? {
-      items: booking.items, dates: booking.dates, subtotal: booking.subtotal, discounts: booking.discounts,
-      serviceFee: booking.serviceFee, rentalAmount: booking.rentalAmount, deposit: booking.depositAmount, total: booking.total,
-    } : null,
+    booking,
     vendor.rules,
     frontUrl && backUrl ? { frontUrl, backUrl } : undefined,
   );
+}
+
+/** What was rented: the copy saved at signing, else the linked order, else the old summary. */
+export async function agreementSummary(a: Agreement): Promise<RentalSummary | null> {
+  if (a.rentalSummary) return a.rentalSummary;
+  if (a.orderId) {
+    try {
+      const snap = await getDoc(doc(db, "orders", a.orderId));
+      if (snap.exists()) return summaryFromOrder({ id: snap.id, ...snap.data() } as Order);
+    } catch { /* fall through */ }
+  }
+  return a.bookingDetails && typeof a.bookingDetails !== "string" ? summaryFromLegacy(a.bookingDetails) : null;
 }
 
 export function useVendorBits(vendorId: string): VendorBits {

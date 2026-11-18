@@ -6,22 +6,13 @@ import { db } from "@/lib/firebase";
 import { doc, getDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { generateAgreementPDF, buildAgreementMeta } from "@/lib/agreementPDF";
 import { formatIdNumber, idNumberError, type IdType } from "@/lib/customerId";
+import { summaryFromOrder, summaryFromLegacy, durationLabel, formatLongDate, type LegacyBooking, type RentalSummary } from "@/lib/rentalSummary";
+import type { Order } from "@/lib/orderFlow";
+import RentalItems from "@/components/orders/RentalItems";
 
 type VendorData = { name: string; rules?: string[] };
-type BookingDiscount = { label: string; amount: number };
-type BookingItem = { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string; linkedItems?: { name: string; qty: number; variantLabel?: string }[] };
-type BookingData = {
-  vendorId: string;
-  orderId?: string;
-  items: BookingItem[];
-  dates: { start: string; end: string };
-  subtotal?: number;
-  discounts?: BookingDiscount[];
-  serviceFee?: number;
-  rentalAmount?: number;
-  depositAmount?: number;
-  total: number;
-};
+/** What is being rented, and the order it belongs to (if any). */
+type BookingData = { orderId?: string; summary: RentalSummary | null };
 
 const DEFAULT_RULES = [
   "Equipment must be returned in the same condition as received.",
@@ -59,79 +50,41 @@ function AgreementContent() {
         if (!vSnap.exists()) { setError("Vendor link expired or invalid."); setLoading(false); return; }
         setVendor(vSnap.data() as VendorData);
 
-        // Priority 1: Encoded booking data in URL (works for all users, no auth needed)
-        if (dataParam && orderIdParam) {
+        // The order is the source of truth: it holds the cart exactly as the
+        // customer saw it. Order docs are readable by ID (the ID is the link's
+        // bearer token). Older links also carried a small summary (?d=), used
+        // only if the order can't be read.
+        const fromOrder = async (orderId: string): Promise<RentalSummary | null> => {
           try {
-            const decoded = JSON.parse(decodeURIComponent(escape(atob(dataParam))));
-            setBooking({
-              vendorId: vendorId!,
-              orderId: orderIdParam,
-              items: decoded.items || [],
-              dates: decoded.dates || { start: "TBD", end: "TBD" },
-              subtotal: decoded.subtotal,
-              discounts: decoded.discounts,
-              serviceFee: decoded.serviceFee,
-              rentalAmount: decoded.rentalAmount,
-              depositAmount: decoded.depositAmount,
-              total: decoded.total || 0,
-            });
-            setLoading(false);
-            return;
-          } catch { /* fall through */ }
-        }
-
-        // Priority 2: orderId from URL param → try fetch order from Firestore
-        if (orderIdParam) {
-          try {
-            const orderSnap = await getDoc(doc(db, "orders", orderIdParam));
-            if (orderSnap.exists()) {
-              const o = orderSnap.data();
-              const discounts: BookingDiscount[] = [];
-              if (o.autoDiscount) discounts.push({ label: "Extended Stay Discount", amount: o.autoDiscount });
-              if (o.promoCode && o.promoDiscount) {
-                const promoLabel = o.promoType === "fixed"
-                  ? `Promo Code "${o.promoCode}" (RM${o.promoDiscount} off)`
-                  : `Promo Code "${o.promoCode}"`;
-                discounts.push({ label: promoLabel, amount: o.promoDiscount });
-              }
-              const totalAmount = o.manualPrice || o.totalAmount || 0;
-              const depositAmount = o.depositAmount || 0;
-              const rentalAmount = o.rentalAmount || (totalAmount - depositAmount);
-              const subtotal = o.subtotal || (discounts.length ? rentalAmount + discounts.reduce((s: number, d: BookingDiscount) => s + d.amount, 0) : undefined);
-              setBooking({
-                vendorId: vendorId!,
-                orderId: orderIdParam,
-                items: (o.items || []).map((i: BookingItem) => ({
-                  name: i.name, qty: i.qty, price: i.price,
-                  variantLabel: i.variantLabel, variantColor: i.variantColor,
-                })),
-                dates: o.bookingDates || { start: "TBD", end: "TBD" },
-                subtotal,
-                discounts: discounts.length ? discounts : undefined,
-                serviceFee: o.serviceFee || undefined,
-                rentalAmount: depositAmount ? rentalAmount : undefined,
-                depositAmount: depositAmount || undefined,
-                total: totalAmount,
-              });
-              setLoading(false);
-              return;
+            const snap = await getDoc(doc(db, "orders", orderId));
+            if (snap.exists()) {
+              const o = { id: snap.id, ...snap.data() } as Order;
+              if (o.vendorId && o.vendorId !== vendorId) return null;
+              return summaryFromOrder(o);
             }
-          } catch {
-            // Permission denied — still preserve orderId for Cloud Function linking
-            setBooking({ vendorId: vendorId!, orderId: orderIdParam, items: [], dates: { start: "TBD", end: "TBD" }, total: 0 });
-            setLoading(false);
-            return;
-          }
-        }
+          } catch { /* fall back below */ }
+          return null;
+        };
+        const fromData = (): RentalSummary | null => {
+          if (!dataParam) return null;
+          try { return summaryFromLegacy(JSON.parse(decodeURIComponent(escape(atob(dataParam)))) as LegacyBooking); }
+          catch { return null; }
+        };
 
-        // Priority 3: localStorage (same-browser flow after checkout)
-        try {
-          const stored = localStorage.getItem("current_booking");
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (parsed.vendorId === vendorId) setBooking(parsed as BookingData);
-          }
-        } catch { /* ignore */ }
+        if (orderIdParam) {
+          // Keep the orderId even if nothing loads, so the Cloud Function still links it.
+          setBooking({ orderId: orderIdParam, summary: (await fromOrder(orderIdParam)) || fromData() });
+        } else {
+          // Same-browser flow right after checkout
+          try {
+            const stored = localStorage.getItem("current_booking");
+            const parsed = stored ? JSON.parse(stored) : null;
+            if (parsed?.vendorId === vendorId) {
+              const summary = (parsed.orderId && await fromOrder(parsed.orderId)) || summaryFromLegacy(parsed as LegacyBooking);
+              setBooking({ orderId: parsed.orderId, summary });
+            }
+          } catch { /* ignore */ }
+        }
 
         // Auto-fill returning customer info
         try {
@@ -178,9 +131,8 @@ function AgreementContent() {
         customerPhone: formatPhone(custPhone),
         idType,
         idNumber: idNumber.trim(),
-        bookingDetails: booking
-          ? JSON.parse(JSON.stringify(booking))  // strips undefined fields
-          : "Manual/Chat Booking",
+        // What the customer saw and signed for, kept with the agreement.
+        rentalSummary: booking?.summary ? JSON.parse(JSON.stringify(booking.summary)) : null,
         orderId: booking?.orderId || null,
         timestamp: serverTimestamp(),
         status: "signed",
@@ -228,16 +180,7 @@ function AgreementContent() {
     generateAgreementPDF(
       { name: vendor?.name || "—" },
       { customerName: custName || "—", customerPhone: formatPhone(custPhone) || undefined, idType, idNumber: idNumber.trim() || undefined, ...meta },
-      booking ? {
-        items: booking.items,
-        dates: booking.dates,
-        subtotal: booking.subtotal,
-        discounts: booking.discounts,
-        serviceFee: booking.serviceFee,
-        rentalAmount: booking.rentalAmount,
-        deposit: booking.depositAmount,
-        total: booking.total,
-      } : null,
+      booking?.summary || null,
       vendor?.rules,
     );
   }
@@ -335,105 +278,25 @@ function AgreementContent() {
               </div>
             </div>
 
-            {/* Section 2 — Items */}
+            {/* Section 2 — Items: the cart exactly as the customer saw it */}
             <div>
               <h2 className="text-xs font-black uppercase text-slate-400 tracking-widest mb-4">
                 2. Subject of Rental
               </h2>
-              <div className="border border-slate-200 rounded-3xl overflow-hidden">
-                <div className="bg-slate-50 px-5 py-3 grid grid-cols-12 text-[10px] font-black text-slate-400 uppercase border-b border-slate-200">
-                  <span className="col-span-6">Item</span>
-                  <span className="col-span-2 text-center">Qty</span>
-                  <span className="col-span-4 text-right">Amount</span>
-                </div>
-                <div className="p-5 space-y-3 bg-white text-sm font-bold text-[#062c24]">
-                  {booking?.items?.length ? (
-                    booking.items.map((item, i) => (
-                      <div key={i}>
-                        <div className="grid grid-cols-12 border-b border-slate-50 pb-2 items-center">
-                          <div className="col-span-6 flex items-center gap-1.5 min-w-0">
-                            {item.variantColor && <span className="w-3 h-3 rounded-full border border-slate-200 shrink-0" style={{ backgroundColor: item.variantColor }}></span>}
-                            <span className="truncate font-bold">
-                              {item.name}
-                              {item.variantLabel && <span className="text-[9px] text-teal-600 ml-1">({item.variantLabel})</span>}
-                              {item.linkedItems?.length ? <span className="text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded ml-1">Package</span> : null}
-                            </span>
-                          </div>
-                          <span className="col-span-2 text-center text-emerald-600">x{item.qty}</span>
-                          <span className="col-span-4 text-right text-slate-500 text-xs">
-                            {item.price ? `RM ${item.price * item.qty}` : "—"}
-                          </span>
-                        </div>
-                        {item.linkedItems?.map((li, j) => (
-                          <div key={j} className="grid grid-cols-12 border-b border-slate-50 pb-1 items-center bg-slate-50/50">
-                            <div className="col-span-6 flex items-center gap-1.5 pl-5 min-w-0">
-                              <span className="text-slate-300 text-xs shrink-0">↳</span>
-                              <span className="text-[10px] text-slate-500 truncate">
-                                {li.name}
-                                {li.variantLabel && <span className="text-teal-600 ml-1">({li.variantLabel})</span>}
-                              </span>
-                            </div>
-                            <span className="col-span-2 text-center text-[10px] text-slate-400">×{li.qty}</span>
-                            <span className="col-span-4 text-right text-[10px] text-slate-300">—</span>
-                          </div>
-                        ))}
-                      </div>
-                    ))
-                  ) : (
-                    <p className="italic text-slate-400 font-normal text-sm">Items as discussed in WhatsApp / Chat Record</p>
+              <div className="border border-slate-200 rounded-3xl overflow-hidden text-slate-900">
+                <div className="bg-slate-50 px-5 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                  <p className="text-sm font-bold text-[#062c24] flex items-center gap-2">
+                    <i className="fas fa-calendar-alt text-emerald-600 text-xs" aria-hidden="true"></i>
+                    {booking?.summary?.dates ? `${formatLongDate(booking.summary.dates.start)} – ${formatLongDate(booking.summary.dates.end)}` : "Dates as agreed in chat"}
+                  </p>
+                  {booking?.summary?.nights != null && (
+                    <span className="text-xs font-bold text-slate-600">{durationLabel(booking.summary.nights)}</span>
                   )}
                 </div>
-                <div className="bg-slate-50 px-5 py-4 border-t border-slate-200 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase mb-0.5">Rental Period</p>
-                      <p className="font-bold text-xs flex items-center gap-2">
-                        <span>{booking?.dates?.start || "TBD"}</span>
-                        <i className="fas fa-arrow-right text-slate-300 text-[8px]"></i>
-                        <span>{booking?.dates?.end || "TBD"}</span>
-                      </p>
-                    </div>
-                  </div>
-                  {(booking?.discounts?.length || booking?.depositAmount) && (
-                    <div className="space-y-1 pt-1 border-t border-slate-200">
-                      {booking.subtotal != null && (
-                        <div className="flex justify-between text-xs text-slate-500">
-                          <span>Subtotal</span>
-                          <span>RM {booking.subtotal}</span>
-                        </div>
-                      )}
-                      {booking.discounts?.map((d, i) => (
-                        <div key={i} className="flex justify-between text-xs text-emerald-600 font-semibold">
-                          <span><i className="fas fa-tag mr-1 text-[9px]"></i>{d.label}</span>
-                          <span>− RM {d.amount}</span>
-                        </div>
-                      ))}
-                      {booking.serviceFee != null && booking.serviceFee > 0 && (
-                        <div className="flex justify-between text-xs text-slate-500">
-                          <span>Service Fee</span>
-                          <span>RM {booking.serviceFee}</span>
-                        </div>
-                      )}
-                      {booking.rentalAmount != null && (
-                        <div className="flex justify-between text-xs font-bold text-[#062c24]">
-                          <span>Rental Amount</span>
-                          <span>RM {booking.rentalAmount}</span>
-                        </div>
-                      )}
-                      {booking.depositAmount != null && booking.depositAmount > 0 && (
-                        <div className="flex justify-between text-xs font-bold text-amber-700 bg-amber-50 -mx-5 px-5 py-1.5 rounded">
-                          <span><i className="fas fa-shield-alt mr-1 text-[9px]"></i>Refundable Deposit</span>
-                          <span>RM {booking.depositAmount}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex justify-between items-center pt-1 border-t border-slate-200">
-                    <p className="text-[9px] font-bold text-slate-400 uppercase">Total Payable</p>
-                    <p className="font-black text-xl text-emerald-600">
-                      {booking?.total ? `RM ${booking.total}` : "—"}
-                    </p>
-                  </div>
+                <div className="p-5 bg-white">
+                  {booking?.summary
+                    ? <RentalItems summary={booking.summary} emptyText="Items as discussed in WhatsApp / chat" />
+                    : <p className="italic text-slate-500 text-sm">Items as discussed in WhatsApp / chat</p>}
                 </div>
               </div>
             </div>

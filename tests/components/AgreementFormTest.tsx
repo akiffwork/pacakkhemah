@@ -12,7 +12,8 @@ jest.mock('firebase/firestore', () => ({
   addDoc: (...a: unknown[]) => addDoc(...a),
   serverTimestamp: () => 'now',
 }));
-jest.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams('v=v1') }));
+let mockQuery = 'v=v1';
+jest.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(mockQuery) }));
 
 import AgreementPage from '@/app/agreement/page';
 
@@ -67,4 +68,35 @@ test('passport option saves a passport number', async () => {
   fireEvent.change(screen.getByLabelText('Passport number'), { target: { value: 'k12 345 678' } });
   await act(async () => { fireEvent.click(screen.getByText('Sign & Confirm Booking')); });
   expect(addDoc.mock.calls[0][1]).toMatchObject({ idType: 'passport', idNumber: 'K12345678' });
+});
+
+test('shows the order exactly as the order details do', async () => {
+  const { getDoc } = jest.requireMock('firebase/firestore') as { getDoc: jest.Mock };
+  getDoc.mockImplementation((ref: { path: string }) => Promise.resolve(ref.path.startsWith('orders/')
+    ? { exists: () => true, id: 'o1', data: () => ({
+        vendorId: 'v1', customerPhone: '601', pickupLocation: 'Balok', status: 'pending',
+        bookingDates: { start: '2026-05-16', end: '2026-05-18' }, nights: 2,
+        items: [{ name: 'Air Tent 6P', qty: 1, price: 80, lineTotal: 160, addSetup: true, setupFee: 30 }],
+        freeItems: [{ name: 'Lantern', qty: 1 }],
+        subtotal: 160, setupFeeTotal: 30, totalAmount: 240, depositAmount: 50, rentalAmount: 190,
+      }) }
+    : { exists: () => true, data: () => ({ name: 'Camping Dengan Kita' }) }));
+  mockQuery = 'v=v1&o=o1';
+  try {
+    await renderPage();
+    await screen.findByText('1 × Air Tent 6P');
+    expect(screen.getAllByText('RM 160')).toHaveLength(2); // line total + subtotal
+    expect(screen.getByText('RM 80/night × 1 × 2N')).toBeInTheDocument();
+    expect(screen.getByText('Add-on: setup at campsite')).toBeInTheDocument();
+    expect(screen.getByText('Free item')).toBeInTheDocument();
+    expect(screen.getByText('Security deposit (refundable)')).toBeInTheDocument();
+    expect(screen.getByText('RM 240')).toBeInTheDocument();
+    expect(screen.getByText('2 nights')).toBeInTheDocument();
+    fillParties();
+    fireEvent.change(screen.getByLabelText('IC number'), { target: { value: '900101145678' } });
+    await act(async () => { fireEvent.click(screen.getByText('Sign & Confirm Booking')); });
+    const saved = addDoc.mock.calls[0][1] as { orderId: string; rentalSummary: { rows: { label: string }[] } };
+    expect(saved.orderId).toBe('o1');
+    expect(saved.rentalSummary.rows.at(-1)).toMatchObject({ label: 'Total', amount: 240 });
+  } finally { mockQuery = 'v=v1'; }
 });

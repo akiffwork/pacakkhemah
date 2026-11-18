@@ -4,6 +4,8 @@
  */
 
 import { generateAgreementPDF, buildAgreementMeta, buildAgreementHTML } from '@/lib/agreementPDF';
+import { summaryFromOrder } from '@/lib/rentalSummary';
+import type { Order } from '@/lib/orderFlow';
 
 const vendor = { name: 'Pacak Gear', phone: '0123456789', city: 'Kuantan' };
 const agreement = {
@@ -13,11 +15,18 @@ const agreement = {
   signedDate: '01/01/2024',
   signedFull: '1 January 2024, 10:00 AM',
 };
-const booking = {
-  items: [{ name: 'Tent', qty: 2, price: 50 }],
-  dates: { start: '01/01/2024', end: '03/01/2024' },
-  total: 100,
-};
+const booking = summaryFromOrder({
+  id: 'o1', customerPhone: '601', pickupLocation: 'Balok', status: 'confirmed',
+  bookingDates: { start: '2026-05-16', end: '2026-05-18' }, nights: 2,
+  items: [
+    { name: 'Tent', qty: 2, price: 25, lineTotal: 100 },
+    { name: 'Cabin XL Package', qty: 1, price: 80, lineTotal: 140, variantLabel: 'Green', addSetup: true, setupFee: 30,
+      linkedItems: [{ itemId: 'x', name: 'Air mattress', qty: 2 }] },
+  ],
+  freeItems: [{ name: 'Lantern', qty: 1 }],
+  subtotal: 240, promoCode: 'PACKAGEISGOOD', promoDiscount: 24, setupFeeTotal: 30,
+  totalAmount: 296, depositAmount: 50, rentalAmount: 246,
+} as Order);
 
 // ─── buildAgreementMeta ───────────────────────────────────────────────────────
 
@@ -80,7 +89,26 @@ describe('buildAgreementHTML', () => {
     expect(h).toContain('PACAK GEAR');
     expect(h).toContain('Ali Bin Ahmad');
     expect(h).toContain('PK-20240101-ABC123');
-    expect(h).toContain('RM100');
+    expect(h).toContain('RM 296');
+  });
+
+  test('items match the cart: line totals, nightly hint, variant, package, setup, free item', () => {
+    const h = html();
+    expect(h).toContain('RM 100');                       // stay total, not the nightly price
+    expect(h).toContain('RM 25/night × 2 × 2N');
+    expect(h).toContain('Green');
+    expect(h).toContain('Includes: 2 × Air mattress');
+    expect(h).toContain('Add-on: setup at campsite');
+    expect(h).toContain('Lantern');
+    expect(h).toContain('FREE ITEM');
+    expect(h).not.toContain('RM 80/night');              // tiered line: no misleading hint
+  });
+
+  test('price rows match the order details', () => {
+    const h = html();
+    for (const t of ['Subtotal', 'RM 240', 'Promo code', 'PACKAGEISGOOD', '− RM 24', 'Setup fee', 'Rental', 'RM 246', 'Security deposit (refundable)', 'RM 50']) expect(h).toContain(t);
+    expect(h).toContain('16 May 2026');
+    expect(h).toContain('2 nights');
   });
 
   test('uses WhatsApp fallback text when there is no booking', () => {
@@ -129,7 +157,7 @@ describe('buildAgreementHTML', () => {
   test('escapes customer-typed text so it cannot inject markup', () => {
     const h = html(vendor,
       { ...agreement, customerName: '<img src=x onerror=alert(1)>', idNumber: '"><script>x</script>' },
-      { ...booking, items: [{ name: '<b>Tent</b>', qty: 1 }] });
+      { ...booking, lines: [{ ...booking.lines[0], name: '<b>Tent</b>' }] });
     expect(h).not.toContain('<img src=x');
     expect(h).not.toContain('<script>x');
     expect(h).not.toContain('<b>Tent</b>');
