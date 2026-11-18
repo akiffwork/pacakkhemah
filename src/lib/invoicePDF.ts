@@ -1,42 +1,43 @@
-export type InvoiceVendor = {
-  name: string;
-  phone?: string;
-  city?: string;
-  taxProfile?: {
-    tin?: string;
-    legalName?: string;
-    brn?: string;
-    address?: string;
-    msicCode?: string;
-    msicActivity?: string;
-    sstNo?: string;
-  };
+/**
+ * Tax invoice / receipt
+ * Same design as the rental agreement (see printDocument.ts): vendor header
+ * with logo and shop address, numbered sections, footer with social links,
+ * fixed print margins. Items and prices come from the order's cart snapshot
+ * (rentalSummary) and payments from the order's payment track (getPayment).
+ * Used by: order detail › Receipt (vendor)
+ */
+
+import { getPayment, type Order, type PaymentState } from "./orderFlow";
+import { summaryFromOrder, durationLabel, formatLongDate, type RentalSummary } from "./rentalSummary";
+import type { AgreementVendor } from "./agreementDocument";
+import { iconSvg, type IconName } from "./agreementIcons";
+import {
+  GREEN, escapeDeep, isoDateMY, docHeader, docFooter, sectionHead, itemsTable, printDocument, openPrintWindow,
+} from "./printDocument";
+
+export type TaxProfile = {
+  tin?: string;
+  legalName?: string;
+  brn?: string;
+  address?: string;
+  msicCode?: string;
+  msicActivity?: string;
+  sstNo?: string;
 };
 
-export type InvoiceItem = {
-  name: string;
-  qty: number;
-  price: number;
-  variantLabel?: string;
-};
+export type InvoiceVendor = AgreementVendor & { taxProfile?: TaxProfile };
 
 export type InvoiceData = {
   orderId: string;
   vendor: InvoiceVendor;
   customerName: string;
   customerPhone?: string;
-  bookingDates: { start: string; end: string };
-  pickupLocation: string;
-  items: InvoiceItem[];
-  rentalAmount: number;
-  depositAmount?: number;
-  serviceFee?: number;
-  autoDiscount?: number;
-  promoCode?: string;
-  promoDiscount?: number;
-  promoType?: string;
-  totalAmount: number;
-  paymentStatus?: string;
+  rental: RentalSummary | null;
+  fulfillment: "pickup" | "delivery";
+  location?: string;
+  timeSlot?: string | null;
+  payment: PaymentState;
+  /** Invoice date (when the order was placed). */
   createdAt: Date;
 };
 
@@ -58,305 +59,184 @@ export function buildInvoiceMeta(date: Date, orderId: string) {
   };
 }
 
-// ── HTML builder helpers ─────────────────────────────────────────────────────
-
-function styles(): string {
-  return `
-<style>
-  /* The side margins live on the body, not only in @page: some browsers and
-     print settings (e.g. Margins: None, phone "Save as PDF") drop @page
-     margins, which put the text on the paper edge and cut off the right side. */
-  @page { size: A4; margin: 12mm 0; }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  html { background:#fff; }
-  body { font-family:'Segoe UI',system-ui,-apple-system,sans-serif; color:#1a1a2e; font-size:11px; line-height:1.5;
-         max-width:210mm; margin:0 auto; padding:6mm 16mm 10mm; overflow-wrap:anywhere; }
-  .header-name { font-size:22px; font-weight:900; color:#062c24; text-transform:uppercase; letter-spacing:2px; }
-  .header-line { height:3px; background:#062c24; margin-top:8px; margin-bottom:22px; }
-  .badge { display:inline-block; font-size:9px; font-weight:700; text-transform:uppercase; padding:2px 7px; border-radius:99px; }
-  table { width:100%; border-collapse:collapse; }
-  th, td { border:1px solid #e2e8f0; padding:8px 10px; }
-  th { background:#f8fafc; font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; text-align:left; }
-  .total-row td { background:#062c24; color:#fff; font-weight:900; font-size:13px; }
-  .footer { font-size:9px; color:#94a3b8; margin-top:28px; padding-top:12px; border-top:1px solid #e2e8f0; line-height:1.8; }
-  @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
-</style>`;
+/** "RM 144" or "RM 12.50", the same style as the cart. */
+function rm(n: number): string {
+  return `RM ${Number.isInteger(n) ? n : n.toFixed(2)}`;
 }
 
-function supplierBlock(vendor: InvoiceVendor): string {
-  const tp = vendor.taxProfile || {};
-  const address = tp.address || vendor.city || "";
-  const displayName = tp.legalName?.trim() || vendor.name;
-  const tradeName = tp.legalName?.trim() && tp.legalName.trim() !== vendor.name ? vendor.name : "";
-  return `
-    <div style="flex:1;min-width:0;">
-      <p style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px;">Supplier</p>
-      <p style="font-size:13px;font-weight:900;color:#062c24;">${displayName}</p>
-      ${tradeName ? `<p style="font-size:10px;color:#64748b;font-style:italic;">t/a ${tradeName}</p>` : ""}
-      ${address ? `<p style="font-size:10px;color:#475569;white-space:pre-line;margin-top:2px;">${address}</p>` : ""}
-      ${vendor.phone ? `<p style="font-size:10px;color:#475569;">Tel: ${vendor.phone}</p>` : ""}
-      <p style="font-size:10px;color:#475569;margin-top:4px;">TIN: <strong>${tp.tin || "NOT PROVIDED"}</strong></p>
-      ${tp.brn ? `<p style="font-size:10px;color:#475569;">BRN (SSM): ${tp.brn}</p>` : ""}
-      ${tp.sstNo ? `<p style="font-size:10px;color:#475569;">SST Reg.: ${tp.sstNo}</p>` : `<p style="font-size:10px;color:#475569;">SST: NOT APPLICABLE</p>`}
-      <p style="font-size:10px;color:#475569;">MSIC: ${tp.msicCode || "7721"} — ${tp.msicActivity || "Rental and leasing of recreational and sports goods"}</p>
-    </div>`;
-}
-
-function buyerBlock(data: InvoiceData): string {
-  return `
-    <div style="flex:1;min-width:0;">
-      <p style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px;">Buyer</p>
-      <p style="font-size:13px;font-weight:900;color:#062c24;">${data.customerName || "General Public"}</p>
-      ${data.customerPhone ? `<p style="font-size:10px;color:#475569;">Tel/IC: ${data.customerPhone}</p>` : `<p style="font-size:10px;color:#64748b;font-style:italic;">IC/TIN: General Public (B2C)</p>`}
-    </div>`;
-}
-
-function metaBlock(meta: ReturnType<typeof buildInvoiceMeta>, data: InvoiceData): string {
-  const paymentLabel: Record<string, string> = {
-    unpaid: "Unpaid",
-    deposit_paid: "Deposit Paid",
-    full_paid: "Fully Paid",
-    refunded: "Refunded",
-    deposit_burnt: "Deposit Forfeited",
+/** Build the receipt from a saved order. */
+export function invoiceFromOrder(order: Order, vendor: InvoiceVendor): InvoiceData {
+  const created = order.createdAt?.toDate?.() || (order.createdAt ? new Date(order.createdAt) : new Date());
+  return {
+    orderId: order.id,
+    vendor,
+    customerName: order.customerName || "General Public",
+    customerPhone: order.customerPhone || undefined,
+    rental: summaryFromOrder(order),
+    fulfillment: order.fulfillmentType === "delivery" ? "delivery" : "pickup",
+    location: order.pickupLocation || undefined,
+    timeSlot: order.timeSlot,
+    payment: getPayment(order),
+    createdAt: isNaN(created.getTime()) ? new Date() : created,
   };
-  const ps = data.paymentStatus || "unpaid";
-  const psColor = ps === "full_paid" || ps === "refunded" ? "#059669" :
-                  ps === "deposit_paid" ? "#d97706" : "#dc2626";
+}
+
+export type PaymentStatus = { tone: "paid" | "partial" | "due"; title: string; detail: string; figureLabel: string; figure: number };
+
+/** Headline payment status, from the order's payment track. */
+export function paymentStatus(p: PaymentState): PaymentStatus {
+  if (p.depositOutcome === "kept" && p.rentalReceived) {
+    return { tone: "paid", title: "Paid · Deposit kept", detail: `Rental ${rm(p.rental)} received. Security deposit ${rm(p.deposit)} kept by the supplier.`, figureLabel: "Amount retained", figure: p.rental + p.depositKept };
+  }
+  if (p.depositOutcome === "partial" && p.rentalReceived) {
+    return { tone: "paid", title: "Paid · Deposit partly refunded", detail: `Rental ${rm(p.rental)} received. Deposit: ${rm(p.depositRefunded)} refunded, ${rm(p.depositKept)} kept.`, figureLabel: "Amount retained", figure: p.rental + p.depositKept };
+  }
+  if (p.depositOutcome === "refunded" && p.rentalReceived) {
+    return { tone: "paid", title: "Paid · Deposit refunded", detail: `Rental ${rm(p.rental)} received. Security deposit ${rm(p.deposit)} refunded to the customer.`, figureLabel: "Rental paid", figure: p.rental };
+  }
+  if (p.fullyReceived) {
+    return { tone: "paid", title: "Paid in full", detail: p.deposit > 0 ? `Rental ${rm(p.rental)} and refundable deposit ${rm(p.deposit)} received.` : "All charges received. Thank you.", figureLabel: "Amount paid", figure: p.total };
+  }
+  if (p.nothingReceived) {
+    return { tone: "due", title: "Payment pending", detail: "No payment received yet.", figureLabel: "Amount due", figure: p.balanceDue };
+  }
+  const got = [p.depositReceived && `deposit ${rm(p.deposit)}`, p.rentalReceived && `rental ${rm(p.rental)}`].filter(Boolean).join(" and ");
+  return { tone: "partial", title: "Partly paid", detail: `Received ${got}. The balance is still to be paid.`, figureLabel: "Balance due", figure: p.balanceDue };
+}
+
+// ── HTML ────────────────────────────────────────────────────────────────────
+
+const TONES: Record<PaymentStatus["tone"], { fg: string; bg: string; border: string; icon: IconName }> = {
+  paid: { fg: "#047857", bg: "#ecfdf5", border: "#6ee7b7", icon: "check" },
+  partial: { fg: "#b45309", bg: "#fffbeb", border: "#fcd34d", icon: "shield" },
+  due: { fg: "#b91c1c", bg: "#fef2f2", border: "#fca5a5", icon: "shield" },
+};
+
+const EXTRA_STYLES = `
+  .status { display:flex; align-items:center; justify-content:space-between; gap:14px; border-radius:10px; padding:12px 14px; margin-top:14px; break-inside:avoid; }
+  .kv { display:grid; grid-template-columns:repeat(3, 1fr); gap:0; border:1px solid #e5e7eb; border-radius:8px; overflow:hidden; margin-top:10px; }
+  .kv div { padding:7px 10px; border-right:1px solid #e5e7eb; border-bottom:1px solid #e5e7eb; }
+  .kv div:nth-child(3n) { border-right:0; }
+  .kv div:nth-last-child(-n+3) { border-bottom:0; }
+  .kv b { display:block; color:#111827; font-size:10.5px; }
+  table.items td { padding:5px 10px; }
+  .party { padding:9px 12px; }`;
+
+function supplierCard(v: InvoiceVendor) {
+  const tp = v.taxProfile || {};
+  const legal = tp.legalName?.trim();
+  const display = legal || v.name;
+  const trade = legal && legal !== v.name ? v.name : "";
+  const address = tp.address || v.city || "";
   return `
-    <div style="text-align:right;flex:0 1 auto;max-width:36%;white-space:nowrap;">
-      <p style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:4px;">Invoice Details</p>
-      <p style="font-size:11px;font-weight:700;color:#062c24;">No: ${meta.invoiceNo}</p>
-      <p style="font-size:10px;color:#475569;">Date: ${meta.dateStr}</p>
-      <p style="font-size:10px;color:#475569;">Time: ${meta.timeStr}</p>
-      <p style="font-size:10px;color:#475569;">Currency: MYR</p>
-      <p style="font-size:10px;color:#475569;">Type: 01 – Invoice</p>
-      <p style="font-size:10px;font-weight:700;margin-top:6px;color:${psColor};">
-        Payment: <span style="color:${psColor};">${paymentLabel[ps] || ps}</span>
-      </p>
+    <div class="party"><div class="lbl">Supplier</div><b>${display}</b>
+      ${trade ? `<div style="font-style:italic;color:#6b7280;">t/a ${trade}</div>` : ""}
+      ${address ? `<div style="white-space:pre-line;">${address}</div>` : ""}
+      ${v.phone ? `<div>Tel: ${v.phone}</div>` : ""}
+      <div style="margin-top:4px;">TIN: <b style="display:inline;font-size:10.5px;color:#111827;">${tp.tin || "Not provided"}</b></div>
+      ${tp.brn ? `<div>BRN (SSM): ${tp.brn}</div>` : ""}
+      <div>${tp.sstNo ? `SST Reg.: ${tp.sstNo}` : "SST: Not applicable"} · MSIC: ${tp.msicCode || "7721"}</div>
+      <div style="color:#6b7280;">${tp.msicActivity || "Rental and leasing of recreational and sports goods"}</div>
     </div>`;
 }
 
-function itemsTable(data: InvoiceData): string {
-  const nights = (() => {
-    try {
-      const s = new Date(data.bookingDates.start);
-      const e = new Date(data.bookingDates.end);
-      const diff = Math.round((e.getTime() - s.getTime()) / 86400000);
-      return diff > 0 ? diff : 1;
-    } catch { return 1; }
-  })();
+function buyerCard(d: InvoiceData) {
+  return `
+    <div class="party"><div class="lbl">Buyer</div><b>${d.customerName}</b>
+      ${d.customerPhone ? `<div>Tel: ${d.customerPhone}</div>` : ""}
+      <div style="color:#6b7280;">TIN: General public (B2C)</div>
+    </div>`;
+}
 
-  const rows = data.items.map(i => `
-    <tr>
-      <td>${i.name}${i.variantLabel ? ` <span style="font-size:9px;color:#0d9488;">(${i.variantLabel})</span>` : ""} — ${nights} night${nights !== 1 ? "s" : ""}</td>
-      <td style="text-align:center;">${i.qty}</td>
-      <td style="text-align:right;">RM ${formatMYR(i.price)}/night</td>
-      <td style="text-align:right;font-weight:700;">RM ${formatMYR(i.price * i.qty * nights)}</td>
-    </tr>`).join("");
+function statusBox(s: PaymentStatus, p: PaymentState) {
+  const t = TONES[s.tone];
+  return `
+    <div class="status" style="background:${t.bg};border:1.5px solid ${t.border};">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:20px;color:${t.fg};">${iconSvg(t.icon, t.fg)}</span>
+        <div>
+          <div style="font-size:13px;font-weight:800;color:${t.fg};">${s.title}</div>
+          <div style="color:#374151;">${s.detail}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px 6px;margin-top:6px;">${paymentChips(p)}</div>
+        </div>
+      </div>
+      <div style="text-align:right;white-space:nowrap;">
+        <div class="lbl" style="color:${t.fg};margin:0;">${s.figureLabel}</div>
+        <div style="font-size:18px;font-weight:900;color:${t.fg};">${rm(s.figure)}</div>
+      </div>
+    </div>`;
+}
 
-  const discountRows: string[] = [];
-  if (data.autoDiscount) {
-    discountRows.push(`
-    <tr>
-      <td colspan="3" style="color:#059669;font-size:10px;">Extended Stay Discount</td>
-      <td style="text-align:right;color:#059669;font-weight:700;">− RM ${formatMYR(data.autoDiscount)}</td>
-    </tr>`);
+/** One line per payment: rental, deposit and balance due. */
+function paymentChips(p: PaymentState) {
+  const ok = (t: string) => `<span class="stamp">${iconSvg("check", "#16895B")} ${t}</span>`;
+  const no = (t: string) => `<span class="stamp pending">${t}</span>`;
+  const chips = [p.rentalReceived ? ok(`Rental ${rm(p.rental)} received`) : no(`Rental ${rm(p.rental)} not yet paid`)];
+  if (p.deposit) {
+    chips.push(
+      p.depositOutcome === "kept" ? no(`Deposit ${rm(p.depositKept)} kept`)
+      : p.depositOutcome === "partial" ? `${ok(`Deposit ${rm(p.depositRefunded)} refunded`)} ${no(`${rm(p.depositKept)} kept`)}`
+      : p.depositOutcome === "refunded" ? ok(`Deposit ${rm(p.deposit)} refunded`)
+      : p.depositReceived ? ok(`Deposit ${rm(p.deposit)} received, held`) : no(`Deposit ${rm(p.deposit)} not yet paid`));
   }
-  if (data.promoCode && data.promoDiscount) {
-    const promoLabel = data.promoType === "fixed"
-      ? `Promo "${data.promoCode}" (RM${data.promoDiscount} off)`
-      : `Promo "${data.promoCode}"`;
-    discountRows.push(`
-    <tr>
-      <td colspan="3" style="color:#059669;font-size:10px;">${promoLabel}</td>
-      <td style="text-align:right;color:#059669;font-weight:700;">− RM ${formatMYR(data.promoDiscount)}</td>
-    </tr>`);
-  }
+  chips.push(p.balanceDue ? no(`Balance due ${rm(p.balanceDue)}`) : ok("Balance due RM 0"));
+  return chips.join("");
+}
 
-  const serviceFeeRow = data.serviceFee ? `
-    <tr style="background:#f8fafc;">
-      <td colspan="3" style="font-size:10px;color:#475569;">Service Fee (Delivery/Setup)</td>
-      <td style="text-align:right;font-weight:600;">RM ${formatMYR(data.serviceFee)}</td>
-    </tr>` : "";
-
-  const rentalAmount = data.rentalAmount;
-  const depositAmount = data.depositAmount || 0;
-
-  const rentalRow = `
-    <tr style="background:#f0fdf4;">
-      <td colspan="3" style="font-weight:700;color:#062c24;">Rental Amount (Taxable Supply)</td>
-      <td style="text-align:right;font-weight:800;color:#062c24;">RM ${formatMYR(rentalAmount)}</td>
-    </tr>`;
-
-  const depositRow = depositAmount ? `
-    <tr style="background:#fffbeb;">
-      <td colspan="3">
-        Security Deposit
-        <span class="badge" style="background:#fef3c7;color:#78350f;margin-left:6px;">REFUNDABLE</span>
-        <span style="font-size:9px;color:#64748b;display:block;margin-top:2px;">Not a taxable supply — returned upon gear return in good condition</span>
-      </td>
-      <td style="text-align:right;font-weight:700;color:#92400e;">RM ${formatMYR(depositAmount)}</td>
-    </tr>` : "";
-
+export function buildInvoiceHTML(raw: InvoiceData): string {
+  const meta = buildInvoiceMeta(raw.createdAt, raw.orderId);
+  const status = paymentStatus(raw.payment);
+  const d = escapeDeep(raw);
+  const r = d.rental;
+  const period = r?.dates
+    ? `${formatLongDate(r.dates.start)} – ${formatLongDate(r.dates.end)}${r.nights != null ? ` · ${durationLabel(r.nights)}` : ""}`
+    : "As agreed";
+  const invoiceDate = formatLongDate(isoDateMY(raw.createdAt));
   const sstRow = `
-    <tr style="background:#f8fafc;">
-      <td colspan="3" style="font-size:10px;color:#475569;">SST (Sales &amp; Service Tax)</td>
-      <td style="text-align:right;font-size:10px;color:#475569;">RM 0.00 (Exempt / Not Applicable)</td>
-    </tr>`;
+        <tr><td colspan="2" style="color:#4b5563;">SST (Sales and Service Tax)</td>
+        <td style="text-align:right;color:#4b5563;white-space:nowrap;">${d.vendor.taxProfile?.sstNo ? "Included" : "RM 0 · Not applicable"}</td></tr>`;
 
-  const totalRow = `
-    <tr class="total-row">
-      <td colspan="3" style="text-align:right;font-size:11px;">TOTAL PAYABLE</td>
-      <td style="text-align:right;font-size:15px;">RM ${formatMYR(data.totalAmount)}</td>
-    </tr>`;
+  const content = `
+    <div class="title">Tax Invoice / Receipt</div>
+    <div class="sub">Issued to ${d.customerName} · ${period}</div>
+    ${statusBox(escapeDeep(status), raw.payment)}
 
-  return `
-  <table>
-    <thead>
-      <tr>
-        <th style="width:45%;">Description</th>
-        <th style="width:10%;text-align:center;">Qty</th>
-        <th style="width:20%;text-align:right;">Unit Rate</th>
-        <th style="width:25%;text-align:right;">Amount (MYR)</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${rows}
-      ${discountRows.join("")}
-      ${serviceFeeRow}
-      ${rentalRow}
-      ${depositRow}
-      ${sstRow}
-    </tbody>
-    <tfoot>
-      ${totalRow}
-    </tfoot>
-  </table>`;
-}
-
-function paymentStampBlock(data: InvoiceData): string {
-  const ps = data.paymentStatus || "unpaid";
-  const rental = data.rentalAmount;
-  const deposit = data.depositAmount || 0;
-  const total = data.totalAmount;
-
-  if (ps === "full_paid" || ps === "deposit_burnt") {
-    const label = ps === "deposit_burnt" ? "Paid — Deposit Forfeited" : "Paid in Full";
-    const sub = ps === "deposit_burnt"
-      ? `Rental (RM ${formatMYR(rental)}) collected. Security deposit (RM ${formatMYR(deposit)}) retained due to dispute.`
-      : `All charges settled. Thank you for your business!`;
-    return `
-<div style="border:3px solid #16a34a;border-radius:8px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;background:#f0fdf4;page-break-inside:avoid;">
-  <div style="display:flex;align-items:center;gap:12px;">
-    <div style="width:42px;height:42px;background:#16a34a;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:900;flex-shrink:0;">✓</div>
-    <div>
-      <div style="font-size:16px;font-weight:900;color:#15803d;letter-spacing:1px;text-transform:uppercase;">${label}</div>
-      <div style="font-size:10px;color:#166534;margin-top:3px;">${sub}</div>
+    <div class="sec">${sectionHead(1, "Supplier and Buyer")}
+      <div style="display:flex;gap:12px;">${supplierCard(d.vendor)}${buyerCard(d)}</div>
     </div>
-  </div>
-  <div style="font-size:24px;font-weight:900;color:#15803d;white-space:nowrap;margin-left:16px;">RM ${formatMYR(total)}</div>
-</div>`;
-  }
 
-  if (ps === "refunded") {
-    return `
-<div style="border:3px solid #16a34a;border-radius:8px;padding:16px 20px;margin-bottom:20px;background:#f0fdf4;page-break-inside:avoid;">
-  <div style="display:flex;align-items:center;justify-content:space-between;">
-    <div>
-      <div style="font-size:16px;font-weight:900;color:#15803d;letter-spacing:1px;text-transform:uppercase;">Rental Paid — Deposit Refunded</div>
-      <div style="font-size:10px;color:#166534;margin-top:3px;">Rental (RM ${formatMYR(rental)}) collected. Deposit (RM ${formatMYR(deposit)}) refunded to customer upon gear return.</div>
+    <div class="sec">${sectionHead(2, "Invoice and Rental Details")}
+      <div class="kv" style="margin-top:0;">
+        <div><span class="lbl">Invoice no.</span><b class="mono">${meta.invoiceNo}</b></div>
+        <div><span class="lbl">Invoice date</span><b>${invoiceDate}, ${meta.timeStr}</b></div>
+        <div><span class="lbl">Order ref. · Type</span><b><span class="mono">${d.orderId.slice(0, 8).toUpperCase()}</span> · 01 Invoice · MYR</b></div>
+        <div><span class="lbl">Rental period</span><b>${r?.dates ? `${formatLongDate(r.dates.start)} – ${formatLongDate(r.dates.end)}` : "As agreed"}</b></div>
+        <div><span class="lbl">Duration</span><b>${r?.nights != null ? durationLabel(r.nights) : "—"}</b></div>
+        <div><span class="lbl">${d.fulfillment === "delivery" ? "Delivery" : "Pickup"}</span><b>${d.location || "—"}${d.timeSlot ? ` · ${d.timeSlot}` : ""}</b></div>
+      </div>
     </div>
-    <div style="text-align:right;margin-left:16px;">
-      <div style="font-size:10px;font-weight:700;color:#166534;text-transform:uppercase;">Net Revenue</div>
-      <div style="font-size:22px;font-weight:900;color:#15803d;white-space:nowrap;">RM ${formatMYR(rental)}</div>
+
+    <div class="sec" style="break-inside:auto;page-break-inside:auto;">${sectionHead(3, "Items and Charges")}
+      ${itemsTable(r, sstRow)}
     </div>
-  </div>
-</div>`;
-  }
 
-  if (ps === "deposit_paid") {
-    const balance = rental;
-    return `
-<div style="border:3px solid #d97706;border-radius:8px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;background:#fffbeb;page-break-inside:avoid;">
-  <div>
-    <div style="font-size:16px;font-weight:900;color:#b45309;letter-spacing:1px;text-transform:uppercase;">Deposit Paid — Balance Due</div>
-    <div style="font-size:10px;color:#92400e;margin-top:3px;">Deposit (RM ${formatMYR(deposit)}) received. Remaining rental amount to be collected before or at pickup.</div>
-  </div>
-  <div style="text-align:right;margin-left:16px;">
-    <div style="font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;">Balance Due</div>
-    <div style="font-size:24px;font-weight:900;color:#b45309;white-space:nowrap;">RM ${formatMYR(balance)}</div>
-  </div>
-</div>`;
-  }
+    <div style="margin-top:12px;padding-top:8px;border-top:1px dashed #d1d5db;font-size:8.5px;color:#6b7280;line-height:1.6;break-inside:avoid;">
+      <div>The security deposit is not a taxable supply. It is refunded when all items are returned in the same condition as collected.</div>
+      <div>This is a computer-generated document issued by ${d.vendor.taxProfile?.legalName?.trim() || d.vendor.name} through Pacak Khemah. No signature is required.</div>
+      <div>Pacak Khemah (pacakkhemah.com) provides the booking technology only and is not the seller in this transaction.</div>
+    </div>`;
 
-  // unpaid (default)
-  return `
-<div style="border:3px solid #dc2626;border-radius:8px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;background:#fef2f2;page-break-inside:avoid;">
-  <div>
-    <div style="font-size:16px;font-weight:900;color:#dc2626;letter-spacing:1px;text-transform:uppercase;">Payment Pending</div>
-    <div style="font-size:10px;color:#991b1b;margin-top:3px;">Full amount due upon confirmation or at pickup.</div>
-  </div>
-  <div style="text-align:right;margin-left:16px;">
-    <div style="font-size:10px;font-weight:700;color:#991b1b;text-transform:uppercase;">Amount Due</div>
-    <div style="font-size:24px;font-weight:900;color:#dc2626;white-space:nowrap;">RM ${formatMYR(total)}</div>
-  </div>
-</div>`;
-}
-
-export function buildInvoiceHTML(data: InvoiceData): string {
-  const meta = buildInvoiceMeta(data.createdAt, data.orderId);
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Invoice ${meta.invoiceNo}</title>
-${styles()}
-</head><body>
-
-<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-  <div>
-    <div class="header-name">${data.vendor.name}</div>
-    <div style="font-size:11px;color:#475569;margin-top:2px;">TAX INVOICE / RECEIPT</div>
-  </div>
-</div>
-<div class="header-line"></div>
-
-<div style="display:flex;justify-content:space-between;gap:24px;margin-bottom:20px;">
-  ${supplierBlock(data.vendor)}
-  ${buyerBlock(data)}
-  ${metaBlock(meta, data)}
-</div>
-
-<div style="margin-bottom:14px;">
-  <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:6px;">Rental Period &amp; Pickup</div>
-  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;font-size:11px;">
-    <span style="font-weight:700;">Period:</span> ${data.bookingDates.start} → ${data.bookingDates.end}
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    <span style="font-weight:700;">Pickup:</span> ${data.pickupLocation}
-  </div>
-</div>
-
-<div style="margin-bottom:20px;">
-  <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:6px;">Items &amp; Charges</div>
-  ${itemsTable(data)}
-</div>
-
-${paymentStampBlock(data)}
-
-<div class="footer">
-  <p><strong>Note:</strong> Security deposit (if any) is refundable upon return of all equipment in the same condition as collected.</p>
-  <p>This is a computer-generated document. This invoice is issued by <strong>${data.vendor.name}</strong> via the Pacak Khemah platform.</p>
-  <p>Pacak Khemah (pacakkhemah.com) is a technology platform provider and is NOT the seller under this transaction.</p>
-  ${data.vendor.taxProfile?.tin ? `<p>Supplier TIN: ${data.vendor.taxProfile.tin} | Classification: 01 – Invoice | Currency: MYR</p>` : ""}
-</div>
-
-<script>window.onload = () => window.print();<\/script>
-</body></html>`;
+  return printDocument({
+    title: `Invoice ${meta.invoiceNo}`,
+    header: docHeader(d.vendor, "Tax Invoice / Receipt", [`No <span class="mono">${meta.invoiceNo}</span>`, `<span style="color:#6b7280;">${invoiceDate}</span>`]),
+    footer: docFooter(d.vendor),
+    content,
+    extraStyles: EXTRA_STYLES,
+  });
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export function generateInvoicePDF(data: InvoiceData): void {
-  const html = buildInvoiceHTML(data);
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  window.open(url, "_blank");
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  openPrintWindow(buildInvoiceHTML(data));
 }

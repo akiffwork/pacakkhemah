@@ -6,7 +6,7 @@ import {
   collection, query, where, onSnapshot, doc, updateDoc,
   orderBy, serverTimestamp, getDocs, deleteDoc, getDoc, arrayUnion,
 } from "firebase/firestore";
-import { generateInvoicePDF, type InvoiceData, type InvoiceVendor } from "@/lib/invoicePDF";
+import { generateInvoicePDF, invoiceFromOrder, type InvoiceVendor } from "@/lib/invoicePDF";
 import {
   type Order, type Group, type DepositOutcome, type PaymentChange,
   getNextAction, getPayment, getStage, paymentPatch, pickupGaps, canComplete,
@@ -402,26 +402,11 @@ export default function OrdersTab({ vendorId, vendorName, initialOrderId, initia
     try {
       const vendorSnap = await getDoc(doc(db, "vendors", vendorId));
       const vd = vendorSnap.data() || {};
-      const vendor: InvoiceVendor = { name: vendorName, phone: vd.phone, city: vd.city, taxProfile: vd.taxProfile };
-      const invoiceData: InvoiceData = {
-        orderId: order.id,
-        vendor,
-        customerName: order.customerName || "General Public",
-        customerPhone: order.customerPhone,
-        bookingDates: order.bookingDates,
-        pickupLocation: order.pickupLocation || "",
-        items: order.items.map(i => ({ name: i.name, qty: i.qty, price: i.price, variantLabel: i.variantLabel })),
-        rentalAmount: order.rentalAmount ?? (order.depositAmount != null ? order.totalAmount - order.depositAmount : order.totalAmount),
-        depositAmount: order.depositAmount,
-        serviceFee: order.serviceFee,
-        autoDiscount: order.autoDiscount,
-        promoCode: order.promoCode,
-        promoDiscount: order.promoDiscount,
-        promoType: order.promoType,
-        totalAmount: order.totalAmount,
-        paymentStatus: order.paymentStatus,
-        createdAt: order.createdAt?.toDate?.() || new Date(),
+      const vendor: InvoiceVendor = {
+        name: vendorName || vd.name, slug: vd.slug, image: vd.image, phone: vd.phone, city: vd.city,
+        ig: vd.ig, tiktok: vd.tiktok, fb: vd.fb, threads: vd.threads, taxProfile: vd.taxProfile,
       };
+      const invoiceData = invoiceFromOrder(order, vendor);
       generateInvoicePDF(invoiceData);
     } catch (e) {
       console.error("Invoice generation error:", e);
