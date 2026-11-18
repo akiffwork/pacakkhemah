@@ -25,7 +25,7 @@ import WelcomeTour from "@/components/vendor/WelcomeTour";
 import FirstItemTour from "@/components/vendor/FirstItemTour";
 import FirstOrderTour from "@/components/vendor/FirstOrderTour";
 import { summarize, getStage, daysUntil, type Order } from "@/lib/orderFlow";
-import { refreshPushIfEnabled } from "@/lib/pushRegistration";
+import { refreshPushIfEnabled, clearNotifications, onForegroundAlert } from "@/lib/pushRegistration";
 
 type VendorData = {
   name: string;
@@ -214,6 +214,26 @@ function Dashboard({ vendorData, vendorId, isAdminOverride }: { user: User; vend
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vendorId, isAdminOverride]);
 
+  // Opening the app (or switching back to it) clears its alerts from the phone's tray
+  useEffect(() => {
+    if (isAdminOverride) return;
+    clearNotifications();
+    const onVisible = () => { if (document.visibilityState === "visible") clearNotifications(); };
+    // Tapping an alert for a page the worker can't navigate sends the URL here
+    const onSwMessage = (e: MessageEvent) => {
+      if (e.data?.type === "OPEN_URL" && typeof e.data.url === "string") {
+        const u = new URL(e.data.url);
+        if (u.origin === window.location.origin) router.push(u.pathname + u.search);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    navigator.serviceWorker?.addEventListener("message", onSwMessage);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      navigator.serviceWorker?.removeEventListener("message", onSwMessage);
+    };
+  }, [isAdminOverride, router]);
+
   // Which tour to show (skipped in admin override)
   useEffect(() => {
     if (isAdminOverride) return;
@@ -242,7 +262,14 @@ function Dashboard({ vendorData, vendorId, isAdminOverride }: { user: User; vend
     await signOut(auth);
   }
 
-  const { toast } = useToast();
+  const { toast, show: showToast } = useToast();
+
+  // Alerts that arrive while the dashboard is on screen show as a toast, not in the tray
+  useEffect(() => {
+    if (isAdminOverride) return;
+    return onForegroundAlert(({ title, body }) => showToast(body ? `${title} ${body}` : title));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdminOverride]);
 
   // Badges: orders needing action, gear moving today, reviews to reply to
   const [actionCount, setActionCount] = useState(0);

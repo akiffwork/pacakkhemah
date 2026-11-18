@@ -4,7 +4,7 @@
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { getMessaging } from "firebase-admin/messaging";
+import { notifyVendor } from "./push";
 
 initializeApp();
 
@@ -12,29 +12,6 @@ const db = getFirestore();
 
 // Customer lookups (my bookings, review links); orders can't be listed from the browser
 export { lookupBookingsByPhone, lookupOrderByReviewToken } from "./lookups";
-
-// Helper: send data-only push (no "notification" key = no browser auto-display = no duplicates)
-async function sendPush(token: string, title: string, body: string, extraData: Record<string, string> = {}) {
-  await getMessaging().send({
-    token,
-    data: {
-      title,
-      body,
-      ...extraData,
-    },
-    android: {
-      priority: "high",
-    },
-    apns: {
-      payload: {
-        aps: { sound: "default", badge: 1, "content-available": 1 },
-      },
-    },
-    webpush: {
-      headers: { Urgency: "high" },
-    },
-  });
-}
 
 // Trigger on every new analytics doc (new order/inquiry)
 export const onNewOrder = onDocumentCreated(
@@ -45,7 +22,7 @@ export const onNewOrder = onDocumentCreated(
 
     if (data.type !== "whatsapp_lead") return;
 
-    const { vendorId, vendorName, totalAmount, items, visitorId } = data;
+    const { vendorId, vendorName, totalAmount, items, cartItems, visitorId } = data;
     if (!vendorId) return;
 
     // ── Credit deduction (Admin SDK bypasses Firestore security rules) ──────
@@ -95,25 +72,20 @@ export const onNewOrder = onDocumentCreated(
     }
     // ────────────────────────────────────────────────────────────────────────
 
-    const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
-    const fcmToken = vendorSnap.data()?.fcmToken;
-
-    if (!fcmToken) {
-      console.log(`No FCM token for vendor ${vendorId}`);
-      return;
-    }
-
-    const itemSummary = Array.isArray(items)
-      ? items.map((i: { name: string; qty: number }) => `${i.name} x${i.qty}`).join(", ")
+    // The shop cart sends cartItems; older leads used items
+    const lineItems = Array.isArray(items) ? items : Array.isArray(cartItems) ? cartItems : null;
+    const itemSummary = lineItems
+      ? lineItems.map((i: { name: string; qty: number }) => `${i.name} x${i.qty}`).join(", ")
       : "Gear rental";
 
-    await sendPush(fcmToken, "🛒 Pesanan Baru!", `${itemSummary} — RM ${totalAmount}`, {
-      url: "/store",
-      vendorId,
+    const sent = await notifyVendor(vendorId, {
       type: "new_order",
+      title: "🛒 Pesanan Baru!",
+      body: `${itemSummary} — RM ${totalAmount}`,
+      url: "/store?tab=orders",
+      refId: event.params.docId,
     });
-
-    console.log(`Notification sent to vendor ${vendorName || vendorId}`);
+    console.log(sent ? `Notification sent to vendor ${vendorName || vendorId}` : `No FCM token for vendor ${vendorId}`);
   }
 );
 
@@ -178,14 +150,12 @@ export const onAgreementSigned = onDocumentCreated(
     }
 
     // Send push notification
-    const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
-    const fcmToken = vendorSnap.data()?.fcmToken;
-    if (!fcmToken) return;
-
-    await sendPush(fcmToken, "✅ Perjanjian Ditandatangani!", `${customerName || "Pelanggan"} telah menandatangani perjanjian sewa`, {
-      url: "/store",
-      vendorId,
+    await notifyVendor(vendorId, {
       type: "agreement_signed",
+      title: "✅ Perjanjian Ditandatangani!",
+      body: `${customerName || "Pelanggan"} telah menandatangani perjanjian sewa`,
+      url: "/store?tab=orders",
+      refId: orderId || event.params.docId,
     });
 
     console.log(`Agreement notification sent to vendor ${vendorId}`);
@@ -279,14 +249,12 @@ export const onReviewCreated = onDocumentCreated(
 
     // 3. Send notification to vendor
     try {
-      const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
-      const fcmToken = vendorSnap.data()?.fcmToken;
-      if (!fcmToken) return;
-
-      await sendPush(fcmToken, `⭐ Review Baru! ${rating}/5`, `${data.customerName || "Pelanggan"} telah memberi ulasan`, {
-        url: "/store",
-        vendorId,
+      await notifyVendor(vendorId, {
         type: "new_review",
+        title: `⭐ Review Baru! ${rating}/5`,
+        body: `${data.customerName || "Pelanggan"} telah memberi ulasan`,
+        url: "/store?tab=reviews",
+        refId: event.params.docId,
       });
     } catch (e) {
       console.error("Review notification error:", e);
@@ -363,14 +331,16 @@ export const onOrderCreated = onDocumentCreated(
         updateData.status = "conflict";
 
         // Notify vendor about conflict
-        const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
-        const fcmToken = vendorSnap.data()?.fcmToken;
-        if (fcmToken) {
-          await sendPush(fcmToken, "⚠️ Konflik Stok!", `${conflicts.length} item melebihi stok: ${conflicts[0]}`, {
-            url: "/store?tab=orders",
-            vendorId,
+        try {
+          await notifyVendor(vendorId, {
             type: "stock_conflict",
+            title: "⚠️ Konflik Stok!",
+            body: `${conflicts.length} item melebihi stok: ${conflicts[0]}`,
+            url: "/store?tab=orders",
+            refId: event.params.orderId,
           });
+        } catch (e) {
+          console.error("Stock conflict notification error:", e);
         }
 
         console.log(`Order ${event.data?.id} has stock conflicts: ${conflicts.join(", ")}`);
