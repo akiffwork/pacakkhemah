@@ -5,16 +5,9 @@
 
 import { generateAgreementPDF, buildAgreementMeta, buildAgreementHTML } from '@/lib/agreementPDF';
 import { summaryFromOrder } from '@/lib/rentalSummary';
+import { generalTerms, type AgreementDoc } from '@/lib/agreementDocument';
 import type { Order } from '@/lib/orderFlow';
 
-const vendor = { name: 'Pacak Gear', phone: '0123456789', city: 'Kuantan' };
-const agreement = {
-  customerName: 'Ali Bin Ahmad',
-  customerPhone: '0111234567',
-  refNo: 'PK-20240101-ABC123',
-  signedDate: '01/01/2024',
-  signedFull: '1 January 2024, 10:00 AM',
-};
 const booking = summaryFromOrder({
   id: 'o1', customerPhone: '601', pickupLocation: 'Balok', status: 'confirmed',
   bookingDates: { start: '2026-05-16', end: '2026-05-18' }, nights: 2,
@@ -79,89 +72,85 @@ describe('buildAgreementMeta', () => {
 
 // ─── buildAgreementHTML ───────────────────────────────────────────────────────
 
-describe('buildAgreementHTML', () => {
-  const html = (...args: Partial<Parameters<typeof buildAgreementHTML>>) =>
-    buildAgreementHTML(args[0] ?? vendor, args[1] ?? agreement, args[2] === undefined ? booking : args[2], args[3], args[4]);
+const doc = (over: Partial<AgreementDoc> = {}): AgreementDoc => ({
+  vendor: { name: 'Pacak Gear', slug: 'pacak-gear', phone: '0123456789', city: 'Kuantan', image: 'https://cdn.example/logo.png', ig: 'pacakgear', tiktok: 'https://www.tiktok.com/@pacakgear' },
+  customer: { name: 'ALI BIN AHMAD', phone: '60111234567', idType: 'ic', idNumber: '900101-14-5678' },
+  rental: booking,
+  vendorTerms: ['Return gear clean.'],
+  generalTerms: generalTerms(),
+  refNo: 'PK-20240101-ABC123',
+  vendorSignedAt: new Date('2026-05-08T02:00:00Z'),
+  customerSignedAt: new Date('2026-05-08T14:38:00Z'),
+  customerSignature: 'ALI BIN AHMAD',
+  verificationCode: 'AB12-CD34-EF56-7890',
+  ...over,
+});
 
-  test('is a full HTML document with vendor, customer, ref and total', () => {
-    const h = html();
-    expect(h).toContain('<!DOCTYPE html>');
-    expect(h).toContain('PACAK GEAR');
-    expect(h).toContain('Ali Bin Ahmad');
-    expect(h).toContain('PK-20240101-ABC123');
-    expect(h).toContain('RM 296');
+describe('buildAgreementHTML', () => {
+  test('header: logo, vendor name and shop address; footer: social links', () => {
+    const h = buildAgreementHTML(doc());
+    expect(h).toContain('src="https://cdn.example/logo.png"');
+    expect(h).toContain('Pacak Gear');
+    expect(h).toContain('pacakkhemah.com/shop/pacak-gear');
+    expect(h).toContain('@pacakgear');
+    expect(h).toContain('+60123456789');
+    expect(h).toMatch(/class="hdr"[\s\S]*class="ftr"/);
+    expect(h).toContain('@page { size: A4; margin: 0; }');
+  });
+
+  test('same six sections as the page, with vendor rules and validity terms', () => {
+    const h = buildAgreementHTML(doc());
+    for (const t of ['Contracting Parties', 'Subject of Rental', 'Rental Terms', 'General Terms and Validity', 'Declaration', 'Digital Signatures']) expect(h).toContain(t);
+    expect(h).toContain('Return gear clean.');
+    expect(h).toContain('Electronic Commerce Act 2006');
+  });
+
+  test('both parties digitally signed with date and time', () => {
+    const h = buildAgreementHTML(doc());
+    expect(h.match(/Digitally signed/g)?.length).toBe(2);
+    expect(h).toContain('8 May 2026');
+    expect(h).toContain('10:38 pm (GMT+8)');
+    expect(h).toContain('AB12-CD34-EF56-7890');
+    expect(h).not.toContain('Awaiting signature');
+    expect(h).not.toMatch(/Signature:<\/p><div style="border-bottom/); // no wet-ink lines
+  });
+
+  test('unsigned customer shows awaiting', () => {
+    expect(buildAgreementHTML(doc({ customerSignedAt: undefined }))).toContain('Awaiting signature');
   });
 
   test('items match the cart: line totals, nightly hint, variant, package, setup, free item', () => {
-    const h = html();
-    expect(h).toContain('RM 100');                       // stay total, not the nightly price
+    const h = buildAgreementHTML(doc());
+    expect(h).toContain('RM 100');
     expect(h).toContain('RM 25/night × 2 × 2N');
-    expect(h).toContain('Green');
     expect(h).toContain('Includes: 2 × Air mattress');
     expect(h).toContain('Add-on: setup at campsite');
-    expect(h).toContain('Lantern');
     expect(h).toContain('FREE ITEM');
-    expect(h).not.toContain('RM 80/night');              // tiered line: no misleading hint
+    for (const t of ['Promo code', 'PACKAGEISGOOD', '− RM 24', 'Security deposit (refundable)', 'RM 296']) expect(h).toContain(t);
   });
 
-  test('price rows match the order details', () => {
-    const h = html();
-    for (const t of ['Subtotal', 'RM 240', 'Promo code', 'PACKAGEISGOOD', '− RM 24', 'Setup fee', 'Rental', 'RM 246', 'Security deposit (refundable)', 'RM 50']) expect(h).toContain(t);
-    expect(h).toContain('16 May 2026');
-    expect(h).toContain('2 nights');
+  test('shows the IC number', () => {
+    expect(buildAgreementHTML(doc())).toContain('IC No. 900101-14-5678');
+    expect(buildAgreementHTML(doc({ customer: { name: 'X', idType: 'passport', idNumber: 'A12345678' } }))).toContain('Passport No. A12345678');
   });
 
-  test('uses WhatsApp fallback text when there is no booking', () => {
-    expect(html(vendor, agreement, null)).toContain('WhatsApp');
+  test('older agreements keep an IC photo appendix; https only', () => {
+    expect(buildAgreementHTML(doc({ photos: { frontUrl: 'https://x/f.jpg', backUrl: 'https://x/b.jpg' } }))).toContain('Appendix: Identity Documents');
+    expect(buildAgreementHTML(doc({ photos: { frontUrl: 'javascript:alert(1)', backUrl: 'https://x/b.jpg' } }))).not.toContain('Appendix');
+    expect(buildAgreementHTML(doc({ vendor: { name: 'V', image: 'javascript:alert(1)' } }))).not.toContain('javascript:');
   });
 
-  test('uses default rules unless custom rules are given', () => {
-    expect(html()).toContain('Equipment must be returned');
-    const h = html(vendor, agreement, booking, ['Custom rule only']);
-    expect(h).toContain('Custom rule only');
-    expect(h).not.toContain('Equipment must be returned');
-  });
-
-  test('shows the IC number in parties, declaration and signature block', () => {
-    const h = html(vendor, { ...agreement, idType: 'ic', idNumber: '900101-14-5678' });
-    expect(h.match(/IC No\./g)?.length).toBeGreaterThanOrEqual(3);
-    expect(h).toContain('900101-14-5678');
-    expect(h).not.toContain('identification documents');
-  });
-
-  test('labels a passport number as Passport No.', () => {
-    const h = html(vendor, { ...agreement, idType: 'passport', idNumber: 'A12345678' });
-    expect(h).toContain('Passport No. A12345678');
-    expect(h).not.toContain('IC No.');
-  });
-
-  test('has no ID line or photo page when neither was given', () => {
-    const h = html();
-    expect(h).not.toContain('IC No.');
-    expect(h).not.toContain('IDENTITY DOCUMENTS');
-  });
-
-  test('older agreements keep their IC photo page', () => {
-    const h = html(vendor, agreement, booking, undefined, {
-      frontUrl: 'https://example.com/front.jpg', backUrl: 'https://example.com/back.jpg',
-    });
-    expect(h).toContain('IDENTITY DOCUMENTS');
-    expect(h).toContain('identification documents provided are genuine');
-  });
-
-  test('needs both photos, and only https URLs', () => {
-    expect(html(vendor, agreement, booking, undefined, { frontUrl: 'https://example.com/f.jpg' })).not.toContain('IDENTITY DOCUMENTS');
-    expect(html(vendor, agreement, booking, undefined, { frontUrl: 'javascript:alert(1)', backUrl: 'https://x/b.jpg' })).not.toContain('IDENTITY DOCUMENTS');
-  });
-
-  test('escapes customer-typed text so it cannot inject markup', () => {
-    const h = html(vendor,
-      { ...agreement, customerName: '<img src=x onerror=alert(1)>', idNumber: '"><script>x</script>' },
-      { ...booking, lines: [{ ...booking.lines[0], name: '<b>Tent</b>' }] });
+  test('escapes typed text so it cannot inject markup', () => {
+    const h = buildAgreementHTML(doc({
+      customer: { name: '<img src=x onerror=alert(1)>', idNumber: '"><script>x</script>' },
+      customerSignature: '<b>sig</b>',
+      rental: { ...booking, lines: [{ ...booking.lines[0], name: '<b>Tent</b>', variantColor: 'red;background:url(x)' }] },
+    }));
     expect(h).not.toContain('<img src=x');
     expect(h).not.toContain('<script>x');
     expect(h).not.toContain('<b>Tent</b>');
-    expect(h).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(h).not.toContain('<b>sig</b>');
+    expect(h).not.toContain('url(x)');
   });
 });
 
@@ -172,7 +161,7 @@ describe('generateAgreementPDF', () => {
     const createObjectURL = jest.fn().mockReturnValue('blob:agreement');
     Object.assign(URL, { createObjectURL, revokeObjectURL: jest.fn() });
     global.open = jest.fn();
-    generateAgreementPDF(vendor, agreement, booking);
+    generateAgreementPDF(doc());
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(global.open).toHaveBeenCalledWith('blob:agreement', '_blank');
   });

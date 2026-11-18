@@ -60,3 +60,8 @@ jest.mock('flatpickr', () => jest.fn(() => ({
 
 // Suppress console errors in tests (optional)
 // console.error = jest.fn();
+// jsdom lacks TextEncoder and Web Crypto (used for agreement verification codes).
+const { TextEncoder: NodeTextEncoder } = require('util');
+const { webcrypto } = require('crypto');
+if (typeof global.TextEncoder === 'undefined') global.TextEncoder = NodeTextEncoder;
+if (!global.crypto || !global.crypto.subtle) Object.defineProperty(global, 'crypto', { value: webcrypto, configurable: true });

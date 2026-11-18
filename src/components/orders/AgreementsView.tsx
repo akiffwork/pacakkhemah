@@ -8,6 +8,7 @@ import { generateAgreementPDF, buildAgreementMeta } from "@/lib/agreementPDF";
 import { idLine } from "@/lib/customerId";
 import { summaryFromLegacy, summaryFromOrder, type LegacyBooking, type RentalSummary } from "@/lib/rentalSummary";
 import type { Order } from "@/lib/orderFlow";
+import { vendorTerms, generalTerms, type AgreementVendor } from "@/lib/agreementDocument";
 import { EmptyState, SectionTitle, Chip, smallBtn, hintCls } from "@/components/ui/kit";
 
 export type Agreement = {
@@ -26,9 +27,16 @@ export type Agreement = {
   /** Older agreements: a small summary, or "Manual/Chat Booking". */
   bookingDetails?: LegacyBooking | string;
   orderId?: string | null;
+  /** Signing record (newer agreements): exactly what both parties signed. */
+  vendorTerms?: string[];
+  generalTerms?: string[];
+  customerSignature?: string;
+  customerSignedAt?: string;
+  vendorSignedAt?: string;
+  verificationCode?: string;
 };
 
-type VendorBits = { name?: string; phone?: string; city?: string; rules?: string[] };
+type VendorBits = Partial<AgreementVendor>;
 
 /** Open a private IC photo (older agreements) in a new tab. */
 export async function openIcPhoto(path?: string): Promise<boolean> {
@@ -46,15 +54,23 @@ export async function downloadAgreement(a: Agreement, vendor: VendorBits): Promi
       [frontUrl, backUrl] = await Promise.all([getDownloadURL(ref(storage, a.icFrontPath)), getDownloadURL(ref(storage, a.icBackPath))]);
     } catch (e) { console.warn("IC photos unavailable for PDF:", e); }
   }
-  const booking = await agreementSummary(a);
+  const rental = await agreementSummary(a);
   const ts = a.timestamp?.toDate?.() || new Date();
-  generateAgreementPDF(
-    { name: vendor.name || "", phone: vendor.phone, city: vendor.city },
-    { customerName: a.customerName, customerPhone: a.customerPhone, idType: a.idType, idNumber: a.idNumber, ...buildAgreementMeta(ts, a.id) },
-    booking,
-    vendor.rules,
-    frontUrl && backUrl ? { frontUrl, backUrl } : undefined,
-  );
+  const signedAt = a.customerSignedAt ? new Date(a.customerSignedAt) : ts;
+  generateAgreementPDF({
+    vendor: { ...vendor, name: vendor.name || "" },
+    customer: { name: a.customerName, phone: a.customerPhone, idType: a.idType, idNumber: a.idNumber },
+    rental,
+    // The terms as signed; older agreements fall back to the vendor's current rules.
+    vendorTerms: a.vendorTerms?.length ? a.vendorTerms : vendorTerms(vendor.rules),
+    generalTerms: a.generalTerms?.length ? a.generalTerms : generalTerms(),
+    refNo: buildAgreementMeta(signedAt, a.id).refNo,
+    vendorSignedAt: a.vendorSignedAt ? new Date(a.vendorSignedAt) : signedAt,
+    customerSignedAt: signedAt,
+    customerSignature: a.customerSignature || a.customerName,
+    verificationCode: a.verificationCode,
+    photos: frontUrl && backUrl ? { frontUrl, backUrl } : undefined,
+  });
 }
 
 /** What was rented: the copy saved at signing, else the linked order, else the old summary. */
