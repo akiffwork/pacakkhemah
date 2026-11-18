@@ -4,6 +4,8 @@
  * Used by: Orders › Agreements and the order detail (vendor), Agreement page (customer)
  */
 
+import { idLine } from "./customerId";
+
 type PDFVendor = {
   name: string;
   phone?: string;
@@ -34,6 +36,9 @@ type PDFBooking = {
 type PDFAgreement = {
   customerName: string;
   customerPhone?: string;
+  /** "ic" or "passport"; older agreements have neither. */
+  idType?: string;
+  idNumber?: string;
   refNo: string;
   signedDate: string;
   signedFull: string;
@@ -70,17 +75,22 @@ function buildFooter(vendor: PDFVendor) {
 function buildStyles() {
   return `
 <style>
-  @page { size: A4; margin: 20mm 18mm 24mm 18mm; }
+  /* Side margins live on the body, not only in @page: some browsers and print
+     settings (Margins: None, phone "Save as PDF") drop @page margins, which
+     puts text on the paper edge and cuts off the right side. */
+  @page { size: A4; margin: 14mm 0; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color:#1a1a2e; font-size:11px; line-height:1.5; }
-  .page { page-break-after: always; position: relative; }
-  .page:last-child { page-break-after: auto; }
+  html { background:#fff; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color:#1a1a2e; font-size:11px; line-height:1.5;
+         max-width:210mm; margin:0 auto; padding:4mm 16mm 6mm; overflow-wrap:anywhere; }
+  /* Pages 2+ start on a new sheet via an inline page-break-before. */
+  .page { position: relative; }
   .header-name { font-size: 22px; font-weight: 900; color: #062c24; text-transform: uppercase; letter-spacing: 2px; }
   .header-line { height: 3px; background: #062c24; margin-top: 8px; margin-bottom: 24px; }
   .section { margin-bottom: 20px; page-break-inside: avoid; }
   .section-title { font-size: 13px; font-weight: 700; margin-bottom: 12px; color: #1a1a2e; }
   table { width: 100%; border-collapse: collapse; }
-  .footer { font-size: 9px; color: #888; margin-top: 30px; padding-top: 12px; border-top: 1px solid #ddd; line-height: 1.7; }
+  .footer { font-size: 9px; color: #888; margin-top: 20px; padding-top: 12px; border-top: 1px solid #ddd; line-height: 1.7; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 </style>`;
 }
@@ -171,6 +181,7 @@ function buildPage1(vendor: PDFVendor, agreement: PDFAgreement, booking: PDFBook
       <p style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:2px;">The Customer (Renter)</p>
       <p style="font-size:12px;font-weight:800;color:#062c24;">${agreement.customerName}</p>
       ${agreement.customerPhone ? `<p style="font-size:11px;color:#444;">Phone: ${agreement.customerPhone}</p>` : ""}
+      ${agreement.idNumber ? `<p style="font-size:11px;color:#444;">${idLine(agreement.idType, agreement.idNumber)}</p>` : ""}
     </div>
     <div style="background:#fffbeb;border:1px solid #fde68a;padding:10px 14px;font-size:10px;color:#92400e;font-weight:600;line-height:1.6;">
       <strong>LEGAL NOTICE:</strong> This agreement is entered into solely between the Vendor and the Customer. "Pacak Khemah" is a technology platform provider and is NOT a party to this rental contract.
@@ -210,7 +221,13 @@ function buildPage1(vendor: PDFVendor, agreement: PDFAgreement, booking: PDFBook
 </div>`;
 }
 
-function buildPage2(vendor: PDFVendor, agreement: PDFAgreement) {
+function buildPage2(vendor: PDFVendor, agreement: PDFAgreement, hasPhotos: boolean) {
+  const idDeclaration = agreement.idNumber
+    ? `I certify that the identity number given (${idLine(agreement.idType, agreement.idNumber)}) is mine and correct, and that it will be kept by the Vendor for this rental only.`
+    : hasPhotos
+      ? `I certify that the identification documents provided are genuine and belong to me, and that they will be kept by the Vendor for this rental only.`
+      : "";
+  const idLabel = agreement.idType === "passport" ? "Passport No." : "IC No.";
   return `
 <div class="page" style="page-break-before:always;">
   ${buildHeader(vendor.name)}
@@ -219,8 +236,7 @@ function buildPage2(vendor: PDFVendor, agreement: PDFAgreement) {
     <div class="section-title">4) &nbsp; DECLARATION & ACKNOWLEDGEMENT</div>
     <p style="font-size:11px;color:#333;line-height:1.8;margin-bottom:16px;">
       I, <strong>${agreement.customerName}</strong>, hereby acknowledge that I have read, understood, and agreed to all the Terms & Conditions stated above.
-      I certify that the identification documents provided are genuine and belong to me.
-      I understand that my ID will be stored securely for verification purposes by the Vendor.
+      ${idDeclaration}
       I accept full responsibility for the rented equipment during the rental period and agree to return all items in the same condition as received.
     </p>
   </div>
@@ -247,6 +263,10 @@ function buildPage2(vendor: PDFVendor, agreement: PDFAgreement) {
         <div style="flex:1;"><p style="font-size:10px;color:#888;margin-bottom:4px;">Name:</p><p style="font-size:12px;font-weight:700;border-bottom:1px solid #333;padding-bottom:4px;">${agreement.customerName}</p></div>
         <div style="flex:1;"><p style="font-size:10px;color:#888;margin-bottom:4px;">Phone:</p><p style="font-size:12px;font-weight:700;border-bottom:1px solid #333;padding-bottom:4px;">${agreement.customerPhone || "—"}</p></div>
       </div>
+      ${agreement.idNumber ? `<div style="display:flex;gap:40px;margin-bottom:20px;">
+        <div style="flex:1;"><p style="font-size:10px;color:#888;margin-bottom:4px;">${idLabel}</p><p style="font-size:12px;font-weight:700;border-bottom:1px solid #333;padding-bottom:4px;letter-spacing:0.5px;">${agreement.idNumber}</p></div>
+        <div style="flex:1;"></div>
+      </div>` : ""}
       <div style="display:flex;gap:40px;">
         <div style="flex:1;"><p style="font-size:10px;color:#888;margin-bottom:4px;">Date:</p><p style="font-size:12px;font-weight:700;border-bottom:1px solid #333;padding-bottom:4px;">${agreement.signedFull}</p></div>
         <div style="flex:1;"><p style="font-size:10px;color:#888;margin-bottom:4px;">Digitally Signed:</p><p style="font-size:10px;font-weight:600;color:#059669;">✓ Verified via Pacak Khemah Platform</p></div>
@@ -264,8 +284,8 @@ function buildICPage(vendor: PDFVendor, images: PDFImages) {
 <div class="page" style="page-break-before:always;">
   ${buildHeader(vendor.name)}
 
-  <h2 style="font-size:13px;font-weight:700;margin-bottom:20px;">6) &nbsp; IDENTITY VERIFICATION DOCUMENTS</h2>
-  <p style="font-size:11px;color:#555;margin-bottom:20px;">The following identification documents were submitted by the Customer as part of the rental agreement verification process.</p>
+  <h2 style="font-size:13px;font-weight:700;margin-bottom:20px;">6) &nbsp; IDENTITY DOCUMENTS</h2>
+  <p style="font-size:11px;color:#555;margin-bottom:20px;">Identification photos submitted by the Customer with this agreement (agreements signed before ID numbers replaced photo uploads).</p>
   <div style="margin-bottom:24px;">
     <p style="font-size:10px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:8px;">Front — IC / MyKad</p>
     <img src="${images.frontUrl}" style="width:100%;max-height:280px;object-fit:contain;border:1px solid #ddd;">
@@ -279,20 +299,44 @@ function buildICPage(vendor: PDFVendor, images: PDFImages) {
 </div>`;
 }
 
-export function generateAgreementPDF(
-  vendor: PDFVendor,
-  agreement: PDFAgreement,
-  booking: PDFBooking | null,
-  rules?: string[],
-  images?: PDFImages,
-) {
-  const finalRules = rules?.length ? rules : DEFAULT_RULES;
+/** Escape text for HTML. Agreement data is typed by anyone with the link,
+ *  so it must never be able to inject markup into the print window. */
+function esc(v: string): string {
+  return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
 
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Agreement ${agreement.refNo}</title>
+/** Deep-copy a value with every string HTML-escaped. */
+export function escapeDeep<T>(v: T): T {
+  if (typeof v === "string") return esc(v) as T;
+  if (Array.isArray(v)) return v.map(escapeDeep) as T;
+  if (v && typeof v === "object") {
+    return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, escapeDeep(x)])) as T;
+  }
+  return v;
+}
+
+/** The full print document. Exported for tests. */
+export function buildAgreementHTML(
+  rawVendor: PDFVendor,
+  rawAgreement: PDFAgreement,
+  rawBooking: PDFBooking | null,
+  rawRules?: string[],
+  rawImages?: PDFImages,
+): string {
+  const vendor = escapeDeep(rawVendor);
+  const agreement = escapeDeep(rawAgreement);
+  const booking = escapeDeep(rawBooking);
+  const finalRules = escapeDeep(rawRules?.length ? rawRules : DEFAULT_RULES);
+  // Only https URLs (Firebase Storage) are allowed into <img src>.
+  const images = rawImages && [rawImages.frontUrl, rawImages.backUrl].every(u => u && /^https:\/\//.test(u))
+    ? escapeDeep(rawImages) : undefined;
+  const hasPhotos = !!images;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Agreement ${agreement.refNo}</title>
 ${buildStyles()}
 </head><body>
 ${buildPage1(vendor, agreement, booking, finalRules)}
-${buildPage2(vendor, agreement)}
+${buildPage2(vendor, agreement, hasPhotos)}
 ${images ? buildICPage(vendor, images) : ""}
 <script>
   window.onload = () => {
@@ -304,10 +348,20 @@ ${images ? buildICPage(vendor, images) : ""}
   };
 <\/script>
 </body></html>`;
+}
+
+export function generateAgreementPDF(
+  vendor: PDFVendor,
+  agreement: PDFAgreement,
+  booking: PDFBooking | null,
+  rules?: string[],
+  images?: PDFImages,
+) {
+  const html = buildAgreementHTML(vendor, agreement, booking, rules, images);
 
   // Open via blob: URL so the print window has a real origin (pacakkhemah.com)
   // instead of null (about:blank). Null-origin windows block external image loads,
-  // which prevents Firebase Storage IC photos from rendering in the PDF.
+  // which prevents Firebase Storage IC photos (older agreements) from rendering.
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
   const blobUrl = URL.createObjectURL(blob);
   window.open(blobUrl, "_blank");
