@@ -3,12 +3,14 @@
 import { useState, type ReactNode } from "react";
 import {
   type Order, type NextAction, type PaymentChange,
-  getStage, getPayment, daysUntil, agreementOk, itemLineTotal, priceBreakdown,
+  getStage, getPayment, daysUntil, agreementOk,
   formatShortDate, toMillis,
 } from "@/lib/orderFlow";
 import { type MsgKind, type MsgLang, MESSAGE_LABELS } from "@/lib/orderMessages";
 import { ProgressStrip, customerLabel, toneChip } from "./OrderCard";
 import { downloadAgreement, useVendorBits, type Agreement } from "./AgreementsView";
+import RentalItems from "./RentalItems";
+import { summaryFromOrder } from "@/lib/rentalSummary";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
@@ -139,7 +141,6 @@ export default function OrderDetail({
   const [parentSearch, setParentSearch] = useState("");
 
   const itemCount = order.items.length + (order.freeItems?.length || 0);
-  const rows = priceBreakdown(order);
   const parent = order.parentOrderId ? orders.find(o => o.id === order.parentOrderId) : undefined;
   const children = orders.filter(o => o.parentOrderId === order.id);
   const parentCandidates = orders.filter(o =>
@@ -338,61 +339,7 @@ export default function OrderDetail({
 
           {/* Items: the cart exactly as submitted */}
           <Fold title={`Items · ${itemCount}`} hint={order.items.map(i => `${i.name} x${i.qty}`).join(", ")} open={!!open.items} onToggle={() => toggle("items")}>
-            <div className="flex flex-col">
-              {order.items.map((item, i) => (
-                <div key={i} className={`flex flex-col gap-1 py-3 ${i > 0 ? "border-t border-slate-200" : "pt-0"}`}>
-                  <div className="flex justify-between gap-3">
-                    <span className="text-sm font-semibold">{item.qty} × {item.name}</span>
-                    <span className="text-sm font-semibold whitespace-nowrap">RM {itemLineTotal(item)}</span>
-                  </div>
-                  {item.variantLabel && (
-                    <div className="flex items-center gap-2 text-[13px] text-slate-600">
-                      {item.variantColor && <span className="w-3 h-3 rounded-full border border-slate-400 shrink-0" style={{ backgroundColor: item.variantColor }} aria-hidden="true"></span>}
-                      <span>{item.variantLabel}</span>
-                    </div>
-                  )}
-                  {!!item.linkedItems?.length && (
-                    <div className="border-l-2 border-slate-300 pl-2.5 flex flex-col gap-0.5 text-[13px] text-slate-600">
-                      {item.linkedItems.map((li, j) => (
-                        <span key={j} className="flex items-center gap-1.5">
-                          Includes: {li.qty * item.qty} × {li.name}{li.variantLabel ? ` (${li.variantLabel})` : ""}
-                          {li.variantColor && <span className="w-2.5 h-2.5 rounded-full border border-slate-400 shrink-0" style={{ backgroundColor: li.variantColor }} aria-hidden="true"></span>}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {item.addSetup && (
-                    <div className="flex justify-between gap-3 text-[13px] text-slate-600">
-                      <span>Add-on: setup at campsite</span>
-                      {item.setupFee ? <span className="whitespace-nowrap">RM {item.setupFee}</span> : null}
-                    </div>
-                  )}
-                </div>
-              ))}
-              {(order.freeItems || []).map((f, i) => (
-                <div key={`free-${i}`} className="flex justify-between items-center gap-3 py-3 border-t border-slate-200">
-                  <span className="text-sm font-semibold">{f.qty} × {f.name}</span>
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800">Free item</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="border-t border-slate-200 pt-3 flex flex-col gap-2 text-sm">
-              {rows.map((r, i) => (
-                <div key={i} className={`flex justify-between items-center gap-3 ${r.kind === "strong" || r.kind === "total" ? "border-t border-slate-200 pt-2" : ""}`}>
-                  <span className={`flex items-center gap-2 ${r.kind === "total" ? "text-[15px] font-bold" : r.kind === "strong" ? "font-semibold" : "text-slate-600"}`}>
-                    {r.label}
-                    {r.code && <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-900 border border-dashed border-slate-500">{r.code}</span>}
-                  </span>
-                  <span className={`whitespace-nowrap ${r.kind === "total" ? "text-xl font-bold text-[#062c24]" : r.kind === "discount" ? "font-semibold text-emerald-800" : "font-semibold"}`}>
-                    {r.text ?? `${(r.amount || 0) < 0 ? "− " : ""}RM ${Math.abs(r.amount || 0)}`}
-                  </span>
-                </div>
-              ))}
-              {typeof order.subtotal !== "number" && (
-                <p className="text-xs text-slate-600">This order was placed before full cart details were saved, so fees such as delivery are not itemised.</p>
-              )}
-            </div>
+            <RentalItems summary={summaryFromOrder(order)} />
           </Fold>
 
           {/* Booking */}
