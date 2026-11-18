@@ -3,16 +3,7 @@
  * Tests PDF HTML generation and reference number formatting.
  */
 
-import { generateAgreementPDF, buildAgreementMeta } from '@/lib/agreementPDF';
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
-function makeWindowOpenMock() {
-  const docMock = { write: jest.fn(), close: jest.fn() };
-  const windowMock = { document: docMock };
-  global.open = jest.fn().mockReturnValue(windowMock);
-  return docMock;
-}
+import { generateAgreementPDF, buildAgreementMeta, buildAgreementHTML } from '@/lib/agreementPDF';
 
 const vendor = { name: 'Pacak Gear', phone: '0123456789', city: 'Kuantan' };
 const agreement = {
@@ -77,98 +68,84 @@ describe('buildAgreementMeta', () => {
   });
 });
 
+// ─── buildAgreementHTML ───────────────────────────────────────────────────────
+
+describe('buildAgreementHTML', () => {
+  const html = (...args: Partial<Parameters<typeof buildAgreementHTML>>) =>
+    buildAgreementHTML(args[0] ?? vendor, args[1] ?? agreement, args[2] === undefined ? booking : args[2], args[3], args[4]);
+
+  test('is a full HTML document with vendor, customer, ref and total', () => {
+    const h = html();
+    expect(h).toContain('<!DOCTYPE html>');
+    expect(h).toContain('PACAK GEAR');
+    expect(h).toContain('Ali Bin Ahmad');
+    expect(h).toContain('PK-20240101-ABC123');
+    expect(h).toContain('RM100');
+  });
+
+  test('uses WhatsApp fallback text when there is no booking', () => {
+    expect(html(vendor, agreement, null)).toContain('WhatsApp');
+  });
+
+  test('uses default rules unless custom rules are given', () => {
+    expect(html()).toContain('Equipment must be returned');
+    const h = html(vendor, agreement, booking, ['Custom rule only']);
+    expect(h).toContain('Custom rule only');
+    expect(h).not.toContain('Equipment must be returned');
+  });
+
+  test('shows the IC number in parties, declaration and signature block', () => {
+    const h = html(vendor, { ...agreement, idType: 'ic', idNumber: '900101-14-5678' });
+    expect(h.match(/IC No\./g)?.length).toBeGreaterThanOrEqual(3);
+    expect(h).toContain('900101-14-5678');
+    expect(h).not.toContain('identification documents');
+  });
+
+  test('labels a passport number as Passport No.', () => {
+    const h = html(vendor, { ...agreement, idType: 'passport', idNumber: 'A12345678' });
+    expect(h).toContain('Passport No. A12345678');
+    expect(h).not.toContain('IC No.');
+  });
+
+  test('has no ID line or photo page when neither was given', () => {
+    const h = html();
+    expect(h).not.toContain('IC No.');
+    expect(h).not.toContain('IDENTITY DOCUMENTS');
+  });
+
+  test('older agreements keep their IC photo page', () => {
+    const h = html(vendor, agreement, booking, undefined, {
+      frontUrl: 'https://example.com/front.jpg', backUrl: 'https://example.com/back.jpg',
+    });
+    expect(h).toContain('IDENTITY DOCUMENTS');
+    expect(h).toContain('identification documents provided are genuine');
+  });
+
+  test('needs both photos, and only https URLs', () => {
+    expect(html(vendor, agreement, booking, undefined, { frontUrl: 'https://example.com/f.jpg' })).not.toContain('IDENTITY DOCUMENTS');
+    expect(html(vendor, agreement, booking, undefined, { frontUrl: 'javascript:alert(1)', backUrl: 'https://x/b.jpg' })).not.toContain('IDENTITY DOCUMENTS');
+  });
+
+  test('escapes customer-typed text so it cannot inject markup', () => {
+    const h = html(vendor,
+      { ...agreement, customerName: '<img src=x onerror=alert(1)>', idNumber: '"><script>x</script>' },
+      { ...booking, items: [{ name: '<b>Tent</b>', qty: 1 }] });
+    expect(h).not.toContain('<img src=x');
+    expect(h).not.toContain('<script>x');
+    expect(h).not.toContain('<b>Tent</b>');
+    expect(h).toContain('&lt;img src=x onerror=alert(1)&gt;');
+  });
+});
+
 // ─── generateAgreementPDF ─────────────────────────────────────────────────────
 
 describe('generateAgreementPDF', () => {
-  test('opens a new blank window', () => {
-    makeWindowOpenMock();
+  test('opens the agreement as a blob URL in a new tab', () => {
+    const createObjectURL = jest.fn().mockReturnValue('blob:agreement');
+    Object.assign(URL, { createObjectURL, revokeObjectURL: jest.fn() });
+    global.open = jest.fn();
     generateAgreementPDF(vendor, agreement, booking);
-    expect(global.open).toHaveBeenCalledWith('', '_blank');
-  });
-
-  test('writes HTML to the new window', () => {
-    const docMock = makeWindowOpenMock();
-    generateAgreementPDF(vendor, agreement, booking);
-    expect(docMock.write).toHaveBeenCalledTimes(1);
-    const html: string = docMock.write.mock.calls[0][0];
-    expect(html).toContain('<!DOCTYPE html>');
-  });
-
-  test('closes the document after writing', () => {
-    const docMock = makeWindowOpenMock();
-    generateAgreementPDF(vendor, agreement, booking);
-    expect(docMock.close).toHaveBeenCalledTimes(1);
-  });
-
-  test('HTML includes the vendor name', () => {
-    const docMock = makeWindowOpenMock();
-    generateAgreementPDF(vendor, agreement, booking);
-    expect(docMock.write.mock.calls[0][0]).toContain('PACAK GEAR');
-  });
-
-  test('HTML includes the customer name', () => {
-    const docMock = makeWindowOpenMock();
-    generateAgreementPDF(vendor, agreement, booking);
-    expect(docMock.write.mock.calls[0][0]).toContain('Ali Bin Ahmad');
-  });
-
-  test('HTML includes the reference number', () => {
-    const docMock = makeWindowOpenMock();
-    generateAgreementPDF(vendor, agreement, booking);
-    expect(docMock.write.mock.calls[0][0]).toContain('PK-20240101-ABC123');
-  });
-
-  test('HTML shows the booking total', () => {
-    const docMock = makeWindowOpenMock();
-    generateAgreementPDF(vendor, agreement, booking);
-    expect(docMock.write.mock.calls[0][0]).toContain('RM100');
-  });
-
-  test('uses WhatsApp fallback text when booking has no items', () => {
-    const docMock = makeWindowOpenMock();
-    generateAgreementPDF(vendor, agreement, null);
-    expect(docMock.write.mock.calls[0][0]).toContain('WhatsApp');
-  });
-
-  test('uses default rules when no custom rules are provided', () => {
-    const docMock = makeWindowOpenMock();
-    generateAgreementPDF(vendor, agreement, booking);
-    expect(docMock.write.mock.calls[0][0]).toContain('Equipment must be returned');
-  });
-
-  test('uses custom rules when provided', () => {
-    const docMock = makeWindowOpenMock();
-    generateAgreementPDF(vendor, agreement, booking, ['Custom rule only']);
-    const html: string = docMock.write.mock.calls[0][0];
-    expect(html).toContain('Custom rule only');
-    expect(html).not.toContain('Equipment must be returned');
-  });
-
-  test('does not include IC page when images are not provided', () => {
-    const docMock = makeWindowOpenMock();
-    generateAgreementPDF(vendor, agreement, booking);
-    expect(docMock.write.mock.calls[0][0]).not.toContain('IDENTITY VERIFICATION');
-  });
-
-  test('includes IC page when both front and back image URLs are provided', () => {
-    const docMock = makeWindowOpenMock();
-    generateAgreementPDF(vendor, agreement, booking, undefined, {
-      frontUrl: 'https://example.com/front.jpg',
-      backUrl: 'https://example.com/back.jpg',
-    });
-    expect(docMock.write.mock.calls[0][0]).toContain('IDENTITY VERIFICATION');
-  });
-
-  test('does not include IC page when only frontUrl is provided', () => {
-    const docMock = makeWindowOpenMock();
-    generateAgreementPDF(vendor, agreement, booking, undefined, {
-      frontUrl: 'https://example.com/front.jpg',
-    });
-    expect(docMock.write.mock.calls[0][0]).not.toContain('IDENTITY VERIFICATION');
-  });
-
-  test('does nothing when window.open returns null', () => {
-    global.open = jest.fn().mockReturnValue(null);
-    expect(() => generateAgreementPDF(vendor, agreement, booking)).not.toThrow();
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(global.open).toHaveBeenCalledWith('blob:agreement', '_blank');
   });
 });

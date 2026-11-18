@@ -73,8 +73,8 @@ export function buildMessage(kind: MsgKind, lang: MsgLang, o: Order, ctx: MsgCon
         : `${hi}\n\n*Bayaran telah diterima, terima kasih.*\n\nTempahan anda telah dikunci:\nItem: ${items}\nTarikh: ${start} hingga ${end}${p.balanceDue > 0 ? `\nBaki perlu dibayar: RM${p.balanceDue}` : ""}\n\nKami akan hubungi anda sebelum tarikh ${isDelivery ? "penghantaran" : "pickup"}.${sign}`;
     case "agreement":
       return en
-        ? `${hi}\n\nPlease complete the rental agreement for your booking:\n\n${ctx.agreementLink || ""}\n\n1. Enter your full name\n2. Enter your WhatsApp number\n3. Upload a photo of your IC (front and back)\n4. Sign the waiver\n\nThank you!${sign}`
-        : `${hi}\n\nSila lengkapkan perjanjian sewa untuk tempahan anda:\n\n${ctx.agreementLink || ""}\n\n1. Masukkan nama penuh\n2. Masukkan nombor WhatsApp\n3. Muat naik gambar IC (depan dan belakang)\n4. Tandatangan waiver\n\nTerima kasih!${sign}`;
+        ? `${hi}\n\nPlease complete the rental agreement for your booking:\n\n${ctx.agreementLink || ""}\n\n1. Enter your full name\n2. Enter your WhatsApp number\n3. Enter your IC or passport number\n4. Sign the agreement\n\nThank you!${sign}`
+        : `${hi}\n\nSila lengkapkan perjanjian sewa untuk tempahan anda:\n\n${ctx.agreementLink || ""}\n\n1. Masukkan nama penuh\n2. Masukkan nombor WhatsApp\n3. Masukkan nombor IC atau pasport\n4. Tandatangan perjanjian\n\nTerima kasih!${sign}`;
     case "pickup_reminder":
       return en
         ? `${hi}\n\n*${isDelivery ? "Delivery" : "Pickup"} reminder*\n\nItems: ${items}\nDate: ${start}${o.timeSlot ? `\nTime: ${o.timeSlot}` : ""}\n${isDelivery ? "Address" : "Location"}: ${place}\n\nPlease let us know if anything changes. See you!${sign}`

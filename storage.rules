@@ -50,15 +50,13 @@ service firebase.storage {
                    && request.resource.contentType.matches('image/.*');
     }
 
-    // 5. CUSTOMER VERIFICATIONS (IC/Passport Uploads)
-    // Read is restricted to the admin or the vendor that owns this booking —
-    // these are government ID photos and must not be readable by any other
-    // signed-in account. Write stays open (unauthenticated customers upload
-    // these during the no-login agreement-signing flow).
+    // 5. CUSTOMER VERIFICATIONS (older agreements' IC photos)
+    // The agreement form now asks for an IC / passport NUMBER instead of
+    // photos, so no new uploads are accepted. Existing photos stay readable
+    // only by the admin or the vendor that owns the booking.
     match /verifications/{vendorId}/{allPaths=**} {
       allow read: if isAdmin() || isVendorOwner(vendorId);
-      allow write: if request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
+      allow write: if false;
     }
 
     // 6. FOOD PARTNER IMAGES

@@ -36,16 +36,16 @@ export const DEFAULT_FAQ: FAQSection[] = [
         answer_my: "1. Layari peralatan di kedai vendor\n2. Pilih tarikh ambil dan pulang\n3. Tambah item ke troli\n4. Klik \"Hantar Pesanan via WhatsApp\"\n5. Selesaikan butiran dengan vendor"
       },
       { 
-        question: "Why do I need to upload my IC?", 
-        question_my: "Kenapa perlu muat naik IC?",
-        answer: "To ensure security of high-value equipment, vendors require identity verification. After booking confirmation, you'll receive a link to upload your ID and sign the rental agreement.",
-        answer_my: "Untuk memastikan keselamatan peralatan bernilai tinggi, vendor memerlukan pengesahan identiti. Selepas pengesahan tempahan, anda akan menerima pautan untuk memuat naik IC."
+        question: "Why do I need to give my IC number?", 
+        question_my: "Kenapa perlu beri nombor IC?",
+        answer: "To ensure security of high-value equipment, vendors require identity verification. After booking confirmation, you'll receive a link to enter your IC or passport number and sign the rental agreement. No ID photo is needed.",
+        answer_my: "Untuk memastikan keselamatan peralatan bernilai tinggi, vendor memerlukan pengesahan identiti. Selepas pengesahan tempahan, anda akan menerima pautan untuk mengisi nombor IC atau pasport dan menandatangani perjanjian sewa. Gambar IC tidak diperlukan."
       },
       { 
         question: "Is my data safe?", 
         question_my: "Adakah data saya selamat?",
-        answer: "Yes. Your ID copies are stored in a secure, restricted folder. Only your specific vendor can view your documents, and they are used solely for verification purposes.",
-        answer_my: "Ya. Salinan IC anda disimpan dalam folder selamat dan terhad. Hanya vendor anda boleh melihat dokumen anda."
+        answer: "Yes. Your IC or passport number is kept privately with your agreement. Only your vendor can see it, and it is used only for your rental.",
+        answer_my: "Ya. Nombor IC atau pasport anda disimpan secara peribadi bersama perjanjian anda. Hanya vendor anda boleh melihatnya, dan ia digunakan untuk sewaan anda sahaja."
       },
       { 
         question: "How do I pay?", 

@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { getStorage, ref, uploadBytes } from "firebase/storage";
 import { generateAgreementPDF, buildAgreementMeta } from "@/lib/agreementPDF";
+import { formatIdNumber, idNumberError, type IdType } from "@/lib/customerId";
 
 type VendorData = { name: string; rules?: string[] };
 type BookingDiscount = { label: string; amount: number };
+type BookingItem = { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string; linkedItems?: { name: string; qty: number; variantLabel?: string }[] };
 type BookingData = {
   vendorId: string;
   orderId?: string;
-  items: { name: string; qty: number; price?: number; variantLabel?: string; variantColor?: string; linkedItems?: { name: string; qty: number; variantLabel?: string }[] }[];
+  items: BookingItem[];
   dates: { start: string; end: string };
   subtotal?: number;
   discounts?: BookingDiscount[];
@@ -44,14 +45,10 @@ function AgreementContent() {
   const [custName, setCustName] = useState("");
   const [custPhone, setCustPhone] = useState("");
   const [agreed, setAgreed] = useState(false);
-  const [frontFile, setFrontFile] = useState<File | null>(null);
-  const [backFile, setBackFile] = useState<File | null>(null);
-  const [frontPreview, setFrontPreview] = useState("");
-  const [backPreview, setBackPreview] = useState("");
-  const [fileWarning, setFileWarning] = useState("");
-
-  const frontRef = useRef<HTMLInputElement>(null);
-  const backRef = useRef<HTMLInputElement>(null);
+  const [idType, setIdType] = useState<IdType>("ic");
+  const [idNumber, setIdNumber] = useState("");
+  const [idTouched, setIdTouched] = useState(false);
+  const idError = idNumberError(idType, idNumber);
 
   useEffect(() => {
     if (!vendorId) { setError("Invalid agreement link."); setLoading(false); return; }
@@ -104,7 +101,7 @@ function AgreementContent() {
               setBooking({
                 vendorId: vendorId!,
                 orderId: orderIdParam,
-                items: (o.items || []).map((i: any) => ({
+                items: (o.items || []).map((i: BookingItem) => ({
                   name: i.name, qty: i.qty, price: i.price,
                   variantLabel: i.variantLabel, variantColor: i.variantColor,
                 })),
@@ -167,57 +164,20 @@ function AgreementContent() {
     return "60" + digits; // bare number
   }
 
-  function handleFileChange(file: File, side: "front" | "back") {
-    const MAX_MB = 5;
-    if (file.size > MAX_MB * 1024 * 1024) {
-      setFileWarning(`File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum ${MAX_MB}MB.`);
-      setTimeout(() => setFileWarning(""), 5000);
-      return;
-    }
-    setFileWarning("");
-    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-    if (isPdf) {
-      const preview = "PDF:" + file.name;
-      if (side === "front") { setFrontFile(file); setFrontPreview(preview); }
-      else { setBackFile(file); setBackPreview(preview); }
-    } else {
-      const reader = new FileReader();
-      reader.onload = e => {
-        if (side === "front") { setFrontFile(file); setFrontPreview(e.target?.result as string); }
-        else { setBackFile(file); setBackPreview(e.target?.result as string); }
-      };
-      reader.readAsDataURL(file);
-    }
-  }
-
   async function submitAgreement() {
     if (!custName.trim()) return alert("Please enter your full name.");
     if (!custPhone.trim()) return alert("Please enter your WhatsApp number.");
-    if (!frontFile || !backFile) return alert("Please upload BOTH Front and Back of your ID.");
+    if (idError) { setIdTouched(true); return alert(idError); }
     if (!agreed) return alert("You must agree to the terms to proceed.");
 
     setSubmitting(true);
     try {
-      const storage = getStorage();
-      const ts = Date.now();
-      const cleanName = custName.replace(/[^a-zA-Z0-9]/g, "");
-      const frontExt = frontFile.name.split(".").pop()?.toLowerCase() || "jpg";
-      const backExt = backFile.name.split(".").pop()?.toLowerCase() || "jpg";
-
-      const frontStorageRef = ref(storage, `verifications/${vendorId}/${ts}_${cleanName}_FRONT.${frontExt}`);
-      const backStorageRef = ref(storage, `verifications/${vendorId}/${ts}_${cleanName}_BACK.${backExt}`);
-
-      const [snapFront, snapBack] = await Promise.all([
-        uploadBytes(frontStorageRef, frontFile),
-        uploadBytes(backStorageRef, backFile),
-      ]);
-
       await addDoc(collection(db, "agreements"), {
         vendorId,
         customerName: custName,
         customerPhone: formatPhone(custPhone),
-        icFrontPath: snapFront.metadata.fullPath,
-        icBackPath: snapBack.metadata.fullPath,
+        idType,
+        idNumber: idNumber.trim(),
         bookingDetails: booking
           ? JSON.parse(JSON.stringify(booking))  // strips undefined fields
           : "Manual/Chat Booking",
@@ -244,7 +204,7 @@ function AgreementContent() {
       } catch { /* ignore */ }
     } catch (e) {
       console.error(e);
-      alert("Upload failed. Please check your connection and try again.");
+      alert("Could not submit. Please check your connection and try again.");
     } finally {
       setSubmitting(false);
     }
@@ -267,7 +227,7 @@ function AgreementContent() {
 
     generateAgreementPDF(
       { name: vendor?.name || "—" },
-      { customerName: custName || "—", customerPhone: formatPhone(custPhone) || undefined, ...meta },
+      { customerName: custName || "—", customerPhone: formatPhone(custPhone) || undefined, idType, idNumber: idNumber.trim() || undefined, ...meta },
       booking ? {
         items: booking.items,
         dates: booking.dates,
@@ -291,7 +251,7 @@ function AgreementContent() {
         </div>
         <h2 className="text-2xl font-black text-[#062c24] uppercase mb-2">Agreement Signed</h2>
         <p className="text-xs text-slate-500 font-medium max-w-xs mx-auto mb-8">
-          Your identity has been verified and the booking is now legally bound.
+          Your agreement has been recorded and the booking is now confirmed.
         </p>
         <div className="space-y-3">
           <button onClick={downloadPDF}
@@ -350,7 +310,7 @@ function AgreementContent() {
                     type="text"
                     value={custName}
                     onChange={e => setCustName(e.target.value.toUpperCase())}
-                    placeholder="FULL NAME AS PER IC"
+                    placeholder="FULL NAME AS PER IC / PASSPORT"
                     className="w-full bg-white border border-slate-200 p-3 rounded-xl font-bold text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-50 transition-all uppercase mb-2"
                   />
                   <div className="relative flex">
@@ -370,7 +330,7 @@ function AgreementContent() {
               <div className="mt-5 p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-3 items-start">
                 <i className="fas fa-exclamation-circle text-amber-500 mt-0.5 text-xs shrink-0"></i>
                 <p className="text-[9px] text-amber-700 font-bold leading-relaxed">
-                  LEGAL NOTICE: This agreement is entered into solely between the Vendor and the Customer. "Pacak Khemah" is a technology platform provider and is NOT a party to this rental contract.
+                  LEGAL NOTICE: This agreement is entered into solely between the Vendor and the Customer. &ldquo;Pacak Khemah&rdquo; is a technology platform provider and is NOT a party to this rental contract.
                 </p>
               </div>
             </div>
@@ -495,82 +455,43 @@ function AgreementContent() {
               </ul>
             </div>
 
-            {/* Section 4 — IC Upload */}
+            {/* Section 4 — Identity */}
             <div>
               <h2 className="text-xs font-black uppercase text-slate-400 tracking-widest mb-2">
-                4. Identity Verification
+                4. Identity Details
               </h2>
-              <p className="text-[10px] text-slate-400 mb-5 font-medium">
-                Upload clear photos of your IC (Front & Back) for security verification.
+              <p className="text-[10px] text-slate-400 mb-4 font-medium">
+                Enter your MyKad (IC) number. Not Malaysian? Choose Passport.
               </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Front */}
-                <div className="cursor-pointer" onClick={() => frontRef.current?.click()}>
-                  {frontPreview ? (
-                    frontPreview.startsWith("PDF:") ? (
-                      <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-lg bg-red-50 flex flex-col items-center justify-center">
-                        <i className="fas fa-file-pdf text-4xl text-red-400 mb-2"></i>
-                        <p className="text-[9px] font-bold text-red-500 truncate px-4 max-w-full">{frontPreview.replace("PDF:", "")}</p>
-                        <div className="absolute bottom-2 left-2 bg-emerald-500 text-white px-2 py-0.5 rounded-full text-[8px] font-black uppercase">
-                          ✓ Front Uploaded
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-lg">
-                        <img src={frontPreview} className="w-full h-full object-cover" alt="IC Front" />
-                        <div className="absolute bottom-2 left-2 bg-emerald-500 text-white px-2 py-0.5 rounded-full text-[8px] font-black uppercase">
-                          ✓ Front Uploaded
-                        </div>
-                      </div>
-                    )
-                  ) : (
-                    <div className="aspect-video bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center hover:bg-white hover:border-emerald-400 transition-all group">
-                      <i className="fas fa-id-card text-3xl text-slate-200 mb-3 group-hover:text-emerald-400 transition-colors"></i>
-                      <p className="text-[9px] font-black text-slate-400 uppercase group-hover:text-emerald-600">Tap to Upload Front</p>
-                      <p className="text-[8px] text-slate-300 mt-1">Photo or PDF — IC / MyKad Front</p>
-                    </div>
-                  )}
-                  <input ref={frontRef} type="file" className="hidden" accept="image/*,.pdf,application/pdf"
-                    onChange={e => e.target.files?.[0] && handleFileChange(e.target.files[0], "front")} />
-                </div>
-
-                {/* Back */}
-                <div className="cursor-pointer" onClick={() => backRef.current?.click()}>
-                  {backPreview ? (
-                    backPreview.startsWith("PDF:") ? (
-                      <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-lg bg-red-50 flex flex-col items-center justify-center">
-                        <i className="fas fa-file-pdf text-4xl text-red-400 mb-2"></i>
-                        <p className="text-[9px] font-bold text-red-500 truncate px-4 max-w-full">{backPreview.replace("PDF:", "")}</p>
-                        <div className="absolute bottom-2 left-2 bg-emerald-500 text-white px-2 py-0.5 rounded-full text-[8px] font-black uppercase">
-                          ✓ Back Uploaded
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-lg">
-                        <img src={backPreview} className="w-full h-full object-cover" alt="IC Back" />
-                        <div className="absolute bottom-2 left-2 bg-emerald-500 text-white px-2 py-0.5 rounded-full text-[8px] font-black uppercase">
-                          ✓ Back Uploaded
-                        </div>
-                      </div>
-                    )
-                  ) : (
-                    <div className="aspect-video bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center hover:bg-white hover:border-emerald-400 transition-all group">
-                      <i className="fas fa-id-card text-3xl text-slate-200 mb-3 group-hover:text-emerald-400 transition-colors"></i>
-                      <p className="text-[9px] font-black text-slate-400 uppercase group-hover:text-emerald-600">Tap to Upload Back</p>
-                      <p className="text-[8px] text-slate-300 mt-1">Photo or PDF — IC / MyKad Back</p>
-                    </div>
-                  )}
-                  <input ref={backRef} type="file" className="hidden" accept="image/*,.pdf,application/pdf"
-                    onChange={e => e.target.files?.[0] && handleFileChange(e.target.files[0], "back")} />
-                </div>
+              <div role="radiogroup" aria-label="ID type" className="inline-flex bg-slate-100 p-1 rounded-xl mb-3">
+                {([["ic", "MyKad (IC)"], ["passport", "Passport"]] as const).map(([t, label]) => (
+                  <button key={t} type="button" role="radio" aria-checked={idType === t}
+                    onClick={() => { if (t !== idType) { setIdType(t); setIdNumber(""); setIdTouched(false); } }}
+                    className={`px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-wide transition-all ${idType === t ? "bg-white text-[#062c24] shadow-sm" : "text-slate-400 hover:text-slate-600"}`}>
+                    {label}
+                  </button>
+                ))}
               </div>
-              <p className="text-[9px] text-slate-400 mt-2">Photo or PDF. Max 5MB per file.</p>
-              {fileWarning && (
-                <div className="mt-2 flex items-center gap-2 bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded-xl">
-                  <i className="fas fa-exclamation-circle text-xs shrink-0"></i>
-                  <p className="text-[10px] font-bold">{fileWarning}</p>
-                </div>
-              )}
+              <label htmlFor="id-number" className="sr-only">{idType === "ic" ? "IC number" : "Passport number"}</label>
+              <div className="relative">
+                <i className="fas fa-id-card absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" aria-hidden="true"></i>
+                <input
+                  id="id-number"
+                  type="text"
+                  inputMode={idType === "ic" ? "numeric" : "text"}
+                  autoComplete="off"
+                  value={idNumber}
+                  onChange={e => setIdNumber(formatIdNumber(idType, e.target.value))}
+                  onBlur={() => setIdTouched(true)}
+                  placeholder={idType === "ic" ? "900101-14-5678" : "e.g. A12345678"}
+                  aria-invalid={idTouched && !!idError}
+                  aria-describedby="id-help"
+                  className={`w-full bg-white border p-3 pl-11 rounded-xl font-bold text-sm tracking-wider outline-none focus:ring-2 transition-all ${idTouched && idError ? "border-red-300 focus:border-red-400 focus:ring-red-50" : "border-slate-200 focus:border-emerald-500 focus:ring-emerald-50"}`}
+                />
+              </div>
+              <p id="id-help" className={`text-[10px] mt-2 font-medium ${idTouched && idError ? "text-red-500" : "text-slate-400"}`}>
+                {idTouched && idError ? idError : idType === "ic" ? "12 digits. The dashes are added for you." : "As printed on your passport."}
+              </p>
             </div>
 
             {/* Section 5 — Sign */}
@@ -579,14 +500,14 @@ function AgreementContent() {
                 <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)}
                   className="mt-1 w-5 h-5 accent-emerald-600 rounded cursor-pointer shrink-0" />
                 <span className="text-[10px] font-bold text-slate-500 leading-relaxed group-hover:text-slate-700 transition-colors">
-                  I hereby acknowledge that I have read and agreed to the Terms & Conditions above. I certify that the uploaded ID documents are mine. I understand that my ID will be stored securely for verification purposes by the Vendor.
+                  I hereby acknowledge that I have read and agreed to the Terms & Conditions above. I certify that the identity number given above is mine and correct. I understand it will be kept by the Vendor for this rental only.
                 </span>
               </label>
 
               <button onClick={submitAgreement} disabled={submitting}
                 className="w-full bg-[#062c24] text-white py-5 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-emerald-900 transition-all flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-not-allowed">
                 {submitting ? (
-                  <><i className="fas fa-spinner fa-spin"></i> Securing Data...</>
+                  <><i className="fas fa-spinner fa-spin"></i> Submitting...</>
                 ) : (
                   <><span>Sign & Confirm Booking</span><i className="fas fa-signature"></i></>
                 )}

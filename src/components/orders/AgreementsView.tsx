@@ -5,6 +5,7 @@ import { collection, doc, getDoc, onSnapshot, orderBy, query, where } from "fire
 import { getDownloadURL, getStorage, ref } from "firebase/storage";
 import { db } from "@/lib/firebase";
 import { generateAgreementPDF, buildAgreementMeta } from "@/lib/agreementPDF";
+import { idLine } from "@/lib/customerId";
 import { EmptyState, SectionTitle, Chip, smallBtn, hintCls } from "@/components/ui/kit";
 
 type BookingDetails = {
@@ -23,6 +24,10 @@ export type Agreement = {
   customerName: string;
   customerPhone?: string;
   timestamp?: { toDate?: () => Date };
+  /** "ic" | "passport". Set on agreements signed after photo uploads were removed. */
+  idType?: string;
+  idNumber?: string;
+  /** Older agreements only: private IC photo paths. */
   icFrontPath?: string;
   icBackPath?: string;
   bookingDetails?: BookingDetails | string;
@@ -31,14 +36,14 @@ export type Agreement = {
 
 type VendorBits = { name?: string; phone?: string; city?: string; rules?: string[] };
 
-/** Open a private IC photo in a new tab. */
+/** Open a private IC photo (older agreements) in a new tab. */
 export async function openIcPhoto(path?: string): Promise<boolean> {
   if (!path) return false;
   try { window.open(await getDownloadURL(ref(getStorage(), path)), "_blank"); return true; }
   catch { return false; }
 }
 
-/** Build and download the signed agreement PDF, with IC photos when available. */
+/** Build and download the signed agreement PDF (with IC photos for older agreements). */
 export async function downloadAgreement(a: Agreement, vendor: VendorBits): Promise<void> {
   let frontUrl = "", backUrl = "";
   if (a.icFrontPath && a.icBackPath) {
@@ -51,7 +56,7 @@ export async function downloadAgreement(a: Agreement, vendor: VendorBits): Promi
   const ts = a.timestamp?.toDate?.() || new Date();
   generateAgreementPDF(
     { name: vendor.name || "", phone: vendor.phone, city: vendor.city },
-    { customerName: a.customerName, customerPhone: a.customerPhone, ...buildAgreementMeta(ts, a.id) },
+    { customerName: a.customerName, customerPhone: a.customerPhone, idType: a.idType, idNumber: a.idNumber, ...buildAgreementMeta(ts, a.id) },
     booking ? {
       items: booking.items, dates: booking.dates, subtotal: booking.subtotal, discounts: booking.discounts,
       serviceFee: booking.serviceFee, rentalAmount: booking.rentalAmount, deposit: booking.depositAmount, total: booking.total,
@@ -94,12 +99,12 @@ export default function AgreementsView({ vendorId, onOpenOrder, toast }: { vendo
     <div className="flex flex-col gap-3.5">
       <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-2.5">
         <span className="text-[15px] font-bold text-[#062c24]">Agreement link for walk-in customers</span>
-        <p className={hintCls}>For bookings made outside your shop page. Customers fill in their details, upload their IC and sign. For shop orders, send the link from the order instead, so it links automatically.</p>
+        <p className={hintCls}>For bookings made outside your shop page. Customers fill in their name, WhatsApp, IC or passport number and sign. For shop orders, send the link from the order instead, so it links automatically.</p>
         <div className="flex gap-2">
           <button type="button" onClick={() => { navigator.clipboard.writeText(link); toast("Link copied"); }} className={`${smallBtn} flex-1`}>
             <i className="fas fa-copy mr-1.5" aria-hidden="true"></i>Copy link
           </button>
-          <a href={`https://wa.me/?text=${encodeURIComponent(`Hi, please complete the rental agreement for your booking:\n\n${link}\n\nEnter your name and WhatsApp number, upload your IC (front and back) and sign. Thank you!`)}`}
+          <a href={`https://wa.me/?text=${encodeURIComponent(`Hi, please complete the rental agreement for your booking:\n\n${link}\n\nEnter your name, WhatsApp number and IC or passport number, then sign. Thank you!`)}`}
             target="_blank" rel="noreferrer" className={`${smallBtn} flex-1 flex items-center justify-center`}>
             <i className="fab fa-whatsapp mr-1.5" aria-hidden="true"></i>Share on WhatsApp
           </a>
@@ -119,6 +124,7 @@ export default function AgreementsView({ vendorId, onOpenOrder, toast }: { vendo
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[15px] font-bold text-slate-900 truncate">{a.customerName}</p>
+                {a.idNumber && <p className="text-[13px] text-slate-800 font-semibold tracking-wide">{idLine(a.idType, a.idNumber)}</p>}
                 <p className="text-[13px] text-slate-600">{[a.customerPhone, when?.toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })].filter(Boolean).join(" · ")}</p>
               </div>
               {a.orderId ? <Chip tone="good">Linked</Chip> : <Chip tone="warn">Not linked</Chip>}
