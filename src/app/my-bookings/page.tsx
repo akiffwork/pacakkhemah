@@ -1,5 +1,6 @@
 "use client";
 
+import { localDateStr } from "@/lib/localDate";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { functions } from "@/lib/firebase";
@@ -112,7 +113,7 @@ export default function MyBookingsPage() {
   }
 
   // Filter orders
-  const today = new Date().toISOString().split("T")[0];
+  const today = localDateStr();
   const filtered = orders.filter(o => {
     if (filter === "upcoming") return o.bookingDates.start >= today && o.status !== "cancelled";
     if (filter === "past") return o.bookingDates.end < today || o.status === "completed" || o.status === "cancelled";

@@ -1,5 +1,6 @@
 "use client";
 
+import { localDateStr } from "@/lib/localDate";
 import { useEffect, useMemo, useState } from "react";
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDocs, writeBatch } from "firebase/firestore";
@@ -94,7 +95,7 @@ export default function InventoryTab({ vendorId, onOpenPromotions }: InventoryTa
     setDeleting({ item, upcoming: null });
     try {
       const snap = await getDocs(query(collection(db, "orders"), where("vendorId", "==", vendorId)));
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localDateStr();
       const upcoming = snap.docs.map(d => d.data()).filter(o =>
         !o.deleted && (o.status === "pending" || o.status === "confirmed" || o.status === "conflict") &&
         (o.bookingDates?.end || "") >= today &&
