@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAllowedImageUrl } from "@/lib/imageProxy";
 
 const PROJECT_ID = "kuantan-unplugged";
 const FIREBASE_API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY!;
@@ -21,10 +22,10 @@ export async function GET(req: NextRequest) {
         gear?.fields?.img?.stringValue ||
         "";
 
-      if (imgUrl.startsWith("http")) {
+      if (isAllowedImageUrl(imgUrl)) {
         // Proxy the image bytes so it comes from pacakkhemah.com
         const imgRes = await fetch(imgUrl);
-        if (imgRes.ok) {
+        if (imgRes.ok && (imgRes.headers.get("content-type") || "").startsWith("image/")) {
           const contentType = imgRes.headers.get("content-type") || "image/jpeg";
           const buffer = await imgRes.arrayBuffer();
           return new NextResponse(buffer, {

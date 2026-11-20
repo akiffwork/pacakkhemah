@@ -5,6 +5,7 @@
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import { createHash } from "crypto";
 
 const REGION = "us-central1";
 const MAX_RESULTS = 50;
@@ -45,7 +46,9 @@ export const lookupBookingsByPhone = onCall({ region: REGION }, async (req) => {
   const results = snap.docs.map(d => {
     const o = d.data();
     return {
-      id: d.id,
+      // Not the order ID: anyone can search by a phone number, and an order ID
+      // opens the full order (name, address). The page only needs a list key.
+      id: createHash("sha256").update(d.id).digest("hex").slice(0, 16),
       vendorId: String(o.vendorId || ""),
       vendorName: String(o.vendorName || ""),
       vendorSlug: String(o.vendorSlug || ""),

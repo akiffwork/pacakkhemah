@@ -8,6 +8,7 @@ exports.lookupOrderByReviewToken = exports.lookupBookingsByPhone = void 0;
 exports.phoneVariants = phoneVariants;
 const https_1 = require("firebase-functions/v2/https");
 const firestore_1 = require("firebase-admin/firestore");
+const crypto_1 = require("crypto");
 const REGION = "us-central1";
 const MAX_RESULTS = 50;
 function iso(v) {
@@ -41,7 +42,10 @@ exports.lookupBookingsByPhone = (0, https_1.onCall)({ region: REGION }, async (r
     const results = snap.docs.map(d => {
         var _a, _b;
         const o = d.data();
-        return Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ id: d.id, vendorId: String(o.vendorId || ""), vendorName: String(o.vendorName || ""), vendorSlug: String(o.vendorSlug || ""), items: items(o.items), totalAmount: Number(o.totalAmount) || 0 }, (o.rentalAmount != null ? { rentalAmount: Number(o.rentalAmount) } : {})), (o.depositAmount != null ? { depositAmount: Number(o.depositAmount) } : {})), { bookingDates: { start: String(((_a = o.bookingDates) === null || _a === void 0 ? void 0 : _a.start) || ""), end: String(((_b = o.bookingDates) === null || _b === void 0 ? void 0 : _b.end) || "") }, status: String(o.status || "pending") }), (o.paymentStatus ? { paymentStatus: String(o.paymentStatus) } : {})), { createdAt: iso(o.createdAt) });
+        return Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ 
+            // Not the order ID: anyone can search by a phone number, and an order ID
+            // opens the full order (name, address). The page only needs a list key.
+            id: (0, crypto_1.createHash)("sha256").update(d.id).digest("hex").slice(0, 16), vendorId: String(o.vendorId || ""), vendorName: String(o.vendorName || ""), vendorSlug: String(o.vendorSlug || ""), items: items(o.items), totalAmount: Number(o.totalAmount) || 0 }, (o.rentalAmount != null ? { rentalAmount: Number(o.rentalAmount) } : {})), (o.depositAmount != null ? { depositAmount: Number(o.depositAmount) } : {})), { bookingDates: { start: String(((_a = o.bookingDates) === null || _a === void 0 ? void 0 : _a.start) || ""), end: String(((_b = o.bookingDates) === null || _b === void 0 ? void 0 : _b.end) || "") }, status: String(o.status || "pending") }), (o.paymentStatus ? { paymentStatus: String(o.paymentStatus) } : {})), { createdAt: iso(o.createdAt) });
     }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return { results };
 });

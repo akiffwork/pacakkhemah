@@ -5,7 +5,9 @@
  * the review-link check, against a fake Firestore.
  */
 
+import { createHash } from 'crypto';
 type Data = Record<string, unknown>;
+const key = (id: string) => createHash('sha256').update(id).digest('hex').slice(0, 16);
 const orders = new Map<string, Data>();
 
 class FakeTimestamp { constructor(private d: Date) {} toDate() { return this.d; } }
@@ -56,13 +58,15 @@ beforeEach(() => {
 describe('lookupBookingsByPhone', () => {
   it('finds bookings however the number was saved, newest first', async () => {
     const { results } = await byPhone({ data: { phone: '012-345 6789' } }) as { results: Data[] };
-    expect(results.map(r => r.id)).toEqual(['o2', 'o1', 'o3']);
+    expect(results.map(r => r.id)).toEqual(['o2', 'o1', 'o3'].map(key));
+    // The real order ID (which opens the full order) is never returned
+    expect(JSON.stringify(results)).not.toMatch(/"id":"o\d"/);
     expect(results[0]).toMatchObject({ vendorSlug: 'kuantan', status: 'completed', createdAt: '2026-11-12T00:00:00.000Z' });
   });
 
   it('limits to one shop when the shop page asks', async () => {
     const { results } = await byPhone({ data: { phone: '60123456789', vendorId: 'v2' } }) as { results: Data[] };
-    expect(results.map(r => r.id)).toEqual(['o3']);
+    expect(results.map(r => r.id)).toEqual([key('o3')]);
   });
 
   it('returns only what the page shows: no address or line totals', async () => {

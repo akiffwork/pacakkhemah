@@ -23,6 +23,15 @@ service cloud.firestore {
        return request.auth != null &&
               get(/databases/$(database)/documents/vendors/$(vendorId)).data.owner_uid == request.auth.uid;
     }
+    function isOrderOfVendor(orderId, vendorId) {
+      return orderId.size() <= 64 &&
+             exists(/databases/$(database)/documents/orders/$(orderId)) &&
+             get(/databases/$(database)/documents/orders/$(orderId)).data.vendorId == vendorId;
+    }
+    function usageForOwnOrder(entry, vendorId) {
+      return entry is map && entry.keys().hasOnly(['orderId', 'date', 'phone', 'name']) &&
+             entry.orderId is string && isOrderOfVendor(entry.orderId, vendorId);
+    }
 
     // Fields only the admin or Cloud Functions may change: credits are paid
     // for, referral rewards are granted on approval, and status is approval.
@@ -30,12 +39,18 @@ service cloud.firestore {
       let cfg = /databases/$(database)/documents/settings/payment_config;
       return exists(cfg) ? get(cfg).data.get('startingCredits', 10) : 10;
     }
+    // Set by the admin or by Cloud Functions (ratings, counts, badges);
+    // a vendor must not be able to give these to their own shop.
+    function adminOnlyVendorKeys() {
+      return ['badges', 'rating', 'reviewCount', 'ratingBreakdown', 'categoryRatings',
+              'order_count', 'total_orders', 'suspendedAt', 'suspendReason'];
+    }
     function touchesProtectedVendorFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'credits', 'status',
+        'credits', 'status', 'owner_uid',
         'referral_total_credits', 'referral_total_referred',
         'referralRewarded', 'referralRewardedAt'
-      ]);
+      ]) || request.resource.data.diff(resource.data).affectedKeys().hasAny(adminOnlyVendorKeys());
     }
 
     // --- 1. VENDORS COLLECTION ---
@@ -49,7 +64,8 @@ service cloud.firestore {
         request.resource.data.get('referralRewarded', false) == false &&
         !request.resource.data.keys().hasAny([
           'referral_total_credits', 'referral_total_referred', 'referralRewardedAt'
-        ]));
+        ]) &&
+        !request.resource.data.keys().hasAny(adminOnlyVendorKeys()));
       allow update: if isAdmin() || (isOwner() && !touchesProtectedVendorFields());
       allow delete: if isAdmin();
 
@@ -57,11 +73,15 @@ service cloud.firestore {
         allow read: if true;
         allow create, delete: if isVendorOwner(vendorId);
         allow update: if isVendorOwner(vendorId) ||
-          // Customers can record discount usage after placing an order:
-          // only usedCount and usedBy may change, and usedCount must increase by exactly 1.
+          // Customers record discount usage after placing an order: usedCount
+          // goes up by exactly 1 and usedBy gains exactly one entry, for a
+          // real order of this shop.
           (request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['usedCount', 'usedBy']) &&
-           request.resource.data.usedCount == resource.data.usedCount + 1);
+           request.resource.data.usedCount == resource.data.get('usedCount', 0) + 1 &&
+           request.resource.data.usedBy is list &&
+           request.resource.data.usedBy.size() == resource.data.get('usedBy', []).size() + 1 &&
+           usageForOwnOrder(request.resource.data.usedBy[request.resource.data.usedBy.size() - 1], vendorId));
       }
       match /referrals/{referralId} {
         allow read: if true;
@@ -69,8 +89,11 @@ service cloud.firestore {
       }
       match /availability/{ruleId} {
         allow read: if true;
+        // Customers add their booking's dates right after ordering; the
+        // order must exist and belong to this shop.
         allow create: if isVendorOwner(vendorId) ||
-                         request.resource.data.orderId != null;
+                         (request.resource.data.orderId is string &&
+                          isOrderOfVendor(request.resource.data.orderId, vendorId));
         allow update, delete: if isVendorOwner(vendorId) || isAdmin();
       }
       match /posts/{postId} {
@@ -114,8 +137,13 @@ service cloud.firestore {
     // --- 2. GEAR COLLECTION ---
     match /gear/{gearId} {
       allow read: if true;
-      allow create: if isCreatingOwn();
-      allow update, delete: if isAdmin() || isVendorOwner(resource.data.vendorId);
+      // Only into your own shop, and an item can't be moved to another shop.
+      allow create: if isAdmin() ||
+                       (isCreatingOwn() && isVendorOwner(request.resource.data.vendorId));
+      allow update: if isAdmin() ||
+                       (isVendorOwner(resource.data.vendorId) &&
+                        request.resource.data.get('vendorId', null) == resource.data.get('vendorId', null));
+      allow delete: if isAdmin() || isVendorOwner(resource.data.vendorId);
     }
 
     // --- 3. CAMPSITES ---
@@ -203,7 +231,23 @@ service cloud.firestore {
       // Anonymous phone-lookup flows (my-bookings, shop "my booking" search)
       // go through the lookupBookingsByPhone Cloud Function instead.
       allow list: if isAdmin() || isVendorOwner(resource.data.vendorId);
-      allow create: if true;
+      // Customers place orders without an account, so creation stays open,
+      // but only as a new (pending) order for a real shop. Everything that
+      // records progress (payments, agreement, completion, review link) is
+      // set later by the vendor or by Cloud Functions, never on creation.
+      allow create: if isAdmin() || (
+        request.resource.data.status == 'pending' &&
+        request.resource.data.vendorId is string &&
+        exists(/databases/$(database)/documents/vendors/$(request.resource.data.vendorId)) &&
+        request.resource.data.createdAt == request.time &&
+        !request.resource.data.keys().hasAny([
+          'reviewToken', 'reviewTokenUsed', 'reviewTokenSentAt', 'creditRefunded', 'creditRefundedAt',
+          'agreementSigned', 'agreementSignedAt', 'agreementId', 'agreementSentAt',
+          'depositReceivedAt', 'rentalReceivedAt', 'depositOutcome', 'depositKeptAmount', 'depositKeptReason',
+          'paymentStatus', 'paymentV2', 'paymentRequestedAt', 'balanceRequestedAt',
+          'confirmedAt', 'pickedUpAt', 'returnedAt', 'completedAt', 'cancelledAt',
+          'stockValidated', 'stockConflict', 'stockConflictDetails', 'deleted', 'history', 'parentOrderId'
+        ]));
       allow update: if isAdmin() || isVendorOwner(resource.data.vendorId) ||
         // Customer marks their review link as used after submitting a review:
         // only reviewTokenUsed may change, and only to true, and the token
@@ -216,14 +260,34 @@ service cloud.firestore {
     }
 
     // --- 9. REVIEWS COLLECTION ---
+    function validReviewRatings(d) {
+      return !('ratings' in d) || d.ratings == null || (
+        d.ratings is map &&
+        d.ratings.keys().hasOnly(['gearCondition', 'communication', 'value', 'convenience', 'overall']) &&
+        d.ratings.get('gearCondition', 1) is int && d.ratings.get('gearCondition', 1) >= 1 && d.ratings.get('gearCondition', 1) <= 5 &&
+        d.ratings.get('communication', 1) is int && d.ratings.get('communication', 1) >= 1 && d.ratings.get('communication', 1) <= 5 &&
+        d.ratings.get('value', 1) is int && d.ratings.get('value', 1) >= 1 && d.ratings.get('value', 1) <= 5 &&
+        d.ratings.get('convenience', 1) is int && d.ratings.get('convenience', 1) >= 1 && d.ratings.get('convenience', 1) <= 5 &&
+        d.ratings.get('overall', 1) is int && d.ratings.get('overall', 1) >= 1 && d.ratings.get('overall', 1) <= 5);
+    }
     match /reviews/{reviewId} {
       allow read: if true;
-      allow create: if request.resource.data.rating >= 1 &&
+      // One review per order: the review's ID is the order ID. It must match
+      // a real, completed, not-yet-reviewed order of the same shop with the
+      // right token, and the token is used up in the same write.
+      allow create: if reviewId == request.resource.data.orderId &&
+                       request.resource.data.rating is number &&
+                       request.resource.data.rating >= 1 &&
                        request.resource.data.rating <= 5 &&
+                       validReviewRatings(request.resource.data) &&
                        request.resource.data.status == "published" &&
                        request.resource.data.isVerified == true &&
-                       // Must correspond to a real, completed, not-yet-reviewed order,
-                       // and the token must match — prevents forged "verified" reviews.
+                       optStrMax(request.resource.data, 'comment', 2000) &&
+                       optStrMax(request.resource.data, 'customerName', 80) &&
+                       (!('photos' in request.resource.data) || request.resource.data.photos == null ||
+                        (request.resource.data.photos is list && request.resource.data.photos.size() <= 6)) &&
+                       request.resource.data.vendorId ==
+                         get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.vendorId &&
                        request.resource.data.reviewToken ==
                          get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.reviewToken &&
                        get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.status == "completed" &&
@@ -258,8 +322,16 @@ service cloud.firestore {
     // --- 13. ARTICLES (Camping Guide) ---
     match /articles/{articleId} {
       allow read: if true;
-      allow create: if isAdmin() || request.auth != null;
-      allow update, delete: if isAdmin() || isVendorOwner(resource.data.authorId);
+      // Vendors publish only under their own shop; admins under any name.
+      allow create: if isAdmin() ||
+                       (request.resource.data.authorType == 'vendor' &&
+                        request.resource.data.authorId is string &&
+                        isVendorOwner(request.resource.data.authorId));
+      allow update: if isAdmin() ||
+                       (isVendorOwner(resource.data.authorId) &&
+                        request.resource.data.authorId == resource.data.authorId &&
+                        request.resource.data.get('authorType', 'vendor') == 'vendor');
+      allow delete: if isAdmin() || isVendorOwner(resource.data.authorId);
     }
 
     // --- 14. WIZARD SESSIONS ---

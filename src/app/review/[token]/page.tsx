@@ -181,12 +181,13 @@ export default function ReviewPage() {
       // atomic batch — Firestore rules validate both writes together, so a
       // review can never be created without correctly consuming its token.
       const batch = writeBatch(db);
-      const reviewRef = doc(collection(db, "reviews"));
+      // One review per order: the review's ID is the order ID.
+      const reviewRef = doc(db, "reviews", orderId);
       batch.set(reviewRef, {
         orderId,
         vendorId: order.vendorId,
         customerPhone: maskPhone(order.customerPhone),
-        customerName: displayName || "Camper",
+        customerName: (displayName.trim() || "Camper").slice(0, 80),
         rating: avgRating,
         ratings,
         comment: comment.trim() || null,
@@ -350,6 +351,7 @@ export default function ReviewPage() {
               type="text"
               value={displayName}
               onChange={e => setDisplayName(e.target.value)}
+              maxLength={80}
               placeholder="How should we call you?"
               className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-sm font-medium outline-none focus:border-emerald-500"
             />
@@ -359,6 +361,7 @@ export default function ReviewPage() {
             <textarea
               value={comment}
               onChange={e => setComment(e.target.value)}
+              maxLength={2000}
               placeholder="Tell others about your experience..."
               rows={3}
               className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-sm font-medium outline-none focus:border-emerald-500 resize-none"
