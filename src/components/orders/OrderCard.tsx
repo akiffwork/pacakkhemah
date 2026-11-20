@@ -1,5 +1,6 @@
 "use client";
 
+import { Private, usePrivacy } from "@/lib/privacy";
 import {
   type Order, type NextAction, type Tone,
   STAGES, getStage, stageIndex, getPayment, formatDateRange,
@@ -82,6 +83,7 @@ type Props = {
 
 export default function OrderCard({ order, action, hasAddOns, busy, onOpen, onAction, onDecline }: Props) {
   const p = getPayment(order);
+  const privacy = usePrivacy();
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-col gap-3">
       <button type="button" onClick={onOpen} className="text-left flex flex-col gap-3 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#062c24]">
@@ -91,16 +93,16 @@ export default function OrderCard({ order, action, hasAddOns, busy, onOpen, onAc
             {order.parentOrderId && <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-violet-100 text-violet-800">Add-on</span>}
             {hasAddOns && <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-violet-100 text-violet-800">Has add-ons</span>}
           </div>
-          <span className="text-[15px] font-bold text-[#062c24] whitespace-nowrap">RM {p.total}</span>
+          <span className="text-[15px] font-bold text-[#062c24] whitespace-nowrap"><Private kind="money" reveal={false}>RM {p.total}</Private></span>
         </div>
         <div className="flex flex-col gap-0.5 w-full">
-          <span className={`text-base font-bold ${order.customerName ? "text-slate-900" : "text-slate-600"}`}>{customerLabel(order)}</span>
+          <span className={`text-base font-bold ${order.customerName ? "text-slate-900" : "text-slate-600"}`}>{privacy.name(customerLabel(order))}</span>
           <span className="text-[13px] text-slate-600">{formatDateRange(order.bookingDates)} · {itemsSummary(order)}</span>
         </div>
         <div className="w-full"><ProgressStrip order={order} /></div>
         <div className={`flex items-start gap-2 text-[13px] font-semibold w-full ${toneText[action.tone]}`}>
           <i className={`fas ${toneIcon[action.tone]} mt-0.5`} aria-hidden="true"></i>
-          <span>{action.reason}</span>
+          <span>{privacy.money(action.reason)}</span>
         </div>
       </button>
 
@@ -123,7 +125,7 @@ export default function OrderCard({ order, action, hasAddOns, busy, onOpen, onAc
             Decline
           </button>
         ) : action.label ? (
-          <button type="button" onClick={onOpen} aria-label={`Open order for ${customerLabel(order)}`}
+          <button type="button" onClick={onOpen} aria-label={`Open order for ${privacy.name(customerLabel(order))}`}
             className="w-12 min-h-12 rounded-xl border border-slate-300 bg-white text-slate-700 flex items-center justify-center hover:bg-slate-50">
             <i className="fas fa-chevron-right" aria-hidden="true"></i>
           </button>

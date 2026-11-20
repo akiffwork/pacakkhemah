@@ -1,5 +1,6 @@
 "use client";
 
+import { Private, usePrivacy } from "@/lib/privacy";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot, orderBy, addDoc, getDocs, doc, getDoc, serverTimestamp } from "firebase/firestore";
@@ -96,6 +97,15 @@ export type InsightsView = "customers" | "heatmap" | "items" | "forecast" | "pro
 
 /** Customer, demand, item, forecast and promotion insights. Shown inside Performance. */
 export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: string; view?: InsightsView }) {
+  const privacy = usePrivacy();
+  const WA_NOTE = "This opens WhatsApp with the customer's name and number.";
+  /** Ask before a WhatsApp link opens while privacy mode is on. */
+  const guardLink = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!privacy.on) return;
+    e.preventDefault();
+    const url = e.currentTarget.href;
+    privacy.guard(() => window.open(url, "_blank"), WA_NOTE);
+  };
   const [orders, setOrders] = useState<Order[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
@@ -203,7 +213,7 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
       const msg = `Hi ${customer.name}! 🎉\n\nTerima kasih kerana setia bersama kami! Anda telah mencapai status *${tier.label}* selepas ${customer.completedBookings} tempahan.\n\nSebagai penghargaan, gunakan kod *${code}* untuk *${tier.discount}% OFF* tempahan seterusnya!${appliesNote}\n\nJom camping lagi! 🏕️`;
       window.open(`https://wa.me/${customer.phone}?text=${encodeURIComponent(msg)}`, "_blank");
 
-      setRewardToast(`Reward sent to ${customer.name}!`);
+      setRewardToast(`Reward sent to ${privacy.name(customer.name)}!`);
       setTimeout(() => setRewardToast(null), 3000);
     } catch (e) {
       console.error("Loyalty reward error:", e);
@@ -540,7 +550,7 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
         <div className="bg-white rounded-2xl p-4 border border-slate-100">
           <p className="text-xs font-bold text-slate-600 ">Top Item</p>
           <p className="text-sm font-bold text-[#062c24] truncate">{topItem?.name || "—"}</p>
-          <p className="text-xs text-emerald-600 mt-1">{topItem ? `RM${topItem.totalRevenue} • ${topItem.timesRented}x rented` : ""}</p>
+          <p className="text-xs text-emerald-600 mt-1">{topItem ? privacy.money(`RM ${topItem.totalRevenue} • ${topItem.timesRented}x rented`) : ""}</p>
         </div>
       </div>}
 
@@ -620,18 +630,18 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
                           c.status === "at_risk" ? "bg-amber-100 text-amber-600" : "bg-red-100 text-red-500"
                         )
                       }`}>
-                        {tier ? <i className={`fas ${tier.icon} text-xs`}></i> : (c.name[0]?.toUpperCase() || "?")}
+                        {tier ? <i className={`fas ${tier.icon} text-xs`}></i> : (privacy.on ? "•" : c.name[0]?.toUpperCase() || "?")}
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <p className="text-sm font-bold text-[#062c24]">{c.name}</p>
+                          <p className="text-sm font-bold text-[#062c24]"><Private kind="name" text={c.name}>{c.name}</Private></p>
                           {tier && (
                             <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full  border ${tier.badgeClass}`}>
                               {tier.label}
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-slate-600 font-bold">{c.phone}</p>
+                        <p className="text-xs text-slate-600 font-bold"><Private kind="phone">{c.phone}</Private></p>
                         <p className="text-xs text-slate-500 font-bold">
                           <i className="fas fa-calendar-check text-slate-500 mr-1"></i>
                           First booked {formatDate(c.firstBooking)}
@@ -672,7 +682,7 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
                         )}
                       </div>
                       {!hasExistingCode && (
-                        <button onClick={() => sendLoyaltyReward(c)} disabled={isSending}
+                        <button onClick={() => privacy.guard(() => { void sendLoyaltyReward(c); }, WA_NOTE)} disabled={isSending}
                           className="bg-[#062c24] text-white px-3 py-2 rounded-xl text-xs font-bold shrink-0 hover:bg-emerald-800 transition-colors disabled:opacity-50">
                           {isSending ? <i className="fas fa-spinner fa-spin"></i> : <><i className="fab fa-whatsapp mr-1"></i>Send</>}
                         </button>
@@ -683,7 +693,7 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
                   {/* Stats Row */}
                   <div className="grid grid-cols-4 gap-2 mb-3">
                     <div className="text-center bg-slate-50 rounded-lg py-2">
-                      <p className="text-xs font-bold text-[#062c24]">RM{c.totalSpent.toLocaleString()}</p>
+                      <p className="text-xs font-bold text-[#062c24]"><Private kind="money">RM {c.totalSpent.toLocaleString()}</Private></p>
                       <p className="text-xs text-slate-600 font-bold ">Spent</p>
                     </div>
                     <div className="text-center bg-slate-50 rounded-lg py-2">
@@ -691,7 +701,7 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
                       <p className="text-xs text-slate-600 font-bold ">Bookings</p>
                     </div>
                     <div className="text-center bg-slate-50 rounded-lg py-2">
-                      <p className="text-xs font-bold text-[#062c24]">RM{c.avgOrderValue}</p>
+                      <p className="text-xs font-bold text-[#062c24]"><Private kind="money">RM {c.avgOrderValue}</Private></p>
                       <p className="text-xs text-slate-600 font-bold ">Avg Order</p>
                     </div>
                     <div className="text-center bg-slate-50 rounded-lg py-2">
@@ -713,12 +723,12 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
 
                   {/* Actions */}
                   <div className="flex gap-2">
-                    <a href={`https://wa.me/${c.phone}`} target="_blank" rel="noreferrer"
+                    <a href={`https://wa.me/${c.phone}`} target="_blank" rel="noreferrer" onClick={guardLink}
                       className="flex-1 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center gap-1.5 hover:bg-emerald-100 transition-colors">
                       <i className="fab fa-whatsapp"></i> Message
                     </a>
                     {c.status !== "active" && (
-                      <a href={`https://wa.me/${c.phone}?text=${encodeURIComponent(`Hi ${c.name}! 👋\n\nLama tak camping! Kami ada promosi khas untuk pelanggan setia.\n\nJom check out gear terbaru kami 🏕️`)}`}
+                      <a onClick={guardLink} href={`https://wa.me/${c.phone}?text=${encodeURIComponent(`Hi ${c.name}! 👋\n\nLama tak camping! Kami ada promosi khas untuk pelanggan setia.\n\nJom check out gear terbaru kami 🏕️`)}`}
                         target="_blank" rel="noreferrer"
                         className="flex-1 py-2 rounded-xl text-xs font-bold bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center gap-1.5 hover:bg-amber-100 transition-colors">
                         <i className="fas fa-bell"></i> Re-engage
@@ -857,7 +867,7 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
                   {/* Stats */}
                   <div className="grid grid-cols-3 gap-2">
                     <div className="text-center bg-slate-50 rounded-lg py-2">
-                      <p className="text-xs font-bold text-emerald-600">RM{item.totalRevenue.toLocaleString()}</p>
+                      <p className="text-xs font-bold text-emerald-600"><Private kind="money">RM {item.totalRevenue.toLocaleString()}</Private></p>
                       <p className="text-xs text-slate-600 font-bold ">Revenue</p>
                     </div>
                     <div className="text-center bg-slate-50 rounded-lg py-2">
@@ -885,22 +895,22 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
           <div className="grid grid-cols-2 gap-2">
             <div className="bg-white rounded-2xl p-4 border border-slate-100">
               <p className="text-xs font-bold text-slate-600 ">Next 7 Days</p>
-              <p className="text-xl font-bold text-emerald-600 mt-1">RM{forecast.next7.revenue.toLocaleString()}</p>
+              <p className="text-xl font-bold text-emerald-600 mt-1"><Private kind="money">RM {forecast.next7.revenue.toLocaleString()}</Private></p>
               <p className="text-xs text-slate-500 mt-0.5">{forecast.next7.orders} booking{forecast.next7.orders !== 1 ? "s" : ""}</p>
             </div>
             <div className="bg-white rounded-2xl p-4 border border-slate-100">
               <p className="text-xs font-bold text-slate-600 ">Next 30 Days</p>
-              <p className="text-xl font-bold text-[#062c24] mt-1">RM{forecast.next30.revenue.toLocaleString()}</p>
+              <p className="text-xl font-bold text-[#062c24] mt-1"><Private kind="money">RM {forecast.next30.revenue.toLocaleString()}</Private></p>
               <p className="text-xs text-slate-500 mt-0.5">{forecast.next30.orders} booking{forecast.next30.orders !== 1 ? "s" : ""}</p>
             </div>
             <div className="bg-white rounded-2xl p-4 border border-slate-100">
               <p className="text-xs font-bold text-slate-600 ">Next 60 Days</p>
-              <p className="text-lg font-bold text-[#062c24] mt-1">RM{forecast.next60.revenue.toLocaleString()}</p>
+              <p className="text-lg font-bold text-[#062c24] mt-1"><Private kind="money">RM {forecast.next60.revenue.toLocaleString()}</Private></p>
               <p className="text-xs text-slate-500 mt-0.5">{forecast.next60.orders} bookings</p>
             </div>
             <div className="bg-white rounded-2xl p-4 border border-slate-100">
               <p className="text-xs font-bold text-slate-600 ">Next 90 Days</p>
-              <p className="text-lg font-bold text-[#062c24] mt-1">RM{forecast.next90.revenue.toLocaleString()}</p>
+              <p className="text-lg font-bold text-[#062c24] mt-1"><Private kind="money">RM {forecast.next90.revenue.toLocaleString()}</Private></p>
               <p className="text-xs text-slate-500 mt-0.5">{forecast.next90.orders} bookings</p>
             </div>
           </div>
@@ -929,7 +939,7 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
                 const h = (w.revenue / maxRev) * 100;
                 return (
                   <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                    {w.revenue > 0 && <p className="text-xs font-bold text-emerald-600">RM{w.revenue}</p>}
+                    {w.revenue > 0 && <p className="text-xs font-bold text-emerald-600"><Private kind="money">RM {w.revenue}</Private></p>}
                     <div className="w-full bg-slate-50 rounded-t-md relative" style={{ height: "100%" }}>
                       <div className={`absolute bottom-0 w-full rounded-t-md transition-all duration-500 ${i === 0 ? "bg-emerald-500" : "bg-emerald-300"}`}
                         style={{ height: `${h}%`, minHeight: w.revenue > 0 ? "4px" : "0" }}></div>
@@ -954,11 +964,11 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
                       {new Date(o.bookingDates.start).getDate()}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold text-[#062c24] truncate">{o.customerName || "Customer"}</p>
+                      <p className="text-xs font-bold text-[#062c24] truncate">{privacy.name(o.customerName || "Customer")}</p>
                       <p className="text-xs text-slate-600 truncate">{o.items.map(it => `${it.name} ×${it.qty}`).join(", ")}</p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-xs font-bold text-emerald-600">RM{o.rentalAmount ?? o.totalAmount}</p>
+                      <p className="text-xs font-bold text-emerald-600"><Private kind="money">RM {o.rentalAmount ?? o.totalAmount}</Private></p>
                       <p className="text-xs text-slate-600">{formatDate(o.bookingDates.start)}</p>
                     </div>
                   </div>
@@ -991,18 +1001,18 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
             </div>
             <div className="bg-white rounded-2xl p-4 border border-slate-100">
               <p className="text-xs font-bold text-slate-600 ">Revenue from Promos</p>
-              <p className="text-2xl font-bold text-emerald-600 mt-1">RM{promoAnalytics.totalPromoRevenue.toLocaleString()}</p>
-              <p className="text-xs text-slate-500 mt-0.5">RM{promoAnalytics.totalDiscountGiven} discounted</p>
+              <p className="text-2xl font-bold text-emerald-600 mt-1"><Private kind="money">RM {promoAnalytics.totalPromoRevenue.toLocaleString()}</Private></p>
+              <p className="text-xs text-slate-500 mt-0.5"><Private kind="money">RM {promoAnalytics.totalDiscountGiven}</Private> discounted</p>
             </div>
             <div className="bg-white rounded-2xl p-4 border border-slate-100">
               <p className="text-xs font-bold text-slate-600 ">Avg Promo Order</p>
-              <p className="text-xl font-bold text-[#062c24] mt-1">RM{promoAnalytics.avgPromoOrder}</p>
-              <p className="text-xs text-slate-500 mt-0.5">vs RM{promoAnalytics.avgNonPromoOrder} without</p>
+              <p className="text-xl font-bold text-[#062c24] mt-1"><Private kind="money">RM {promoAnalytics.avgPromoOrder}</Private></p>
+              <p className="text-xs text-slate-500 mt-0.5">vs <Private kind="money">RM {promoAnalytics.avgNonPromoOrder}</Private> without</p>
             </div>
             <div className="bg-white rounded-2xl p-4 border border-slate-100">
               <p className="text-xs font-bold text-slate-600 ">Extended Stay</p>
               <p className="text-xl font-bold text-blue-600 mt-1">{promoAnalytics.autoDiscOrders}</p>
-              <p className="text-xs text-slate-500 mt-0.5">RM{promoAnalytics.totalAutoDiscount} discounted</p>
+              <p className="text-xs text-slate-500 mt-0.5"><Private kind="money">RM {promoAnalytics.totalAutoDiscount}</Private> discounted</p>
             </div>
           </div>
 
@@ -1014,7 +1024,7 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
                 <div>
                   <div className="flex justify-between mb-1">
                     <span className="text-xs font-bold text-slate-500"><i className="fas fa-tag text-emerald-500 mr-1"></i>With Promo</span>
-                    <span className="text-xs font-bold text-[#062c24]">RM{promoAnalytics.avgPromoOrder}</span>
+                    <span className="text-xs font-bold text-[#062c24]"><Private kind="money">RM {promoAnalytics.avgPromoOrder}</Private></span>
                   </div>
                   <div className="bg-slate-100 rounded-full h-3 overflow-hidden">
                     <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${Math.min(100, (promoAnalytics.avgPromoOrder / Math.max(promoAnalytics.avgPromoOrder, promoAnalytics.avgNonPromoOrder)) * 100)}%` }}></div>
@@ -1023,7 +1033,7 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
                 <div>
                   <div className="flex justify-between mb-1">
                     <span className="text-xs font-bold text-slate-500"><i className="fas fa-shopping-bag text-slate-600 mr-1"></i>Without Promo</span>
-                    <span className="text-xs font-bold text-[#062c24]">RM{promoAnalytics.avgNonPromoOrder}</span>
+                    <span className="text-xs font-bold text-[#062c24]"><Private kind="money">RM {promoAnalytics.avgNonPromoOrder}</Private></span>
                   </div>
                   <div className="bg-slate-100 rounded-full h-3 overflow-hidden">
                     <div className="h-full bg-slate-400 rounded-full" style={{ width: `${Math.min(100, (promoAnalytics.avgNonPromoOrder / Math.max(promoAnalytics.avgPromoOrder, promoAnalytics.avgNonPromoOrder)) * 100)}%` }}></div>
@@ -1064,15 +1074,15 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
                           }`}>{i + 1}</span>
                           <span className="text-sm font-bold text-[#062c24] ">{p.code}</span>
                         </div>
-                        <span className="text-xs font-bold text-emerald-600">RM{p.totalRevenue.toLocaleString()}</span>
+                        <span className="text-xs font-bold text-emerald-600"><Private kind="money">RM {p.totalRevenue.toLocaleString()}</Private></span>
                       </div>
                       <div className="bg-slate-200 rounded-full h-1.5 mb-2 overflow-hidden">
                         <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${bar}%` }}></div>
                       </div>
                       <div className="flex items-center gap-3 text-xs font-bold text-slate-600">
                         <span><i className="fas fa-check-circle text-emerald-500 mr-0.5"></i>{p.timesUsed}× used</span>
-                        <span><i className="fas fa-tag text-red-400 mr-0.5"></i>RM{p.totalDiscount} off given</span>
-                        <span><i className="fas fa-receipt mr-0.5"></i>Avg RM{p.avgOrderValue}</span>
+                        <span><i className="fas fa-tag text-red-400 mr-0.5"></i><Private kind="money">RM {p.totalDiscount}</Private> off given</span>
+                        <span><i className="fas fa-receipt mr-0.5"></i>Avg <Private kind="money">RM {p.avgOrderValue}</Private></span>
                       </div>
                     </div>
                   );
@@ -1088,8 +1098,8 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
               <div className="space-y-2 text-xs text-white/80">
                 {promoAnalytics.promoRate > 30 && <p>📊 {promoAnalytics.promoRate}% of orders use promos — healthy promo adoption.</p>}
                 {promoAnalytics.promoRate > 0 && promoAnalytics.promoRate <= 10 && <p>📊 Only {promoAnalytics.promoRate}% use promos — consider promoting your codes more actively.</p>}
-                {promoAnalytics.totalDiscountGiven > 0 && <p>💸 RM{promoAnalytics.totalDiscountGiven} total discounts given, generating RM{promoAnalytics.totalPromoRevenue} in revenue.</p>}
-                {promoAnalytics.avgPromoOrder > promoAnalytics.avgNonPromoOrder && <p>✅ Promo customers spend RM{promoAnalytics.avgPromoOrder - promoAnalytics.avgNonPromoOrder} more per order — promos encourage larger carts.</p>}
+                {promoAnalytics.totalDiscountGiven > 0 && <p>💸 <Private kind="money">RM {promoAnalytics.totalDiscountGiven}</Private> total discounts given, generating <Private kind="money">RM {promoAnalytics.totalPromoRevenue}</Private> in revenue.</p>}
+                {promoAnalytics.avgPromoOrder > promoAnalytics.avgNonPromoOrder && <p>✅ Promo customers spend <Private kind="money">RM {promoAnalytics.avgPromoOrder - promoAnalytics.avgNonPromoOrder}</Private> more per order — promos encourage larger carts.</p>}
                 {promoAnalytics.autoDiscOrders > 0 && <p>🌙 Extended stay discount used {promoAnalytics.autoDiscOrders} times — customers are booking longer trips!</p>}
               </div>
             </div>

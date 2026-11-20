@@ -26,6 +26,7 @@ import FirstItemTour from "@/components/vendor/FirstItemTour";
 import FirstOrderTour from "@/components/vendor/FirstOrderTour";
 import { summarize, getStage, daysUntil, type Order } from "@/lib/orderFlow";
 import { refreshPushIfEnabled } from "@/lib/pushRegistration";
+import { PrivacyProvider, PrivacyToggle, Private, usePrivacy } from "@/lib/privacy";
 
 type VendorData = {
   name: string;
@@ -196,6 +197,7 @@ function resolveTab(raw: string | null): { tab: Tab; extra?: Record<string, stri
 
 function Dashboard({ vendorData, vendorId, isAdminOverride }: { user: User; vendorData: VendorData; vendorId: string; isAdminOverride?: boolean }) {
   const searchParams = useSearchParams();
+  const { on: privacy } = usePrivacy();
   const router = useRouter();
   const adminOverride = searchParams.get("admin_override");
   const resolved = resolveTab(searchParams.get("tab"));
@@ -294,9 +296,10 @@ function Dashboard({ vendorData, vendorId, isAdminOverride }: { user: User; vend
           </div>
           <button type="button" onClick={() => navigate("settings", { group: "account", section: "credits" })}
             className={`min-h-10 px-3 rounded-xl text-[13px] font-bold flex items-center gap-1.5 border ${credits > 10 ? "bg-emerald-50 border-emerald-200 text-emerald-900" : credits > 0 ? "bg-amber-100 border-amber-300 text-amber-900" : "bg-red-50 border-red-200 text-red-900"}`}
-            aria-label={`${credits} credits. Open credits`}>
-            <i className="fas fa-coins" aria-hidden="true"></i>{credits}
+            aria-label={privacy ? "Credits. Open credits" : `${credits} credits. Open credits`}>
+            <i className="fas fa-coins" aria-hidden="true"></i><Private kind="number" reveal={false}>{credits}</Private>
           </button>
+          <PrivacyToggle />
           <a href={shopUrl} target="_blank" rel="noreferrer" aria-label="View your live shop"
             className="w-10 h-10 rounded-xl border border-slate-200 bg-white text-slate-700 flex items-center justify-center hover:bg-slate-100">
             <i className="fas fa-external-link-alt text-sm" aria-hidden="true"></i>
@@ -469,7 +472,9 @@ function StorePageContent() {
         </div>
       )}
       <div className={isAdminOverride ? "pt-8" : ""}>
-        <Dashboard user={user} vendorData={vendorData} vendorId={vendorId} isAdminOverride={isAdminOverride} />
+        <PrivacyProvider>
+          <Dashboard user={user} vendorData={vendorData} vendorId={vendorId} isAdminOverride={isAdminOverride} />
+        </PrivacyProvider>
       </div>
     </>
   );

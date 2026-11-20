@@ -1,5 +1,6 @@
 "use client";
 
+import { usePrivacy } from "@/lib/privacy";
 import { PageHeader, NavRow, SectionTitle } from "@/components/ui/kit";
 
 type Props = {
@@ -12,6 +13,7 @@ type Props = {
 };
 
 export default function MoreTab({ shopUrl, credits, unrepliedReviews, onNavigate, onRestartTour, onLogout }: Props) {
+  const privacy = usePrivacy();
   return (
     <div className="flex flex-col gap-4 pb-24">
       <PageHeader title="More" subtitle="Grow your shop and manage your account" />
@@ -32,7 +34,7 @@ export default function MoreTab({ shopUrl, credits, unrepliedReviews, onNavigate
       <div className="flex flex-col gap-2">
         <SectionTitle>Account</SectionTitle>
         <NavRow icon="fa-cog" title="Settings" hint="Booking rules, delivery, deposit, contact and invoices" onClick={() => onNavigate("settings")} />
-        <NavRow icon="fa-coins" title="Credits" hint={`${credits} left · top up or invite a vendor`} onClick={() => onNavigate("settings", { group: "account", section: "credits" })} />
+        <NavRow icon="fa-coins" title="Credits" hint={privacy.on ? "Top up or invite a vendor" : `${credits} left · top up or invite a vendor`} onClick={() => onNavigate("settings", { group: "account", section: "credits" })} />
         {onRestartTour && <NavRow icon="fa-route" title="Replay the welcome tour" hint="A short walkthrough of the dashboard" onClick={onRestartTour} />}
         <NavRow icon="fa-power-off" title="Log out" tone="danger" onClick={onLogout} />
       </div>

@@ -114,7 +114,9 @@ export function topItems(orders: Order[], limit = 5): TopItem[] {
 
 /** Share of orders that a vendor left without an update after their dates. */
 export function updateRate(orders: Order[], now: Date = new Date()): { stale: number; total: number } {
-  const today = now.toISOString().slice(0, 10);
+  // Local date (booking dates are local), not UTC: before 8 am in Malaysia
+  // the UTC date is still yesterday.
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const past = orders.filter(o => !o.deleted && (o.bookingDates?.end || "9999") < today);
   const stale = past.filter(o => o.status === "pending" || o.status === "confirmed" || o.status === "conflict").length;
   return { stale, total: past.length };

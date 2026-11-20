@@ -215,7 +215,7 @@ export function Segments<T extends string>({ items, value, onChange, label, role
 }
 
 /** Dark summary strip with 2–4 figures. */
-export function SummaryStrip({ items }: { items: { value: string | number; label: string }[] }) {
+export function SummaryStrip({ items }: { items: { value: ReactNode; label: string }[] }) {
   const cols = items.length === 2 ? "grid-cols-2" : items.length === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3";
   return (
     <div className={`bg-[#062c24] rounded-2xl px-4 py-3.5 grid ${cols} gap-x-2 gap-y-3 text-white`}>
@@ -230,7 +230,7 @@ export function SummaryStrip({ items }: { items: { value: string | number; label
 }
 
 /** Light stat tile for grids of figures. */
-export function StatCard({ label, value, hint, tone }: { label: string; value: string | number; hint?: string; tone?: "good" | "warn" | "bad" }) {
+export function StatCard({ label, value, hint, tone }: { label: string; value: ReactNode; hint?: ReactNode; tone?: "good" | "warn" | "bad" }) {
   const color = tone === "good" ? "text-emerald-800" : tone === "warn" ? "text-amber-800" : tone === "bad" ? "text-red-800" : "text-[#062c24]";
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-3.5 flex flex-col gap-0.5 min-w-0">

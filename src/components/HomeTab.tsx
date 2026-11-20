@@ -1,5 +1,6 @@
 "use client";
 
+import { Private, usePrivacy } from "@/lib/privacy";
 import { useEffect, useMemo, useState } from "react";
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
@@ -69,6 +70,7 @@ export default function HomeTab({ vendorId, vendorData, onNavigate }: HomeTabPro
   const credits = vendorData.credits ?? 0;
 
   const openOrder = (id: string) => onNavigate("orders", { order: id });
+  const privacy = usePrivacy();
 
   return (
     <div className="flex flex-col gap-4 pb-24">
@@ -84,8 +86,8 @@ export default function HomeTab({ vendorId, vendorData, onNavigate }: HomeTabPro
 
       <SummaryStrip items={[
         { value: summary.action, label: "Need action" },
-        { value: `RM ${summary.toCollect.toLocaleString()}`, label: "To collect" },
-        { value: `RM ${monthCollected.toLocaleString()}`, label: `Received in ${now.toLocaleDateString("en-MY", { month: "long" })}` },
+        { value: <Private kind="money">RM {summary.toCollect.toLocaleString()}</Private>, label: "To collect" },
+        { value: <Private kind="money">RM {monthCollected.toLocaleString()}</Private>, label: `Received in ${now.toLocaleDateString("en-MY", { month: "long" })}` },
       ]} />
 
       {credits <= 5 && (
@@ -93,7 +95,7 @@ export default function HomeTab({ vendorId, vendorData, onNavigate }: HomeTabPro
           className={`text-left rounded-2xl border px-4 py-3.5 flex items-center gap-3 ${credits === 0 ? "bg-red-50 border-red-200" : "bg-amber-100 border-amber-300"}`}>
           <i className={`fas fa-coins ${credits === 0 ? "text-red-800" : "text-amber-900"}`} aria-hidden="true"></i>
           <span className="flex-1 flex flex-col gap-0.5">
-            <span className={`text-sm font-bold ${credits === 0 ? "text-red-900" : "text-amber-900"}`}>{credits === 0 ? "No credits left" : `${credits} credit${credits === 1 ? "" : "s"} left`}</span>
+            <span className={`text-sm font-bold ${credits === 0 ? "text-red-900" : "text-amber-900"}`}>{credits === 0 ? "No credits left" : privacy.on ? "Credits running low" : `${credits} credit${credits === 1 ? "" : "s"} left`}</span>
             <span className={`text-[13px] ${credits === 0 ? "text-red-900" : "text-amber-900"}`}>{credits === 0 ? "New customers cannot send you booking requests until you top up." : "Top up so you keep receiving new booking requests."}</span>
           </span>
           <i className="fas fa-chevron-right text-slate-500" aria-hidden="true"></i>
@@ -140,10 +142,10 @@ export default function HomeTab({ vendorId, vendorData, onNavigate }: HomeTabPro
               className="text-left bg-white border border-slate-200 rounded-2xl px-4 py-3 flex items-center gap-3 hover:border-slate-400">
               <span className="flex-1 min-w-0 flex flex-col gap-1">
                 <span className="flex items-center gap-2 min-w-0">
-                  <span className="text-[15px] font-bold text-slate-900 truncate">{customerLabel(o)}</span>
+                  <span className="text-[15px] font-bold text-slate-900 truncate">{privacy.name(customerLabel(o))}</span>
                   <Chip tone={toneMap[a.tone]}>{a.tag}</Chip>
                 </span>
-                <span className="text-[13px] text-slate-600 truncate">{a.reason}</span>
+                <span className="text-[13px] text-slate-600 truncate">{privacy.money(a.reason)}</span>
               </span>
               <span className="text-[13px] font-bold text-[#062c24] whitespace-nowrap">{a.label}</span>
             </button>
@@ -171,7 +173,7 @@ export default function HomeTab({ vendorId, vendorData, onNavigate }: HomeTabPro
                       <i className={`fas ${kind === "out" ? "fa-arrow-up" : "fa-arrow-down"}`}></i>
                     </span>
                     <span className="flex-1 min-w-0 flex flex-col">
-                      <span className="text-sm font-semibold text-slate-900 truncate">{kind === "out" ? "Pickup" : "Return"} · {customerLabel(order)}</span>
+                      <span className="text-sm font-semibold text-slate-900 truncate">{kind === "out" ? "Pickup" : "Return"} · {privacy.name(customerLabel(order))}</span>
                       <span className="text-xs text-slate-600 truncate">{itemsSummary(order)} · {formatDateRange(order.bookingDates)}</span>
                     </span>
                   </button>

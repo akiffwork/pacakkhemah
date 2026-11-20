@@ -7,6 +7,7 @@ import {
   SKIP_REASONS, CANCEL_REASONS, KEEP_REASONS,
 } from "@/lib/orderFlow";
 import { customerLabel } from "./OrderCard";
+import { usePrivacy } from "@/lib/privacy";
 
 const primaryBtn = "min-h-13 w-full rounded-2xl bg-[#062c24] text-white text-[15px] font-bold hover:bg-[#0a4135] disabled:opacity-50";
 const secondaryBtn = "min-h-13 w-full rounded-2xl border border-slate-300 bg-white text-slate-700 text-[15px] font-semibold hover:bg-slate-50";
@@ -42,7 +43,8 @@ export function PaidSheet({ order, mode, onDeposit, onFull, onBalance, onNotYet,
   onDeposit: () => void; onFull: () => void; onBalance: () => void; onNotYet: () => void; onClose: () => void;
 }) {
   const p = getPayment(order);
-  const first = (order.customerName || "the customer").split(" ")[0];
+  const { money: m, name: nm } = usePrivacy();
+  const first = nm(order.customerName || "the customer").split(" ")[0];
   return (
     <BottomSheet title={mode === "balance" ? `Did ${first} pay the balance?` : `Did ${first} pay?`} onClose={onClose}>
       <p className="text-sm font-semibold text-emerald-800 flex items-center gap-2 -mt-1">
@@ -53,22 +55,22 @@ export function PaidSheet({ order, mode, onDeposit, onFull, onBalance, onNotYet,
         {p.deposit > 0 && (
           <div className="flex justify-between">
             <span className="text-slate-600">Deposit</span>
-            <span className={`font-semibold ${p.depositReceived ? "text-emerald-800" : "text-amber-800"}`}>RM {p.deposit} {p.depositReceived ? "received" : "not received"}</span>
+            <span className={`font-semibold ${p.depositReceived ? "text-emerald-800" : "text-amber-800"}`}>{m(`RM ${p.deposit}`)} {p.depositReceived ? "received" : "not received"}</span>
           </div>
         )}
         <div className="flex justify-between">
           <span className="text-slate-600">Rental</span>
-          <span className={`font-semibold ${p.rentalReceived ? "text-emerald-800" : "text-amber-800"}`}>RM {p.rental} {p.rentalReceived ? "received" : "not received"}</span>
+          <span className={`font-semibold ${p.rentalReceived ? "text-emerald-800" : "text-amber-800"}`}>{m(`RM ${p.rental}`)} {p.rentalReceived ? "received" : "not received"}</span>
         </div>
       </div>
       <div className="flex flex-col gap-2.5">
         {mode === "payment" ? (
           <>
-            <button type="button" className={primaryBtn} onClick={onFull}>Full payment received · RM {p.total}</button>
-            {p.deposit > 0 && <button type="button" className={secondaryBtn} onClick={onDeposit}>Deposit only · RM {p.deposit}</button>}
+            <button type="button" className={primaryBtn} onClick={onFull}>{m(`Full payment received · RM ${p.total}`)}</button>
+            {p.deposit > 0 && <button type="button" className={secondaryBtn} onClick={onDeposit}>{m(`Deposit only · RM ${p.deposit}`)}</button>}
           </>
         ) : (
-          <button type="button" className={primaryBtn} onClick={onBalance}>Yes, RM {p.balanceDue} received</button>
+          <button type="button" className={primaryBtn} onClick={onBalance}>{m(`Yes, RM ${p.balanceDue} received`)}</button>
         )}
         <button type="button" className={secondaryBtn} onClick={onNotYet}>Not yet</button>
       </div>
@@ -81,16 +83,17 @@ export function PaidSheet({ order, mode, onDeposit, onFull, onBalance, onNotYet,
 export function SkipSheet({ order, onConfirm, onClose }: { order: Order; onConfirm: (reason: string) => void; onClose: () => void }) {
   const gaps = pickupGaps(order);
   const p = getPayment(order);
+  const { money: m } = usePrivacy();
   const [reason, setReason] = useState("");
   const [other, setOther] = useState("");
   const final = reason === "Other reason" ? other.trim() : reason;
-  const title = p.balanceDue > 0 ? `Hand over gear with RM ${p.balanceDue} unpaid?` : "Hand over gear without a signed agreement?";
+  const title = m(p.balanceDue > 0 ? `Hand over gear with RM ${p.balanceDue} unpaid?` : "Hand over gear without a signed agreement?");
   return (
     <BottomSheet title={title} onClose={onClose}>
       <p className="text-sm leading-relaxed text-slate-600 -mt-1">You can continue. Tell us why, so this stays on your follow-up list.</p>
       <ul className="text-sm text-slate-700 flex flex-col gap-1">
         {gaps.map(g => (
-          <li key={g.step} className="flex items-center gap-2"><i className="fas fa-exclamation-circle text-amber-700" aria-hidden="true"></i><span className="first-letter:uppercase">{g.label}</span></li>
+          <li key={g.step} className="flex items-center gap-2"><i className="fas fa-exclamation-circle text-amber-700" aria-hidden="true"></i><span className="first-letter:uppercase">{m(g.label)}</span></li>
         ))}
       </ul>
       <ReasonChips reasons={SKIP_REASONS} value={reason} onChange={setReason} label="Reason" />
@@ -111,13 +114,14 @@ export function SkipSheet({ order, onConfirm, onClose }: { order: Order; onConfi
 export function CancelSheet({ order, onConfirm, onClose }: { order: Order; onConfirm: (reason: string) => void; onClose: () => void }) {
   const isNew = order.status === "pending" || order.status === "conflict";
   const p = getPayment(order);
+  const { name: nm } = usePrivacy();
   const [reason, setReason] = useState("");
   const [other, setOther] = useState("");
   const final = reason === "Other reason" ? other.trim() : reason;
   return (
     <BottomSheet title={isNew ? "Decline this order?" : "Cancel this order?"} onClose={onClose}>
       <p className="text-sm leading-relaxed text-slate-600 -mt-1">
-        {customerLabel(order)} · {formatShortDate(order.bookingDates?.start)} to {formatShortDate(order.bookingDates?.end)}. The dates are released on your calendar.
+        {nm(customerLabel(order))} · {formatShortDate(order.bookingDates?.start)} to {formatShortDate(order.bookingDates?.end)}. The dates are released on your calendar.
       </p>
       {(p.depositReceived || p.rentalReceived) && (
         <div className="bg-amber-100 border border-amber-300 rounded-2xl px-3.5 py-3 text-[13px] leading-relaxed text-amber-900">
@@ -143,6 +147,7 @@ export function SettleSheet({ order, onConfirm, onClose }: {
   onClose: () => void;
 }) {
   const p = getPayment(order);
+  const { money: m, name: nm } = usePrivacy();
   const [choice, setChoice] = useState<DepositOutcome>("refunded");
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
@@ -156,8 +161,8 @@ export function SettleSheet({ order, onConfirm, onClose }: {
     { key: "kept", label: "Keep all of it" },
   ];
   return (
-    <BottomSheet title={`Settle the RM ${p.deposit} deposit`} onClose={onClose}>
-      <p className="text-sm leading-relaxed text-slate-600 -mt-1">{customerLabel(order)} · gear returned. What happens to the deposit?</p>
+    <BottomSheet title={m(`Settle the RM ${p.deposit} deposit`)} onClose={onClose}>
+      <p className="text-sm leading-relaxed text-slate-600 -mt-1">{nm(customerLabel(order))} · gear returned. What happens to the deposit?</p>
       <div role="radiogroup" aria-label="Deposit outcome" className="flex flex-col gap-2">
         {options.map(opt => (
           <button key={opt.key} type="button" role="radio" aria-checked={choice === opt.key} onClick={() => setChoice(opt.key)}
@@ -181,8 +186,8 @@ export function SettleSheet({ order, onConfirm, onClose }: {
         </div>
       )}
       <div className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 flex flex-col gap-1.5 text-sm">
-        <div className="flex justify-between"><span className="text-slate-600">Refund to customer</span><span className="font-bold">RM {refund}</span></div>
-        <div className="flex justify-between"><span className="text-slate-600">Kept{reason && kept > 0 ? ` for ${reason.toLowerCase()}` : ""}</span><span className="font-bold">RM {kept}</span></div>
+        <div className="flex justify-between"><span className="text-slate-600">Refund to customer</span><span className="font-bold">{m(`RM ${refund}`)}</span></div>
+        <div className="flex justify-between"><span className="text-slate-600">Kept{reason && kept > 0 ? ` for ${reason.toLowerCase()}` : ""}</span><span className="font-bold">{m(`RM ${kept}`)}</span></div>
       </div>
       <button type="button" className={primaryBtn} disabled={invalid} onClick={() => onConfirm(choice, kept, choice === "refunded" ? "" : reason)}>
         {p.rentalReceived ? "Confirm and complete order" : "Confirm deposit"}
@@ -190,7 +195,7 @@ export function SettleSheet({ order, onConfirm, onClose }: {
       <p className="text-[13px] leading-relaxed text-slate-600 text-center">
         {p.rentalReceived
           ? "The order is completed automatically and the review link is ready to send."
-          : `Rental RM ${p.rental} is still unpaid, so the order stays open until it is marked received.`}
+          : m(`Rental RM ${p.rental} is still unpaid, so the order stays open until it is marked received.`)}
       </p>
     </BottomSheet>
   );
