@@ -1,5 +1,6 @@
 "use client";
 
+import { localDateStr, parseLocalDate } from "@/lib/localDate";
 import { Private, usePrivacy, maskText } from "@/lib/privacy";
 import { useEffect, useRef, useState } from "react";
 import { db, auth } from "@/lib/firebase";
@@ -68,13 +69,13 @@ const MONTHS = [
 
 function calculateNights(start: string, end: string): number {
   const diff = Math.round(
-    (new Date(end).getTime() - new Date(start).getTime()) / 86400000
+    (parseLocalDate(end).getTime() - parseLocalDate(start).getTime()) / 86400000
   );
   return Math.max(1, diff + 1);
 }
 
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
+  const d = parseLocalDate(dateStr);
   return `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}`;
 }
 
@@ -83,7 +84,7 @@ function generateId(): string {
 }
 
 function getToday(): string {
-  return new Date().toISOString().split("T")[0];
+  return localDateStr();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -306,7 +307,7 @@ export default function CalendarView({ vendorId: vendorIdProp, orderId }: { vend
   }
 
   function isWeeklyOffDay(dateStr: string): boolean {
-    return weeklyOff[new Date(dateStr).getDay()] === true;
+    return weeklyOff[parseLocalDate(dateStr).getDay()] === true;
   }
 
   function getEntriesForDate(dateStr: string): GroupedEntry[] {
