@@ -2,6 +2,7 @@
 // Sales figures for the Performance tab, from orders using the pipeline
 // model in orderFlow (rental received, deposits, stages, cancel reasons).
 
+import { localDateStr } from "./localDate";
 import { type Order, getPayment, getStage, toMillis } from "@/lib/orderFlow";
 
 export type MonthBar = { key: string; label: string; received: number; orders: number };
@@ -116,7 +117,7 @@ export function topItems(orders: Order[], limit = 5): TopItem[] {
 export function updateRate(orders: Order[], now: Date = new Date()): { stale: number; total: number } {
   // Local date (booking dates are local), not UTC: before 8 am in Malaysia
   // the UTC date is still yesterday.
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const today = localDateStr(now);
   const past = orders.filter(o => !o.deleted && (o.bookingDates?.end || "9999") < today);
   const stale = past.filter(o => o.status === "pending" || o.status === "confirmed" || o.status === "conflict").length;
   return { stale, total: past.length };

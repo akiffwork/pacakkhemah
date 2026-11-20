@@ -1,6 +1,9 @@
 // jestConfig.js
 const nextJest = require('next/jest');
 
+// Run tests in the users' timezone so date logic is checked the way it runs.
+process.env.TZ = 'Asia/Kuala_Lumpur';
+
 const createJestConfig = nextJest({
   dir: './',
 });
