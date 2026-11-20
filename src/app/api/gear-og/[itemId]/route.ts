@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAllowedImageUrl } from "@/lib/imageProxy";
 
 const PROJECT_ID = "kuantan-unplugged";
 const FIREBASE_API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY!;
@@ -9,7 +10,8 @@ async function proxyImage(imgUrl: string): Promise<NextResponse | null> {
   try {
     const imgRes = await fetch(imgUrl);
     if (!imgRes.ok) return null;
-    const contentType = imgRes.headers.get("content-type") || "image/jpeg";
+    const contentType = imgRes.headers.get("content-type") || "";
+    if (!contentType.startsWith("image/")) return null;
     const buffer = await imgRes.arrayBuffer();
     return new NextResponse(buffer, {
       status: 200,
@@ -47,7 +49,7 @@ export async function GET(
       const gear = await fsRes.json();
       if (gear?.fields) {
         const imgUrl = extractImgUrl(gear);
-        if (imgUrl.startsWith("http")) {
+        if (isAllowedImageUrl(imgUrl)) {
           const proxied = await proxyImage(imgUrl);
           if (proxied) return proxied;
         }
@@ -82,7 +84,7 @@ export async function GET(
       const firstDoc = qData?.[0]?.document;
       if (firstDoc?.fields) {
         const imgUrl = extractImgUrl(firstDoc);
-        if (imgUrl.startsWith("http")) {
+        if (isAllowedImageUrl(imgUrl)) {
           const proxied = await proxyImage(imgUrl);
           if (proxied) return proxied;
         }

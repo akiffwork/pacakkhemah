@@ -779,6 +779,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
       // Always log analytics lead for every order.
       // Credit deduction is handled server-side by the onNewOrder Cloud Function
       // (client cannot write to vendor.credits due to security rules).
+      let leadId: string | null = null;
       try {
         const analyticsPayload = JSON.parse(JSON.stringify({
           vendorId,
@@ -800,7 +801,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
           })),
         }));
         analyticsPayload.timestamp = serverTimestamp();
-        await addDoc(collection(db, "analytics"), analyticsPayload);
+        leadId = (await addDoc(collection(db, "analytics"), analyticsPayload)).id;
       } catch (e) {
         console.warn("Analytics write error:", e);
       }
@@ -825,6 +826,7 @@ function ShopPageContent({ params }: { params: Promise<{ slug: string }> }) {
           bookingDates: { start: pickupDate, end: returnDate },
           status: "pending" as const,
           createdAt: serverTimestamp(),
+          ...(leadId ? { leadId } : {}),
         };
         const orderRef = await addDoc(collection(db, "orders"), orderData);
 

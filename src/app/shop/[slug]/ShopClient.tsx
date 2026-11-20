@@ -1206,6 +1206,9 @@ function ShopPageContent({
       // Always log analytics lead for every order.
       // Credit deduction is handled server-side by the onNewOrder Cloud Function
       // (client cannot write to vendor.credits due to security rules).
+      // The lead's ID goes on the order, so a review can only refund a credit
+      // that was actually charged for that booking.
+      let leadId: string | null = null;
       try {
         const analyticsPayload = JSON.parse(JSON.stringify({
           vendorId,
@@ -1229,7 +1232,7 @@ function ShopPageContent({
           })),
         }));
         analyticsPayload.timestamp = serverTimestamp();
-        await addDoc(collection(db, "analytics"), analyticsPayload);
+        leadId = (await addDoc(collection(db, "analytics"), analyticsPayload)).id;
       } catch (e) {
         console.warn("Analytics write error:", e);
       }
@@ -1314,6 +1317,10 @@ function ShopPageContent({
           campingLocation: campingLocation.trim(),
           status: "pending" as const,
           createdAt: serverTimestamp(),
+          ...(leadId ? { leadId } : {}),
+          // The booking's dates are added to the calendar right below. Set the
+          // flag here: customers can't update an order after creating it.
+          ...(pickupDate && returnDate ? { calendarLinked: true, calendarDates: { start: pickupDate, end: returnDate } } : {}),
           ...(appliedPromo ? {
             promoCode: appliedPromo.code,
             promoDiscount: Math.round(promoDisc),
@@ -1326,8 +1333,9 @@ function ShopPageContent({
         };
         const orderRef = await addDoc(collection(db, "orders"), orderData);
 
-        // Track usage on all applied discount rules
-        const usageEntry = { phone: savedPhone, name: savedName, orderId: orderRef.id, date: new Date().toISOString() };
+        // Track usage on all applied discount rules. Discount docs are public,
+        // so no customer name or phone goes in here; the order has them.
+        const usageEntry = { orderId: orderRef.id, date: new Date().toISOString() };
         const usageUpdates: Promise<void>[] = [];
         const trackRule = (id?: string) => {
           if (id && vendorId) usageUpdates.push(
@@ -1366,10 +1374,6 @@ function ShopPageContent({
               }));
             }
           }
-          calDocs.push(updateDoc(doc(db, "orders", orderRef.id), {
-            calendarLinked: true,
-            calendarDates: { start: pickupDate, end: returnDate },
-          }));
           await Promise.all(calDocs).catch(() => {});
         }
 

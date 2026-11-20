@@ -2,7 +2,7 @@
 
 import { localDateStr } from "@/lib/localDate";
 import { useEffect, useMemo, useState } from "react";
-import { db } from "@/lib/firebase";
+import { db, auth } from "@/lib/firebase";
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDocs, writeBatch } from "firebase/firestore";
 import GearFlyerModal from "@/components/GearFlyerModal";
 import ItemEditor from "@/components/inventory/ItemEditor";
@@ -85,7 +85,7 @@ export default function InventoryTab({ vendorId, onOpenPromotions }: InventoryTa
     try {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id, ...rest } = item;
-      await addDoc(collection(db, "gear"), { ...rest, name: `${item.name} (copy)`, paused: true, deleted: false });
+      await addDoc(collection(db, "gear"), { ...rest, owner_uid: auth.currentUser?.uid, name: `${item.name} (copy)`, paused: true, deleted: false });
       setEditing(null);
       showToast("Copy created. It is paused until you check it.");
     } catch (e) { console.error(e); showToast("Could not duplicate the item", "error"); }
