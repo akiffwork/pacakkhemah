@@ -149,10 +149,46 @@ service cloud.firestore {
     }
 
     // --- 7. AGREEMENTS ---
+    function isStrMax(v, n) { return v is string && v.size() <= n; }
+    function optStrMax(d, k, n) { return !(k in d) || d[k] == null || isStrMax(d[k], n); }
+    function validAgreement(d) {
+      return d.keys().hasOnly([
+               'vendorId', 'customerName', 'customerPhone', 'idType', 'idNumber', 'orderId',
+               'rentalSummary', 'vendorTerms', 'generalTerms', 'customerSignature',
+               'customerSignedAt', 'vendorSignedAt', 'verificationCode', 'timestamp', 'status', 'userAgent'])
+        && d.keys().hasAll(['vendorId', 'customerName', 'customerPhone', 'idNumber', 'customerSignature', 'timestamp', 'status'])
+        && isStrMax(d.vendorId, 64) && exists(/databases/$(database)/documents/vendors/$(d.vendorId))
+        && isStrMax(d.customerName, 120) && d.customerName.size() > 0
+        && isStrMax(d.customerPhone, 20)
+        && (!('idType' in d) || d.idType in ['ic', 'passport'])
+        && isStrMax(d.idNumber, 20) && d.idNumber.size() >= 6
+        && isStrMax(d.customerSignature, 120) && d.customerSignature.size() > 0
+        && d.status == 'signed'
+        && d.timestamp == request.time
+        && optStrMax(d, 'customerSignedAt', 40) && optStrMax(d, 'vendorSignedAt', 40)
+        && optStrMax(d, 'verificationCode', 24) && optStrMax(d, 'userAgent', 400)
+        && (!('vendorTerms' in d) || (d.vendorTerms is list && d.vendorTerms.size() <= 100))
+        && (!('generalTerms' in d) || (d.generalTerms is list && d.generalTerms.size() <= 20))
+        && (!('rentalSummary' in d) || d.rentalSummary == null || d.rentalSummary is map)
+        && (!('orderId' in d) || d.orderId == null
+            || (isStrMax(d.orderId, 64)
+                && exists(/databases/$(database)/documents/orders/$(d.orderId))
+                && get(/databases/$(database)/documents/orders/$(d.orderId)).data.vendorId == d.vendorId));
+    }
+
     match /agreements/{docId} {
-      allow create: if true;
+      // Customers sign without an account, so creation stays open, but only
+      // a well-formed agreement for a real vendor (and, when given, an order
+      // of that vendor) is accepted. Limits keep junk and huge docs out.
+      allow create: if validAgreement(request.resource.data);
       allow read: if isAdmin() || isVendorOwner(resource.data.vendorId);
-      allow update: if false;
+      // The signed content never changes. The owning vendor may only set or
+      // clear which of their own orders it is linked to.
+      allow update: if isVendorOwner(resource.data.vendorId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orderId', 'linkSkipped', 'requestedOrderId'])
+        && (request.resource.data.orderId == null
+            || (request.resource.data.orderId is string
+                && get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.vendorId == resource.data.vendorId));
       allow delete: if isAdmin();
     }
 
