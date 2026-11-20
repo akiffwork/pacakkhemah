@@ -1,5 +1,6 @@
 "use client";
 
+import { localDateStr } from "@/lib/localDate";
 import { useMemo, useState } from "react";
 import { addDoc, collection, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -155,7 +156,7 @@ function DiscountEditor({ vendorId, discount, gear, existingCodes, onClose, onTo
 
   async function endNow() {
     if (!discount) return;
-    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    const yesterday = localDateStr(new Date(Date.now() - 86_400_000));
     try {
       await updateDoc(doc(db, "vendors", vendorId, "discounts", discount.id), { validUntil: yesterday, ...(discount.validFrom && discount.validFrom > yesterday ? { validFrom: null } : {}) });
       onToast("Discount ended"); onClose();

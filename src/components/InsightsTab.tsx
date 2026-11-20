@@ -1,5 +1,6 @@
 "use client";
 
+import { localDateStr } from "@/lib/localDate";
 import { Private, usePrivacy } from "@/lib/privacy";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
@@ -395,7 +396,7 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
   // ═══════════════════════════════════════════════════════════
   const forecast = (() => {
     const today = new Date();
-    const todayStr = today.toISOString().split("T")[0];
+    const todayStr = localDateStr(today);
     const futureOrders = orders.filter(o =>
       (o.status === "confirmed" || o.status === "pending") &&
       o.bookingDates?.start >= todayStr
@@ -404,7 +405,7 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
     function sumInDays(days: number) {
       const cutoff = new Date(today);
       cutoff.setDate(cutoff.getDate() + days);
-      const cutoffStr = cutoff.toISOString().split("T")[0];
+      const cutoffStr = localDateStr(cutoff);
       const matched = futureOrders.filter(o => o.bookingDates.start <= cutoffStr);
       return {
         revenue: matched.reduce((s, o) => s + (o.rentalAmount ?? o.totalAmount ?? 0), 0),
@@ -424,8 +425,8 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
       weekStart.setDate(weekStart.getDate() + i * 7);
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekEnd.getDate() + 6);
-      const wStart = weekStart.toISOString().split("T")[0];
-      const wEnd = weekEnd.toISOString().split("T")[0];
+      const wStart = localDateStr(weekStart);
+      const wEnd = localDateStr(weekEnd);
       const weekOrders = futureOrders.filter(o => o.bookingDates.start >= wStart && o.bookingDates.start <= wEnd);
       weeks.push({
         label: `${weekStart.getDate()} ${MONTHS[weekStart.getMonth()]}`,
@@ -442,7 +443,7 @@ export default function InsightsTab({ vendorId, view: viewProp }: { vendorId: st
     // Compare to last 30 days
     const past30Start = new Date(today);
     past30Start.setDate(past30Start.getDate() - 30);
-    const past30Str = past30Start.toISOString().split("T")[0];
+    const past30Str = localDateStr(past30Start);
     const past30Orders = orders.filter(o =>
       o.status !== "cancelled" &&
       o.createdAt?.toDate?.()?.toISOString?.()?.split("T")[0] >= past30Str

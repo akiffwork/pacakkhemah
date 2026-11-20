@@ -1,5 +1,6 @@
 "use client";
 
+import { localDateStr } from "@/lib/localDate";
 import { useEffect, useState } from "react";
 import {
   collection,
@@ -434,7 +435,7 @@ export default function WizardClient({ slug }: { slug: string }) {
                     </label>
                     <input
                       type="date"
-                      min={new Date().toISOString().split("T")[0]}
+                      min={localDateStr()}
                       value={answers.dates?.from || ""}
                       onChange={(e) =>
                         setAnswers((prev) => ({
@@ -451,7 +452,7 @@ export default function WizardClient({ slug }: { slug: string }) {
                     </label>
                     <input
                       type="date"
-                      min={answers.dates?.from || new Date().toISOString().split("T")[0]}
+                      min={answers.dates?.from || localDateStr()}
                       value={answers.dates?.to || ""}
                       onChange={(e) =>
                         setAnswers((prev) => ({
