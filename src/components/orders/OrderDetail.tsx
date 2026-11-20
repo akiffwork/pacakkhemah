@@ -8,6 +8,7 @@ import {
 } from "@/lib/orderFlow";
 import { type MsgKind, type MsgLang, MESSAGE_LABELS } from "@/lib/orderMessages";
 import { ProgressStrip, customerLabel, toneChip } from "./OrderCard";
+import { Private, usePrivacy } from "@/lib/privacy";
 import { downloadAgreement, useVendorBits, type Agreement } from "./AgreementsView";
 import RentalItems from "./RentalItems";
 import { summaryFromOrder } from "@/lib/rentalSummary";
@@ -127,8 +128,14 @@ export default function OrderDetail({
   const [showLinkPicker, setShowLinkPicker] = useState(false);
   const [agreementBusy, setAgreementBusy] = useState(false);
   const vendorBits = useVendorBits(order.vendorId || "");
+  const privacy = usePrivacy();
+  const $ = (n: number) => <Private kind="money">RM {n}</Private>;
 
-  async function openAgreementPdf() {
+  function openAgreementPdf() {
+    privacy.guard(() => { void openAgreementPdfNow(); }, "The agreement shows the customer's name, number, ID and the amounts.");
+  }
+
+  async function openAgreementPdfNow() {
     if (!order.agreementId) return;
     setAgreementBusy(true);
     try {
@@ -180,7 +187,7 @@ export default function OrderDetail({
     : null;
 
   return (
-    <div className="fixed inset-0 z-[500] bg-slate-50 flex flex-col" role="dialog" aria-modal="true" aria-label={`Order for ${customerLabel(order)}`}>
+    <div className="fixed inset-0 z-[500] bg-slate-50 flex flex-col" role="dialog" aria-modal="true" aria-label={`Order for ${privacy.name(customerLabel(order))}`}>
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-xl mx-auto p-4 flex flex-col gap-4">
 
@@ -191,13 +198,14 @@ export default function OrderDetail({
               <i className="fas fa-chevron-left" aria-hidden="true"></i>
             </button>
             <div className="flex-1 min-w-0">
-              <h1 style={{ textTransform: "none" }} className={`text-[22px] font-extrabold leading-tight truncate ${order.customerName ? "text-[#062c24]" : "text-slate-600"}`}>{customerLabel(order)}</h1>
+              <h1 style={{ textTransform: "none" }} className={`text-[22px] font-extrabold leading-tight truncate ${order.customerName ? "text-[#062c24]" : "text-slate-600"}`}><Private kind="name" text={customerLabel(order)}>{customerLabel(order)}</Private></h1>
               <p className="text-[13px] text-slate-600">
-                {formatShortDate(order.bookingDates?.start)} – {formatShortDate(order.bookingDates?.end)} · {nights === 0 ? "Day trip" : `${nights} night${nights === 1 ? "" : "s"}`} · RM {p.total}
+                {formatShortDate(order.bookingDates?.start)} – {formatShortDate(order.bookingDates?.end)} · {nights === 0 ? "Day trip" : `${nights} night${nights === 1 ? "" : "s"}`} · {$(p.total)}
               </p>
             </div>
             {order.customerPhone && (
               <a href={`https://wa.me/${order.customerPhone.replace(/[\s\-+()]/g, "")}`} target="_blank" rel="noreferrer" aria-label="Open WhatsApp chat with customer"
+                onClick={e => { if (privacy.on) { e.preventDefault(); const url = e.currentTarget.href; privacy.guard(() => window.open(url, "_blank"), "This opens WhatsApp with the customer's name and number."); } }}
                 className="w-11 h-11 rounded-xl border border-slate-200 bg-white text-emerald-700 flex items-center justify-center hover:bg-slate-100 shrink-0">
                 <i className="fab fa-whatsapp text-lg" aria-hidden="true"></i>
               </a>
@@ -212,7 +220,7 @@ export default function OrderDetail({
           {/* What needs attention */}
           <div className={`rounded-2xl border px-4 py-3.5 flex flex-col gap-1 ${calloutTone}`}>
             <span className="text-sm font-bold">{action.tag}</span>
-            <span className="text-[13px]">{action.reason}</span>
+            <span className="text-[13px]">{privacy.money(action.reason)}</span>
             {order.stockConflict && (order.stockConflictDetails || []).map((d, i) => <span key={i} className="text-[13px]">• {d}</span>)}
           </div>
 
@@ -225,7 +233,7 @@ export default function OrderDetail({
                 <div className="flex items-center gap-3">
                   <Tick on={p.depositReceived} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold">Deposit · RM {p.deposit}</p>
+                    <p className="text-sm font-semibold">Deposit · {$(p.deposit)}</p>
                     <p className={`text-xs ${p.depositReceived ? "text-slate-600" : "text-amber-800 font-semibold"}`}>
                       {p.depositReceived ? `Received${order.depositReceivedAt ? ` ${fmtDateTime(toMillis(order.depositReceivedAt))}` : ""}` : "Not received"}
                     </p>
@@ -239,7 +247,7 @@ export default function OrderDetail({
               <div className="flex items-center gap-3">
                 <Tick on={p.rentalReceived} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold">Rental · RM {p.rental}</p>
+                  <p className="text-sm font-semibold">Rental · {$(p.rental)}</p>
                   <p className={`text-xs ${p.rentalReceived ? "text-slate-600" : "text-amber-800 font-semibold"}`}>
                     {p.rentalReceived ? `Received${order.rentalReceivedAt ? ` ${fmtDateTime(toMillis(order.rentalReceivedAt))}` : ""}` : "Not received"}
                   </p>
@@ -252,13 +260,13 @@ export default function OrderDetail({
               {stage !== "cancelled" && p.nothingReceived && p.deposit > 0 && (
                 <button type="button" disabled={busy} onClick={() => handlers.onPayment(order, { kind: "full" })}
                   className="min-h-11 rounded-xl bg-emerald-50 border border-emerald-200 text-[#062c24] text-[13px] font-bold hover:bg-emerald-100">
-                  Full payment received · RM {p.total}
+                  Full payment received{privacy.on ? "" : ` · RM ${p.total}`}
                 </button>
               )}
 
               <div className="border-t border-slate-200 pt-3 flex items-center justify-between">
                 <span className="text-sm font-semibold">Balance to collect</span>
-                <span className={`text-lg font-bold ${p.balanceDue > 0 && stage !== "cancelled" ? "text-amber-800" : "text-emerald-800"}`}>RM {stage === "cancelled" ? 0 : p.balanceDue}</span>
+                <span className={`text-lg font-bold ${p.balanceDue > 0 && stage !== "cancelled" ? "text-amber-800" : "text-emerald-800"}`}>{$(stage === "cancelled" ? 0 : p.balanceDue)}</span>
               </div>
 
               {p.deposit > 0 && (
@@ -267,12 +275,12 @@ export default function OrderDetail({
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold">Deposit return</p>
                     <p className="text-xs text-slate-600">
-                      {p.depositOutcome === "refunded" ? `RM ${p.deposit} refunded`
+                      {privacy.money(p.depositOutcome === "refunded" ? `RM ${p.deposit} refunded`
                         : p.depositOutcome === "kept" ? `RM ${p.deposit} kept${order.depositKeptReason ? ` (${order.depositKeptReason.toLowerCase()})` : ""}`
                         : p.depositOutcome === "partial" ? `RM ${p.depositRefunded} refunded, RM ${p.depositKept} kept${order.depositKeptReason ? ` (${order.depositKeptReason.toLowerCase()})` : ""}`
                         : !p.depositReceived ? "No deposit received"
                         : stage === "returned" || stage === "completed" ? `RM ${p.deposit} still held`
-                        : "Opens after the gear is returned"}
+                        : "Opens after the gear is returned")}
                     </p>
                   </div>
                   {p.depositHeld && (stage === "returned" || stage === "completed") && (
@@ -322,9 +330,9 @@ export default function OrderDetail({
                         <button key={a.id} type="button" onClick={() => { handlers.onLinkAgreement(a.id, order); setShowLinkPicker(false); }}
                           className="min-h-11 flex items-center justify-between gap-3 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 hover:border-[#062c24] text-left">
                           <span>
-                            <span className="block text-[13px] font-bold text-slate-900">{a.customerName}</span>
+                            <span className="block text-[13px] font-bold text-slate-900">{privacy.name(a.customerName)}</span>
                             <span className="block text-xs text-slate-600">
-                              {a.timestamp?.toDate?.()?.toLocaleDateString("en-MY", { day: "numeric", month: "short" }) || ""}{a.customerPhone ? ` · ${a.customerPhone}` : ""}
+                              {a.timestamp?.toDate?.()?.toLocaleDateString("en-MY", { day: "numeric", month: "short" }) || ""}{a.customerPhone && !privacy.on ? ` · ${a.customerPhone}` : ""}
                             </span>
                           </span>
                           <i className="fas fa-arrow-right text-slate-500 text-xs" aria-hidden="true"></i>
@@ -343,7 +351,7 @@ export default function OrderDetail({
           </Fold>
 
           {/* Booking */}
-          <Fold title="Booking details" hint={`${order.fulfillmentType === "delivery" ? "Delivery" : "Pickup"} · ${order.pickupLocation || "location not set"}`} open={!!open.booking} onToggle={() => toggle("booking")}>
+          <Fold title="Booking details" hint={`${order.fulfillmentType === "delivery" ? "Delivery" : "Pickup"} · ${order.pickupLocation ? (privacy.on && order.fulfillmentType === "delivery" ? "address hidden" : order.pickupLocation) : "location not set"}`} open={!!open.booking} onToggle={() => toggle("booking")}>
             <dl className="flex flex-col gap-2 text-sm">
               {([
                 ["Dates", `${formatShortDate(order.bookingDates?.start)} – ${formatShortDate(order.bookingDates?.end)}`],
@@ -360,7 +368,11 @@ export default function OrderDetail({
               ] as [string, string | null | undefined][]).filter(r => r[1]).map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-4">
                   <dt className="text-slate-600 shrink-0">{k}</dt>
-                  <dd className="font-semibold text-right break-words min-w-0">{v}</dd>
+                  <dd className="font-semibold text-right break-words min-w-0">
+                    {k === "Customer phone" ? <Private kind="phone">{v}</Private>
+                      : k === "Address" || k === "Camping location" ? <Private kind="text">{v}</Private>
+                      : v}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -420,7 +432,7 @@ export default function OrderDetail({
                   <p className="text-[13px] text-slate-600">This is an add-on order. It needs no separate deposit or agreement, because the main booking covers it.</p>
                   {parent && (
                     <button type="button" onClick={() => handlers.onSelect(parent.id)} className={`${smallBtn} w-full`}>
-                      <i className="fas fa-arrow-left mr-1.5" aria-hidden="true"></i>View main order ({customerLabel(parent)})
+                      <i className="fas fa-arrow-left mr-1.5" aria-hidden="true"></i>View main order ({privacy.name(customerLabel(parent))})
                     </button>
                   )}
                   {!closed && <button type="button" onClick={() => handlers.onUnlinkParent(order)} className={`${smallBtn} w-full`}><i className="fas fa-unlink mr-1.5" aria-hidden="true"></i>Remove link</button>}
@@ -432,7 +444,7 @@ export default function OrderDetail({
                       className="min-h-11 flex items-center justify-between gap-3 bg-violet-50 rounded-xl px-3 py-2 border border-violet-200 hover:border-violet-400 text-left">
                       <span>
                         <span className="block text-[13px] font-bold text-slate-900">{child.items.map(i => i.name).join(", ")}</span>
-                        <span className="block text-xs text-slate-600">RM {child.totalAmount} · {child.status}</span>
+                        <span className="block text-xs text-slate-600">{privacy.money(`RM ${child.totalAmount}`)} · {child.status}</span>
                       </span>
                       <i className="fas fa-arrow-right text-violet-700 text-xs" aria-hidden="true"></i>
                     </button>
@@ -454,8 +466,8 @@ export default function OrderDetail({
                               <button key={o.id} type="button" onClick={() => { handlers.onLinkParent(order, o); setShowParentPicker(false); }}
                                 className="min-h-11 flex items-center justify-between gap-3 bg-slate-50 rounded-xl px-3 py-2 border border-slate-200 hover:border-violet-400 text-left">
                                 <span className="min-w-0">
-                                  <span className="block text-[13px] font-bold text-slate-900 truncate">{customerLabel(o)}</span>
-                                  <span className="block text-xs text-slate-600 truncate">{o.items.map(i => i.name).join(", ")} · RM {o.totalAmount}</span>
+                                  <span className="block text-[13px] font-bold text-slate-900 truncate">{privacy.name(customerLabel(o))}</span>
+                                  <span className="block text-xs text-slate-600 truncate">{o.items.map(i => i.name).join(", ")} · {privacy.money(`RM ${o.totalAmount}`)}</span>
                                 </span>
                                 <i className="fas fa-link text-violet-700 text-xs shrink-0" aria-hidden="true"></i>
                               </button>
@@ -522,7 +534,7 @@ export default function OrderDetail({
                 className="min-h-13 rounded-2xl bg-[#062c24] text-white text-[15px] font-bold flex items-center justify-center gap-2 hover:bg-[#0a4135] disabled:opacity-60">
                 {action.whatsapp && <i className="fab fa-whatsapp text-lg" aria-hidden="true"></i>}
                 {action.key === "confirm" ? "Confirm and request payment"
-                  : action.key === "request_balance" ? `${action.label} RM ${p.balanceDue}`
+                  : action.key === "request_balance" ? privacy.money(`${action.label} RM ${p.balanceDue}`)
                   : action.label}
               </button>
             )}

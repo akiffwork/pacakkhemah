@@ -1,5 +1,6 @@
 "use client";
 
+import { Private, usePrivacy } from "@/lib/privacy";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import {
@@ -34,6 +35,7 @@ const CATEGORIES = [
 type Filter = "all" | "published" | "hidden" | "unreplied";
 
 export default function ReviewsTab({ vendorId }: { vendorId: string }) {
+  const privacy = usePrivacy();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -211,11 +213,11 @@ export default function ReviewsTab({ vendorId }: { vendorId: string }) {
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 font-bold text-sm">
-                      {(review.customerName || "C")[0].toUpperCase()}
+                      {privacy.on ? "•" : (review.customerName || "C")[0].toUpperCase()}
                     </div>
                     <div>
                       <p className="text-sm font-bold text-[#062c24]">
-                        {review.customerName || "Camper"}
+                        <Private kind="name" text={review.customerName || "Camper"}>{review.customerName || "Camper"}</Private>
                         {review.isVerified && <i className="fas fa-check-circle text-emerald-500 text-xs ml-1.5"></i>}
                       </p>
                       <div className="flex items-center gap-2 mt-0.5">
@@ -333,7 +335,7 @@ export default function ReviewsTab({ vendorId }: { vendorId: string }) {
                     </button>
                   )}
                   {review.orderId && (
-                    <button onClick={() => followUpWhatsApp(review)}
+                    <button onClick={() => privacy.guard(() => { void followUpWhatsApp(review); }, "This opens WhatsApp with the customer's name and number.")}
                       className="py-2.5 px-4 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-100 flex items-center justify-center gap-1.5">
                       <i className="fab fa-whatsapp"></i> Follow Up
                     </button>

@@ -1,5 +1,6 @@
 "use client";
 
+import { usePrivacy } from "@/lib/privacy";
 import { useEffect, useState } from "react";
 import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -36,6 +37,7 @@ export function referralStatus(r: ReferralCode): { label: string; tone: "good" |
 export default function ReferralCodes({ vendorId, vendorName, existingPromoCodes, onToast }: {
   vendorId: string; vendorName: string; existingPromoCodes: string[]; onToast: (m: string, t?: "success" | "error") => void;
 }) {
+  const privacy = usePrivacy();
   const [codes, setCodes] = useState<ReferralCode[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<ReferralCode | "new" | null>(null);
@@ -85,7 +87,7 @@ export default function ReferralCodes({ vendorId, vendorName, existingPromoCodes
                   <button type="button" onClick={() => setEditing(r)} className="text-left min-w-0 flex flex-col gap-0.5">
                     <span className="text-[15px] font-bold text-slate-900 tracking-wider">{r.code}</span>
                     <span className="text-[13px] text-slate-700">
-                      {r.discountType === "percent" ? `${r.discountValue}% off` : `RM ${r.discountValue} off`} · for {r.assignedTo?.name || "a customer"}
+                      {r.discountType === "percent" ? `${r.discountValue}% off` : `RM ${r.discountValue} off`} · for {r.assignedTo?.name ? privacy.name(r.assignedTo.name) : "a customer"}
                     </span>
                     <span className="text-xs text-slate-600">Used {r.usedCount || 0}{r.maxUses != null ? ` of ${r.maxUses}` : ""} time{(r.usedCount || 0) === 1 ? "" : "s"}</span>
                   </button>
@@ -95,7 +97,7 @@ export default function ReferralCodes({ vendorId, vendorName, existingPromoCodes
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => share(r)} className={`${smallBtn} flex-1`}><i className="fab fa-whatsapp mr-1.5" aria-hidden="true"></i>Send to {r.assignedTo?.name?.split(" ")[0] || "customer"}</button>
+                  <button type="button" onClick={() => privacy.guard(() => share(r), "This opens WhatsApp with the customer's name and number.")} className={`${smallBtn} flex-1`}><i className="fab fa-whatsapp mr-1.5" aria-hidden="true"></i>Send to {r.assignedTo?.name ? privacy.name(r.assignedTo.name).split(" ")[0] : "customer"}</button>
                   <button type="button" onClick={() => setEditing(r)} className={smallBtn}>Edit</button>
                 </div>
               </div>

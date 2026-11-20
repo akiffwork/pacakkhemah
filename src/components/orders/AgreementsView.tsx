@@ -5,7 +5,7 @@ import { collection, doc, getDoc, onSnapshot, orderBy, query, where } from "fire
 import { getDownloadURL, getStorage, ref } from "firebase/storage";
 import { db } from "@/lib/firebase";
 import { generateAgreementPDF, buildAgreementMeta } from "@/lib/agreementPDF";
-import { idLine } from "@/lib/customerId";
+import { Private, usePrivacy } from "@/lib/privacy";
 import { summaryFromLegacy, summaryFromOrder, type LegacyBooking, type RentalSummary } from "@/lib/rentalSummary";
 import type { Order } from "@/lib/orderFlow";
 import { vendorTerms, generalTerms, type AgreementVendor } from "@/lib/agreementDocument";
@@ -97,6 +97,7 @@ export default function AgreementsView({ vendorId, onOpenOrder, toast }: { vendo
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const vendor = useVendorBits(vendorId);
+  const privacy = usePrivacy();
   const link = typeof window !== "undefined" ? `${window.location.origin}/agreement?v=${vendorId}` : "";
 
   useEffect(() => {
@@ -106,7 +107,11 @@ export default function AgreementsView({ vendorId, onOpenOrder, toast }: { vendo
     return () => unsub();
   }, [vendorId]);
 
-  async function pdf(a: Agreement) {
+  function pdf(a: Agreement) {
+    privacy.guard(() => { void pdfNow(a); }, "The agreement shows the customer's name, number, ID and the amounts.");
+  }
+
+  async function pdfNow(a: Agreement) {
     setBusy(a.id);
     try { await downloadAgreement(a, vendor); } catch { toast("Could not create the PDF", "error"); }
     finally { setBusy(null); }
@@ -142,17 +147,20 @@ export default function AgreementsView({ vendorId, onOpenOrder, toast }: { vendo
           <div key={a.id} className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[15px] font-bold text-slate-900 truncate">{a.customerName}</p>
-                {a.idNumber && <p className="text-[13px] text-slate-800 font-semibold tracking-wide">{idLine(a.idType, a.idNumber)}</p>}
-                <p className="text-[13px] text-slate-600">{[a.customerPhone, when?.toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })].filter(Boolean).join(" · ")}</p>
+                <p className="text-[15px] font-bold text-slate-900 truncate"><Private kind="name" text={a.customerName}>{a.customerName}</Private></p>
+                {a.idNumber && <p className="text-[13px] text-slate-800 font-semibold tracking-wide">{a.idType === "passport" ? "Passport No." : "IC No."} <Private kind="id">{a.idNumber}</Private></p>}
+                <p className="text-[13px] text-slate-600">
+                  {a.customerPhone && <><Private kind="phone">{a.customerPhone}</Private>{when ? " · " : ""}</>}
+                  {when?.toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })}
+                </p>
               </div>
               {a.orderId ? <Chip tone="good">Linked</Chip> : <Chip tone="warn">Not linked</Chip>}
             </div>
             <div className="flex flex-wrap gap-2">
               {a.orderId && <button type="button" onClick={() => onOpenOrder(a.orderId!)} className={smallBtn}>Open order</button>}
               <button type="button" disabled={busy === a.id} onClick={() => pdf(a)} className={smallBtn}>{busy === a.id ? "Creating PDF" : "Download PDF"}</button>
-              {a.icFrontPath && <button type="button" onClick={async () => { if (!(await openIcPhoto(a.icFrontPath))) toast("Could not open the photo", "error"); }} className={smallBtn}>IC front</button>}
-              {a.icBackPath && <button type="button" onClick={async () => { if (!(await openIcPhoto(a.icBackPath))) toast("Could not open the photo", "error"); }} className={smallBtn}>IC back</button>}
+              {a.icFrontPath && <button type="button" onClick={() => privacy.guard(async () => { if (!(await openIcPhoto(a.icFrontPath))) toast("Could not open the photo", "error"); }, "This opens the customer's IC photo.")} className={smallBtn}>IC front</button>}
+              {a.icBackPath && <button type="button" onClick={() => privacy.guard(async () => { if (!(await openIcPhoto(a.icBackPath))) toast("Could not open the photo", "error"); }, "This opens the customer's IC photo.")} className={smallBtn}>IC back</button>}
             </div>
             {!a.orderId && <p className={hintCls}>To link it, open the order and choose &ldquo;Link a signed agreement&rdquo;.</p>}
           </div>

@@ -2,6 +2,7 @@
 
 // Credit top-up by bank QR: the payment sheet and the vendor's request list.
 
+import { usePrivacy } from "@/lib/privacy";
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -119,6 +120,7 @@ const STATUS: Record<TopUpRequest["status"], { label: string; tone: "warn" | "go
 /** The vendor's recent requests, live. */
 export function TopUpRequests({ vendorId, adminWhatsApp }: { vendorId: string; adminWhatsApp: string }) {
   const [items, setItems] = useState<TopUpRequest[]>([]);
+  const privacy = usePrivacy();
   useEffect(() => {
     if (!vendorId) return;
     return onSnapshot(query(collection(db, "topups"), where("vendorId", "==", vendorId)), snap => {
@@ -135,7 +137,7 @@ export function TopUpRequests({ vendorId, adminWhatsApp }: { vendorId: string; a
       {recent.map(r => (
         <div key={r.id} className="border border-slate-200 rounded-xl px-3.5 py-2.5 flex flex-col gap-1.5">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-sm font-semibold text-slate-900">{r.credits} credits · RM {r.price}</span>
+            <span className="text-sm font-semibold text-slate-900">{privacy.on ? "•• credits · RM ••••" : `${r.credits} credits · RM ${r.price}`}</span>
             <Chip tone={STATUS[r.status].tone}>{STATUS[r.status].label}</Chip>
           </div>
           <span className={hintCls}>Reference {r.reference}{r.status === "rejected" && r.rejectReason ? ` · ${r.rejectReason}` : ""}</span>

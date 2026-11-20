@@ -1,5 +1,6 @@
 "use client";
 
+import { Private, usePrivacy, maskText } from "@/lib/privacy";
 import { useEffect, useRef, useState } from "react";
 import { db, auth } from "@/lib/firebase";
 import {
@@ -157,6 +158,7 @@ function SwipeableCard({
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function CalendarView({ vendorId: vendorIdProp, orderId }: { vendorId: string; orderId?: string | null }) {
+  const privacy = usePrivacy();
   // ── Auth & Data ──
   const [vendorId, setVendorId] = useState<string | null>(null);
   const [allGear, setAllGear] = useState<GearItem[]>([]);
@@ -907,12 +909,12 @@ export default function CalendarView({ vendorId: vendorIdProp, orderId }: { vend
                                 entry.orderStatus === "completed" ? "text-emerald-800" :
                                 "text-[#062c24]"
                               }`}>
-                                {entry.type === "block" ? (entry.reason || "Time Off") : entry.customer}
+                                {entry.type === "block" ? (entry.reason || "Time Off") : privacy.name(entry.customer || "")}
                               </p>
                               <p className="text-xs text-slate-600 truncate mt-0.5">
                                 {entry.type === "block"
                                   ? `${entry.items.length} item${entry.items.length !== 1 ? "s" : ""} · ${entry.nights} day${entry.nights > 1 ? "s" : ""}`
-                                  : `${entry.phone || "No phone"} · ${entry.items.length} item${entry.items.length !== 1 ? "s" : ""} · ${entry.nights} night${entry.nights > 1 ? "s" : ""}`
+                                  : `${entry.phone ? (privacy.on ? maskText("phone") : entry.phone) : "No phone"} · ${entry.items.length} item${entry.items.length !== 1 ? "s" : ""} · ${entry.nights} night${entry.nights > 1 ? "s" : ""}`
                                 }
                               </p>
                             </div>
@@ -1490,11 +1492,11 @@ export default function CalendarView({ vendorId: vendorIdProp, orderId }: { vend
                 <>
                   <div className={`p-4 rounded-xl ${selectedEntry.type === "block" ? "bg-red-50" : "bg-slate-50"}`}>
                     <p className={`text-base font-bold truncate ${selectedEntry.type === "block" ? "text-red-700" : "text-[#062c24]"}`}>
-                      {selectedEntry.type === "block" ? (selectedEntry.reason || "Time Off") : selectedEntry.customer}
+                      {selectedEntry.type === "block" ? (selectedEntry.reason || "Time Off") : <Private kind="name" text={selectedEntry.customer}>{selectedEntry.customer}</Private>}
                     </p>
                     {selectedEntry.type === "booking" && selectedEntry.phone && (
-                      <a href={`tel:${selectedEntry.phone}`} className="flex items-center gap-2 mt-1 text-sm text-slate-500 hover:text-emerald-600 truncate">
-                        📞 <span className="truncate">{selectedEntry.phone}</span>
+                      <a href={`tel:${selectedEntry.phone}`} onClick={e => { if (privacy.on) { e.preventDefault(); const url = e.currentTarget.href; privacy.guard(() => { window.location.href = url; }, "This shows the customer's phone number."); } }} className="flex items-center gap-2 mt-1 text-sm text-slate-500 hover:text-emerald-600 truncate">
+                        📞 <span className="truncate"><Private kind="phone" reveal={false}>{selectedEntry.phone}</Private></span>
                       </a>
                     )}
                   </div>

@@ -6,6 +6,7 @@ import { db } from "@/lib/firebase";
 import type { Order } from "@/lib/orderFlow";
 import { salesSummary, monthlyReceived, funnel, topItems, updateRate } from "@/lib/performance";
 import { SummaryStrip, StatCard, SectionTitle, EmptyState, Card } from "@/components/ui/kit";
+import { Private, usePrivacy } from "@/lib/privacy";
 
 type Lead = { id: string; totalAmount?: number; timestamp?: { toDate?: () => Date }; creditDeducted?: boolean };
 
@@ -27,6 +28,8 @@ export default function SalesView({ vendorId, orders }: { vendorId: string; orde
   const upd = useMemo(() => updateRate(orders), [orders]);
   const maxBar = Math.max(1, ...months.map(m => m.received));
   const now = new Date();
+  const privacy = usePrivacy();
+  const R = (n: number) => <Private kind="money">{rm(n)}</Private>;
   const lastMonthName = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString("en-MY", { month: "long" });
 
   if (!orders.length) {
@@ -36,9 +39,9 @@ export default function SalesView({ vendorId, orders }: { vendorId: string; orde
   return (
     <div className="flex flex-col gap-4">
       <SummaryStrip items={[
-        { value: rm(s.receivedThisMonth), label: `Received in ${now.toLocaleDateString("en-MY", { month: "long" })}` },
-        { value: rm(s.toCollect), label: "Still to collect" },
-        { value: rm(s.depositsHeld), label: "Deposits you hold" },
+        { value: R(s.receivedThisMonth), label: `Received in ${now.toLocaleDateString("en-MY", { month: "long" })}` },
+        { value: R(s.toCollect), label: "Still to collect" },
+        { value: R(s.depositsHeld), label: "Deposits you hold" },
       ]} />
 
       {upd.stale > 0 && (
@@ -48,18 +51,18 @@ export default function SalesView({ vendorId, orders }: { vendorId: string; orde
       )}
 
       <div className="grid grid-cols-2 gap-2">
-        <StatCard label={`Received in ${lastMonthName}`} value={rm(s.receivedLastMonth)} />
-        <StatCard label="Average order" value={rm(s.averageOrder)} hint={`${s.ordersReceived} paid orders`} />
-        <StatCard label="Received, all time" value={rm(s.receivedAllTime)} />
-        <StatCard label="Deposits kept" value={rm(s.depositsKept)} hint="For damage, loss or late returns" />
+        <StatCard label={`Received in ${lastMonthName}`} value={R(s.receivedLastMonth)} />
+        <StatCard label="Average order" value={R(s.averageOrder)} hint={`${s.ordersReceived} paid orders`} />
+        <StatCard label="Received, all time" value={R(s.receivedAllTime)} />
+        <StatCard label="Deposits kept" value={R(s.depositsKept)} hint="For damage, loss or late returns" />
       </div>
 
       <Card>
         <SectionTitle>Rental received, last 6 months</SectionTitle>
-        <div className="flex items-end gap-2 h-40" role="img" aria-label={`Rental received per month: ${months.map(m => `${m.label} ${rm(m.received)}`).join(", ")}`}>
+        <div className="flex items-end gap-2 h-40" role="img" aria-label={privacy.money(`Rental received per month: ${months.map(m => `${m.label} ${rm(m.received)}`).join(", ")}`)}>
           {months.map(m => (
             <div key={m.key} className="flex-1 h-full flex flex-col items-center justify-end gap-1">
-              <span className="text-[11px] font-semibold text-slate-700 whitespace-nowrap">{m.received ? (m.received >= 1000 ? `${(m.received / 1000).toFixed(1)}k` : `${Math.round(m.received)}`) : ""}</span>
+              <span className="text-[11px] font-semibold text-slate-700 whitespace-nowrap">{m.received && !privacy.on ? (m.received >= 1000 ? `${(m.received / 1000).toFixed(1)}k` : `${Math.round(m.received)}`) : ""}</span>
               <div className="w-full bg-emerald-700 rounded-t-md" style={{ height: `${(m.received / maxBar) * 100}%`, minHeight: m.received ? 4 : 0 }} />
               <span className="text-xs font-semibold text-slate-600">{m.label}</span>
             </div>
@@ -98,7 +101,7 @@ export default function SalesView({ vendorId, orders }: { vendorId: string; orde
               <li key={it.name} className="flex items-center gap-3">
                 <span className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold flex items-center justify-center shrink-0">{i + 1}</span>
                 <span className="flex-1 min-w-0 flex flex-col"><span className="text-sm font-semibold text-slate-900 truncate">{it.name}</span><span className="text-xs text-slate-600">{it.qty} rented</span></span>
-                <span className="text-sm font-bold text-emerald-800">{rm(it.revenue)}</span>
+                <span className="text-sm font-bold text-emerald-800">{R(it.revenue)}</span>
               </li>
             ))}
           </ol>
@@ -115,7 +118,7 @@ export default function SalesView({ vendorId, orders }: { vendorId: string; orde
                   <span className="text-sm font-semibold text-slate-900">{l.creditDeducted ? "New customer" : "Returning visitor"}</span>
                   <span className="text-xs text-slate-600">{l.timestamp?.toDate?.()?.toLocaleDateString("en-MY", { day: "numeric", month: "short" }) || "Just now"}{l.creditDeducted ? " · 1 credit used" : " · no credit used"}</span>
                 </span>
-                {typeof l.totalAmount === "number" && <span className="text-sm font-bold text-slate-800">{rm(l.totalAmount)}</span>}
+                {typeof l.totalAmount === "number" && <span className="text-sm font-bold text-slate-800">{R(l.totalAmount)}</span>}
               </li>
             ))}
           </ul>

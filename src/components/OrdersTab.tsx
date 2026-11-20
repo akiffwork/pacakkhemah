@@ -7,6 +7,7 @@ import {
   orderBy, serverTimestamp, getDocs, deleteDoc, getDoc, arrayUnion,
 } from "firebase/firestore";
 import { generateInvoicePDF, invoiceFromOrder, type InvoiceVendor } from "@/lib/invoicePDF";
+import { Private, usePrivacy } from "@/lib/privacy";
 import {
   type Order, type Group, type DepositOutcome, type PaymentChange,
   getNextAction, getPayment, getStage, paymentPatch, pickupGaps, canComplete,
@@ -54,6 +55,7 @@ export default function OrdersTab({ vendorId, vendorName, initialOrderId, initia
   const [lang, setLangState] = useState<MsgLang>("en");
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [unlinkedAgreements, setUnlinkedAgreements] = useState<UnlinkedAgreement[]>([]);
+  const privacy = usePrivacy();
   const [generatingInvoice, setGeneratingInvoice] = useState(false);
   // Re-evaluate "today" every few minutes so urgency stays right on a long-open tab
   const [now, setNow] = useState(() => new Date());
@@ -187,7 +189,13 @@ export default function OrdersTab({ vendorId, vendorName, initialOrderId, initia
 
   // ── Pipeline actions ──────────────────────────────────────────────────────
 
+  const WA_NOTE = "This opens WhatsApp with the customer's name and number.";
+
   function confirmOrder(order: Order) {
+    privacy.guard(() => confirmOrderNow(order), WA_NOTE);
+  }
+
+  function confirmOrderNow(order: Order) {
     openWhatsApp(order, "confirm");
     run(async () => {
       await patch(order.id, {
@@ -239,7 +247,7 @@ export default function OrdersTab({ vendorId, vendorName, initialOrderId, initia
       } else if (p.depositHeld) {
         setSheet({ type: "settle", orderId: order.id });
       } else {
-        showToast(`Marked as returned. Rental RM ${p.rental} is still unpaid.`);
+        showToast(privacy.money(`Marked as returned. Rental RM ${p.rental} is still unpaid.`));
       }
     });
   }
@@ -283,6 +291,10 @@ export default function OrdersTab({ vendorId, vendorName, initialOrderId, initia
   }
 
   function sendFollowUp(order: Order, kind: MsgKind) {
+    privacy.guard(() => sendFollowUpNow(order, kind), WA_NOTE);
+  }
+
+  function sendFollowUpNow(order: Order, kind: MsgKind) {
     openWhatsApp(order, kind);
     const stamp: Partial<Record<MsgKind, [string, string]>> = {
       request_payment: ["paymentRequestedAt", "payment_requested"],
@@ -425,7 +437,7 @@ export default function OrdersTab({ vendorId, vendorName, initialOrderId, initia
     onUndoPickup: (order) => run(async () => { await patch(order.id, { pickedUpAt: null }, "pickup_undone"); showToast("Undone"); }),
     onCancel: (order) => setSheet({ type: "cancel", orderId: order.id }),
     onDelete: deleteOrder,
-    onInvoice: handleGenerateInvoice,
+    onInvoice: (order) => privacy.guard(() => handleGenerateInvoice(order), "The receipt shows the customer's name, number and the amounts."),
     onCopyReview: copyReviewLink,
     onLinkAgreement: linkAgreementToOrder,
     onLinkParent: linkToParentOrder,
@@ -443,7 +455,7 @@ export default function OrdersTab({ vendorId, vendorName, initialOrderId, initia
       <SummaryStrip items={[
         { value: summary.action, label: "Need action" },
         { value: summary.waiting, label: "Waiting on customer" },
-        { value: `RM ${summary.toCollect.toLocaleString()}`, label: "To collect" },
+        { value: <Private kind="money">RM {summary.toCollect.toLocaleString()}</Private>, label: "To collect" },
       ]} />
 
       {/* Search */}

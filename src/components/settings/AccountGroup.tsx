@@ -1,5 +1,6 @@
 "use client";
 
+import { Private, usePrivacy } from "@/lib/privacy";
 import { useEffect, useState } from "react";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "@/lib/firebase";
@@ -25,6 +26,9 @@ const SUPPORT_WA = "https://wa.me/601136904336?text=Hi%20Pacak%20Khemah,%20I%20n
 export default function AccountGroup({ vendorId, v, set, openSection, setOpenSection, toast, onRestartTour }: Props) {
   const [config, setConfig] = useState<Awaited<ReturnType<typeof loadPaymentConfig>>>(null);
   const [buying, setBuying] = useState<CreditPackage | null>(null);
+  const privacy = usePrivacy();
+  const [showTax, setShowTax] = useState(false);
+  const taxHidden = privacy.on && !showTax;
   const pay = paymentDetails(config);
   const refCode = (v as { myReferralCode?: string }).myReferralCode || "";
   const refLink = refCode ? `https://pacakkhemah.com/register-vendor?ref=${refCode}` : "";
@@ -87,14 +91,24 @@ export default function AccountGroup({ vendorId, v, set, openSection, setOpenSec
         <div className="flex flex-col gap-1.5">
           <span className="text-[13px] font-semibold text-slate-700">Login email</span>
           <div className="flex items-center justify-between gap-3">
-            <span className="text-[15px] text-slate-900 break-all">{auth.currentUser?.email || "-"}</span>
+            <span className="text-[15px] text-slate-900 break-all"><Private>{auth.currentUser?.email || "-"}</Private></span>
             <button type="button" onClick={sendReset} disabled={resetSent} className={`${smallBtn} shrink-0`}>{resetSent ? "Reset link sent" : "Reset password"}</button>
           </div>
         </div>
       </Card>
 
-      <Section id="section-invoice" title="Invoice details" summary={invoiceSummary(tp)} warn={!taxProfileComplete(tp)} open={openSection === "invoice"} onToggle={() => toggle("invoice")}>
+      <Section id="section-invoice" title="Invoice details" summary={taxHidden && taxProfileComplete(tp) ? "Set up · hidden in privacy mode" : invoiceSummary(tp)} warn={!taxProfileComplete(tp)} open={openSection === "invoice"} onToggle={() => toggle("invoice")}>
         <p className={hintCls}>Printed on the invoices and receipts you generate from an order. TIN, business name and address are required by LHDN.</p>
+        {taxHidden ? (
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col gap-2 text-sm">
+            {[["TIN", tp.tin], ["Business name", tp.legalName], ["Address", tp.address], ["BRN", tp.brn], ["SST number", tp.sstNo]].filter(([, val]) => val).map(([k]) => (
+              <div key={k} className="flex justify-between gap-4"><span className="text-slate-600">{k}</span><span className="font-semibold text-slate-900">••••••</span></div>
+            ))}
+            <button type="button" onClick={() => setShowTax(true)} className={`${smallBtn} mt-1`}>
+              <i className="fas fa-eye mr-1.5" aria-hidden="true"></i>Show and edit tax details
+            </button>
+          </div>
+        ) : <>
         <Field id="tin" label="TIN (Tax Identification Number)"><input id="tin" value={tp.tin || ""} onChange={e => setTax({ tin: e.target.value })} placeholder="e.g. D1234567890" className={inputCls} /></Field>
         <Field id="legal-name" label="Registered business name (SSM)"><input id="legal-name" value={tp.legalName || ""} onChange={e => setTax({ legalName: e.target.value })} placeholder="e.g. KEMAH GEARS ENTERPRISE" className={inputCls} /></Field>
         <Field id="tax-address" label="Business address"><textarea id="tax-address" rows={2} value={tp.address || ""} onChange={e => setTax({ address: e.target.value })} placeholder="No. 1, Jalan Contoh, 25000 Kuantan, Pahang" className={`${inputCls} py-2.5 resize-none`} /></Field>
@@ -106,12 +120,13 @@ export default function AccountGroup({ vendorId, v, set, openSection, setOpenSec
           <Field id="msic" label="MSIC code"><input id="msic" value={tp.msicCode ?? "7721"} onChange={e => setTax({ msicCode: e.target.value })} className={inputCls} /></Field>
           <Field id="msic-act" label="Business activity"><input id="msic-act" value={tp.msicActivity ?? "Rental and leasing of recreational and sports goods"} onChange={e => setTax({ msicActivity: e.target.value })} className={inputCls} /></Field>
         </div>
+        </>}
       </Section>
 
       <Card className="scroll-mt-4">
         <div id="section-credits" className="flex items-center justify-between">
           <H2>Credits</H2>
-          <span className="text-xl font-bold text-[#062c24]">{v.credits ?? 0}</span>
+          <span className="text-xl font-bold text-[#062c24]"><Private kind="number">{v.credits ?? 0}</Private></span>
         </div>
         <p className={hintCls}>One credit is used each time a new customer sends you a booking request. You get one back when a completed order receives a review.</p>
         <div className="grid grid-cols-3 gap-2">
