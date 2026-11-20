@@ -13,6 +13,7 @@ const db = (0, firestore_2.getFirestore)();
 var lookups_1 = require("./lookups");
 Object.defineProperty(exports, "lookupBookingsByPhone", { enumerable: true, get: function () { return lookups_1.lookupBookingsByPhone; } });
 Object.defineProperty(exports, "lookupOrderByReviewToken", { enumerable: true, get: function () { return lookups_1.lookupOrderByReviewToken; } });
+const agreementLink_1 = require("./agreementLink");
 // Helper: send data-only push (no "notification" key = no browser auto-display = no duplicates)
 async function sendPush(token, title, body, extraData = {}) {
     await (0, messaging_1.getMessaging)().send({
@@ -114,22 +115,13 @@ exports.onAgreementSigned = (0, firestore_1.onDocumentCreated)("agreements/{docI
     const { vendorId, customerName, customerPhone, orderId } = data;
     if (!vendorId)
         return;
-    // Link agreement to order
-    if (orderId) {
-        try {
-            await db.doc(`orders/${orderId}`).update({
-                status: "confirmed",
-                customerName: customerName || "",
-                customerPhone: customerPhone || "",
-                agreementSigned: true,
-                agreementSignedAt: new Date(),
-                agreementId: ((_b = event.data) === null || _b === void 0 ? void 0 : _b.id) || null,
-            });
-            console.log(`Order ${orderId} linked to agreement`);
-        }
-        catch (e) {
-            console.error(`Failed to link order ${orderId}:`, e);
-        }
+    // Link agreement to order (only a real, open order of this vendor)
+    const link = await (0, agreementLink_1.linkAgreementToOrder)(db, ((_b = event.data) === null || _b === void 0 ? void 0 : _b.id) || "", data);
+    if (orderId && !link.linked && (link.reason === "order_not_found" || link.reason === "other_vendor")) {
+        // Not a real order of this vendor: nothing to count or notify.
+        return;
+    }
+    if (link.linked) {
         // Update calendar availability entries with customer info
         try {
             const availSnap = await db

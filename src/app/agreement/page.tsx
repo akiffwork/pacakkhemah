@@ -206,7 +206,7 @@ function AgreementContent() {
         verificationCode: code,
         timestamp: serverTimestamp(),
         status: "signed",
-        userAgent: navigator.userAgent,
+        userAgent: navigator.userAgent.slice(0, 400),
       });
       // Cloud Function links the order, bumps the vendor's tally and notifies them.
 
@@ -319,7 +319,7 @@ function AgreementContent() {
                     <>
                       <div>
                         <Label htmlFor="cust-name">Full name (as per IC / passport)</Label>
-                        <input id="cust-name" type="text" value={custName} autoComplete="name"
+                        <input id="cust-name" type="text" value={custName} autoComplete="name" maxLength={120}
                           onChange={e => setCustName(e.target.value.toUpperCase())} placeholder="FULL NAME" className={`${inputCls} uppercase`} />
                       </div>
                       <div>
@@ -423,7 +423,7 @@ function AgreementContent() {
                   ) : (
                     <>
                       <label htmlFor="signature" className="sr-only">Type your full name to sign</label>
-                      <input id="signature" type="text" value={signature} autoComplete="off"
+                      <input id="signature" type="text" value={signature} autoComplete="off" maxLength={120}
                         onChange={e => setSignature(e.target.value.toUpperCase())}
                         placeholder="Type your full name to sign"
                         aria-invalid={tried && !sigOk}

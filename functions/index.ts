@@ -12,6 +12,7 @@ const db = getFirestore();
 
 // Customer lookups (my bookings, review links); orders can't be listed from the browser
 export { lookupBookingsByPhone, lookupOrderByReviewToken } from "./lookups";
+import { linkAgreementToOrder } from "./agreementLink";
 
 // Helper: send data-only push (no "notification" key = no browser auto-display = no duplicates)
 async function sendPush(token: string, title: string, body: string, extraData: Record<string, string> = {}) {
@@ -127,22 +128,14 @@ export const onAgreementSigned = onDocumentCreated(
     const { vendorId, customerName, customerPhone, orderId } = data;
     if (!vendorId) return;
 
-    // Link agreement to order
-    if (orderId) {
-      try {
-        await db.doc(`orders/${orderId}`).update({
-          status: "confirmed",
-          customerName: customerName || "",
-          customerPhone: customerPhone || "",
-          agreementSigned: true,
-          agreementSignedAt: new Date(),
-          agreementId: event.data?.id || null,
-        });
-        console.log(`Order ${orderId} linked to agreement`);
-      } catch (e) {
-        console.error(`Failed to link order ${orderId}:`, e);
-      }
+    // Link agreement to order (only a real, open order of this vendor)
+    const link = await linkAgreementToOrder(db, event.data?.id || "", data);
+    if (orderId && !link.linked && (link.reason === "order_not_found" || link.reason === "other_vendor")) {
+      // Not a real order of this vendor: nothing to count or notify.
+      return;
+    }
 
+    if (link.linked) {
       // Update calendar availability entries with customer info
       try {
         const availSnap = await db

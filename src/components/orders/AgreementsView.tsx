@@ -34,6 +34,16 @@ export type Agreement = {
   customerSignedAt?: string;
   vendorSignedAt?: string;
   verificationCode?: string;
+  /** Set by the server when the order in the link could not be linked. */
+  linkSkipped?: "order_not_found" | "other_vendor" | "order_closed" | "already_signed" | "error" | null;
+};
+
+const SKIP_REASON: Record<string, string> = {
+  already_signed: "Signed again for an order that already has a signed agreement, so the first one stays linked. This copy is kept for your records.",
+  order_closed: "Not linked automatically: that order was already completed or cancelled.",
+  order_not_found: "Not linked automatically: the order in the link no longer exists.",
+  other_vendor: "Not linked automatically: the order in the link is not yours.",
+  error: "Not linked automatically because of a connection problem. Link it from the order.",
 };
 
 type VendorBits = Partial<AgreementVendor>;
@@ -162,7 +172,12 @@ export default function AgreementsView({ vendorId, onOpenOrder, toast }: { vendo
               {a.icFrontPath && <button type="button" onClick={() => privacy.guard(async () => { if (!(await openIcPhoto(a.icFrontPath))) toast("Could not open the photo", "error"); }, "This opens the customer's IC photo.")} className={smallBtn}>IC front</button>}
               {a.icBackPath && <button type="button" onClick={() => privacy.guard(async () => { if (!(await openIcPhoto(a.icBackPath))) toast("Could not open the photo", "error"); }, "This opens the customer's IC photo.")} className={smallBtn}>IC back</button>}
             </div>
-            {!a.orderId && <p className={hintCls}>To link it, open the order and choose &ldquo;Link a signed agreement&rdquo;.</p>}
+            {!a.orderId && (
+              <p className={hintCls}>
+                {a.linkSkipped && SKIP_REASON[a.linkSkipped] ? `${SKIP_REASON[a.linkSkipped]} ` : ""}
+                {a.linkSkipped !== "already_signed" && <>To link it, open the order and choose &ldquo;Link a signed agreement&rdquo;.</>}
+              </p>
+            )}
           </div>
         );
       })}

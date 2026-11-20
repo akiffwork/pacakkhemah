@@ -351,7 +351,7 @@ export default function OrdersTab({ vendorId, vendorName, initialOrderId, initia
         agreementSignedAt: serverTimestamp(),
         agreementId,
       });
-      await updateDoc(doc(db, "agreements", agreementId), { orderId: order.id });
+      await updateDoc(doc(db, "agreements", agreementId), { orderId: order.id, linkSkipped: null });
       try {
         const availSnap = await getDocs(query(collection(db, "vendors", vendorId, "availability"), where("orderId", "==", order.id)));
         for (const d of availSnap.docs) {
@@ -446,6 +446,8 @@ export default function OrdersTab({ vendorId, vendorName, initialOrderId, initia
     onOpenCalendar: (order) => onOpenCalendar?.(order.id),
   };
 
+  // Repeat signatures for an order that already has one don't need linking.
+  const toLink = unlinkedAgreements.filter(a => a.linkSkipped !== "already_signed").length;
   const counts: Record<Group, number> = { action: summary.action, waiting: summary.waiting, done: summary.done };
 
   return (
@@ -472,7 +474,7 @@ export default function OrdersTab({ vendorId, vendorName, initialOrderId, initia
         <Segments label="Order groups" value={segment} onChange={setSegment}
           items={[
             ...SEGMENTS.map(sg => ({ key: sg.key as Group | "agreements", label: `${sg.label}${sg.key !== "done" || counts[sg.key] ? ` · ${counts[sg.key]}` : ""}` })),
-            { key: "agreements" as const, label: unlinkedAgreements.length ? `Agreements · ${unlinkedAgreements.length} to link` : "Agreements" },
+            { key: "agreements" as const, label: toLink ? `Agreements · ${toLink} to link` : "Agreements" },
           ]} />
       )}
 

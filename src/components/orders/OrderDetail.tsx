@@ -17,6 +17,7 @@ import { db } from "@/lib/firebase";
 
 export type UnlinkedAgreement = {
   id: string;
+  linkSkipped?: string | null;
   customerName: string;
   customerPhone?: string;
   timestamp?: { toDate?: () => Date };
