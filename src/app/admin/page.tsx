@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { db, auth } from "@/lib/firebase";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { collectionGroup, collection, onSnapshot, query, where } from "firebase/firestore";
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from "firebase/auth";
 import { isAdminEmail } from "@/lib/adminAccess";
 import AdminHome from "@/components/admin/AdminHome";
@@ -189,9 +189,20 @@ function AdminPageInner() {
       stopVendors?.(); stopVendors = null;
       if (u && await isAdminEmail(u.email)) {
         setUser(u); setDenied(false);
-        stopVendors = onSnapshot(collection(db, "vendors"), snap => {
-          setAllVendors(snap.docs.map(d => ({ id: d.id, ...d.data() } as AdminVendor)));
+        // Private details (login email) live in vendors/{id}/privateInfo.
+        let vendorDocs: AdminVendor[] = [];
+        let emails: Record<string, string> = {};
+        const merge = () => setAllVendors(vendorDocs.map(v => ({ ...v, email: emails[v.id] ?? v.email })));
+        const stopA = onSnapshot(collection(db, "vendors"), snap => {
+          vendorDocs = snap.docs.map(d => ({ id: d.id, ...d.data() } as AdminVendor));
+          merge();
         });
+        const stopB = onSnapshot(collectionGroup(db, "privateInfo"), snap => {
+          emails = {};
+          snap.docs.forEach(d => { const id = d.ref.parent.parent?.id; const e = d.data().email; if (id && e) emails[id] = e; });
+          merge();
+        }, e => console.warn("Private details:", e));
+        stopVendors = () => { stopA(); stopB(); };
       } else {
         if (u) { setDenied(true); await signOut(auth); }
         setUser(null);

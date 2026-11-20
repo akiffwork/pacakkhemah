@@ -12,8 +12,10 @@ const db = getFirestore();
 
 // Customer lookups (my bookings, review links); orders can't be listed from the browser
 export { lookupBookingsByPhone, lookupOrderByReviewToken } from "./lookups";
+export { adminPrivacyCleanup } from "./privacyCleanup";
 import { linkAgreementToOrder } from "./agreementLink";
 import { refundCreditForReview } from "./reviewCredit";
+import { chargeLeadCredit, DEFAULT_HOURLY_CAP } from "./leadCredit";
 
 // Helper: send data-only push (no "notification" key = no browser auto-display = no duplicates)
 async function sendPush(token: string, title: string, body: string, extraData: Record<string, string> = {}) {
@@ -57,37 +59,15 @@ export const onNewOrder = onDocumentCreated(
     console.log(`onNewOrder fired: vendorId=${vendorId} visitorId=${visitorId || "MISSING"}`);
     if (visitorId) {
       try {
-        const dedupRef = db.doc(`vendors/${vendorId}/leadCredits/${visitorId}`);
-        const vRef = db.doc(`vendors/${vendorId}`);
-
-        let deducted = false;
-        let skipReason = "";
-        await db.runTransaction(async (t) => {
-          const dedupSnap = await t.get(dedupRef);
-          const last = dedupSnap.data()?.lastDeductedAt as { toMillis?: () => number } | undefined;
-          const lastMs = typeof last?.toMillis === "function" ? last.toMillis() : 0;
-          if (lastMs && Date.now() - lastMs < 86_400_000) {
-            skipReason = `within 24h (last=${new Date(lastMs).toISOString()})`;
-            return;
-          }
-
-          const vDoc = await t.get(vRef);
-          const c = (vDoc.data()?.credits ?? 0) as number;
-          if (c <= 0) {
-            skipReason = `vendor has no credits (current=${c})`;
-            return;
-          }
-
-          t.update(vRef, { credits: FieldValue.increment(-1) });
-          t.set(dedupRef, { lastDeductedAt: FieldValue.serverTimestamp() }, { merge: true });
-          deducted = true;
-        });
-
-        if (deducted) {
+        const cfg = (await db.doc("settings/payment_config").get()).data();
+        const cap = Number(cfg?.leadCreditHourlyCap) > 0 ? Number(cfg?.leadCreditHourlyCap) : DEFAULT_HOURLY_CAP;
+        const res = await chargeLeadCredit(db, vendorId, String(visitorId), cap);
+        if (res.deducted) {
           await event.data!.ref.update({ creditDeducted: true });
           console.log(`Credit deducted for vendor=${vendorId} visitor=${visitorId}`);
         } else {
-          console.log(`Credit NOT deducted for vendor=${vendorId} visitor=${visitorId}: ${skipReason}`);
+          if (res.reason === "hourly_cap") await event.data!.ref.update({ creditSkipped: "hourly_cap" });
+          console.log(`Credit NOT deducted for vendor=${vendorId} visitor=${visitorId}: ${res.reason}`);
         }
       } catch (e) {
         console.error("Credit deduction error:", e);

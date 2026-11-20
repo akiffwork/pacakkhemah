@@ -8,6 +8,7 @@ import {
 } from "firebase/firestore";
 import { generateInvoicePDF, invoiceFromOrder, type InvoiceVendor } from "@/lib/invoicePDF";
 import { Private, usePrivacy } from "@/lib/privacy";
+import { getVendorPrivate } from "@/lib/vendorPrivate";
 import {
   type Order, type Group, type DepositOutcome, type PaymentChange,
   getNextAction, getPayment, getStage, paymentPatch, pickupGaps, canComplete,
@@ -416,7 +417,8 @@ export default function OrdersTab({ vendorId, vendorName, initialOrderId, initia
       const vd = vendorSnap.data() || {};
       const vendor: InvoiceVendor = {
         name: vendorName || vd.name, slug: vd.slug, image: vd.image, phone: vd.phone, city: vd.city,
-        ig: vd.ig, tiktok: vd.tiktok, fb: vd.fb, threads: vd.threads, taxProfile: vd.taxProfile,
+        ig: vd.ig, tiktok: vd.tiktok, fb: vd.fb, threads: vd.threads,
+        taxProfile: (await getVendorPrivate(vendorId, { taxProfile: vd.taxProfile })).taxProfile,
       };
       const invoiceData = invoiceFromOrder(order, vendor);
       generateInvoicePDF(invoiceData);

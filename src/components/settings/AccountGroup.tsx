@@ -1,6 +1,7 @@
 "use client";
 
 import { Private, usePrivacy } from "@/lib/privacy";
+import { useVendorPrivate } from "@/lib/vendorPrivate";
 import { useEffect, useState } from "react";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "@/lib/firebase";
@@ -47,8 +48,10 @@ export default function AccountGroup({ vendorId, v, set, openSection, setOpenSec
   const [resetSent, setResetSent] = useState(false);
   const [pushState, setPushState] = useState<"checking" | "unsupported" | "blocked" | "ready">("checking");
   const [pushBusy, setPushBusy] = useState(false);
-  const tp: TaxProfile = v.taxProfile || {};
-  const setTax = (fields: Partial<TaxProfile>) => set({ taxProfile: { ...tp, ...fields } });
+  // Tax details are private (not on the public shop record).
+  const priv = useVendorPrivate(vendorId, { taxProfile: v.taxProfile });
+  const tp: TaxProfile = priv.data.taxProfile || {};
+  const setTax = (fields: Partial<TaxProfile>) => priv.save({ taxProfile: { ...tp, ...fields } });
 
   useEffect(() => {
     pushSupported().then(ok => setPushState(!ok ? "unsupported" : pushPermission() === "denied" ? "blocked" : "ready"));
@@ -120,6 +123,9 @@ export default function AccountGroup({ vendorId, v, set, openSection, setOpenSec
           <Field id="msic" label="MSIC code"><input id="msic" value={tp.msicCode ?? "7721"} onChange={e => setTax({ msicCode: e.target.value })} className={inputCls} /></Field>
           <Field id="msic-act" label="Business activity"><input id="msic-act" value={tp.msicActivity ?? "Rental and leasing of recreational and sports goods"} onChange={e => setTax({ msicActivity: e.target.value })} className={inputCls} /></Field>
         </div>
+        <p className={`${hintCls} ${priv.state === "error" ? "text-red-700 font-semibold" : ""}`} role="status">
+          {priv.state === "saving" ? "Saving…" : priv.state === "saved" ? "Saved. Only you and Pacak Khemah can see these details." : priv.state === "error" ? "Could not save. Check your connection and try again." : "Only you and Pacak Khemah can see these details."}
+        </p>
         </>}
       </Section>
 

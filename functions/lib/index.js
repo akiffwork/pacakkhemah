@@ -2,7 +2,7 @@
 // functions/index.ts
 // Deploy with: firebase deploy --only functions
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onOrderCreated = exports.onReviewCreated = exports.onAgreementSigned = exports.onNewOrder = exports.lookupOrderByReviewToken = exports.lookupBookingsByPhone = void 0;
+exports.onOrderCreated = exports.onReviewCreated = exports.onAgreementSigned = exports.onNewOrder = exports.adminPrivacyCleanup = exports.lookupOrderByReviewToken = exports.lookupBookingsByPhone = void 0;
 const firestore_1 = require("firebase-functions/v2/firestore");
 const app_1 = require("firebase-admin/app");
 const firestore_2 = require("firebase-admin/firestore");
@@ -13,8 +13,11 @@ const db = (0, firestore_2.getFirestore)();
 var lookups_1 = require("./lookups");
 Object.defineProperty(exports, "lookupBookingsByPhone", { enumerable: true, get: function () { return lookups_1.lookupBookingsByPhone; } });
 Object.defineProperty(exports, "lookupOrderByReviewToken", { enumerable: true, get: function () { return lookups_1.lookupOrderByReviewToken; } });
+var privacyCleanup_1 = require("./privacyCleanup");
+Object.defineProperty(exports, "adminPrivacyCleanup", { enumerable: true, get: function () { return privacyCleanup_1.adminPrivacyCleanup; } });
 const agreementLink_1 = require("./agreementLink");
 const reviewCredit_1 = require("./reviewCredit");
+const leadCredit_1 = require("./leadCredit");
 // Helper: send data-only push (no "notification" key = no browser auto-display = no duplicates)
 async function sendPush(token, title, body, extraData = {}) {
     await (0, messaging_1.getMessaging)().send({
@@ -52,35 +55,17 @@ exports.onNewOrder = (0, firestore_1.onDocumentCreated)("analytics/{docId}", asy
     console.log(`onNewOrder fired: vendorId=${vendorId} visitorId=${visitorId || "MISSING"}`);
     if (visitorId) {
         try {
-            const dedupRef = db.doc(`vendors/${vendorId}/leadCredits/${visitorId}`);
-            const vRef = db.doc(`vendors/${vendorId}`);
-            let deducted = false;
-            let skipReason = "";
-            await db.runTransaction(async (t) => {
-                var _a, _b, _c;
-                const dedupSnap = await t.get(dedupRef);
-                const last = (_a = dedupSnap.data()) === null || _a === void 0 ? void 0 : _a.lastDeductedAt;
-                const lastMs = typeof (last === null || last === void 0 ? void 0 : last.toMillis) === "function" ? last.toMillis() : 0;
-                if (lastMs && Date.now() - lastMs < 86400000) {
-                    skipReason = `within 24h (last=${new Date(lastMs).toISOString()})`;
-                    return;
-                }
-                const vDoc = await t.get(vRef);
-                const c = ((_c = (_b = vDoc.data()) === null || _b === void 0 ? void 0 : _b.credits) !== null && _c !== void 0 ? _c : 0);
-                if (c <= 0) {
-                    skipReason = `vendor has no credits (current=${c})`;
-                    return;
-                }
-                t.update(vRef, { credits: firestore_2.FieldValue.increment(-1) });
-                t.set(dedupRef, { lastDeductedAt: firestore_2.FieldValue.serverTimestamp() }, { merge: true });
-                deducted = true;
-            });
-            if (deducted) {
+            const cfg = (await db.doc("settings/payment_config").get()).data();
+            const cap = Number(cfg === null || cfg === void 0 ? void 0 : cfg.leadCreditHourlyCap) > 0 ? Number(cfg === null || cfg === void 0 ? void 0 : cfg.leadCreditHourlyCap) : leadCredit_1.DEFAULT_HOURLY_CAP;
+            const res = await (0, leadCredit_1.chargeLeadCredit)(db, vendorId, String(visitorId), cap);
+            if (res.deducted) {
                 await event.data.ref.update({ creditDeducted: true });
                 console.log(`Credit deducted for vendor=${vendorId} visitor=${visitorId}`);
             }
             else {
-                console.log(`Credit NOT deducted for vendor=${vendorId} visitor=${visitorId}: ${skipReason}`);
+                if (res.reason === "hourly_cap")
+                    await event.data.ref.update({ creditSkipped: "hourly_cap" });
+                console.log(`Credit NOT deducted for vendor=${vendorId} visitor=${visitorId}: ${res.reason}`);
             }
         }
         catch (e) {
