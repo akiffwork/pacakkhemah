@@ -6,7 +6,7 @@ exports.onOrderCreated = exports.onReviewCreated = exports.onAgreementSigned = e
 const firestore_1 = require("firebase-functions/v2/firestore");
 const app_1 = require("firebase-admin/app");
 const firestore_2 = require("firebase-admin/firestore");
-const messaging_1 = require("firebase-admin/messaging");
+const push_1 = require("./push");
 (0, app_1.initializeApp)();
 const db = (0, firestore_2.getFirestore)();
 // Customer lookups (my bookings, review links); orders can't be listed from the browser
@@ -18,34 +18,15 @@ Object.defineProperty(exports, "adminPrivacyCleanup", { enumerable: true, get: f
 const agreementLink_1 = require("./agreementLink");
 const reviewCredit_1 = require("./reviewCredit");
 const leadCredit_1 = require("./leadCredit");
-// Helper: send data-only push (no "notification" key = no browser auto-display = no duplicates)
-async function sendPush(token, title, body, extraData = {}) {
-    await (0, messaging_1.getMessaging)().send({
-        token,
-        data: Object.assign({ title,
-            body }, extraData),
-        android: {
-            priority: "high",
-        },
-        apns: {
-            payload: {
-                aps: { sound: "default", badge: 1, "content-available": 1 },
-            },
-        },
-        webpush: {
-            headers: { Urgency: "high" },
-        },
-    });
-}
 // Trigger on every new analytics doc (new order/inquiry)
 exports.onNewOrder = (0, firestore_1.onDocumentCreated)("analytics/{docId}", async (event) => {
-    var _a, _b, _c;
+    var _a, _b;
     const data = (_a = event.data) === null || _a === void 0 ? void 0 : _a.data();
     if (!data)
         return;
     if (data.type !== "whatsapp_lead")
         return;
-    const { vendorId, vendorName, totalAmount, items, visitorId } = data;
+    const { vendorId, vendorName, totalAmount, items, cartItems, visitorId } = data;
     if (!vendorId)
         return;
     // ── Credit deduction (Admin SDK bypasses Firestore security rules) ──────
@@ -76,25 +57,23 @@ exports.onNewOrder = (0, firestore_1.onDocumentCreated)("analytics/{docId}", asy
         console.warn(`Skipping credit deduction — no visitorId on analytics doc ${(_b = event.data) === null || _b === void 0 ? void 0 : _b.id}`);
     }
     // ────────────────────────────────────────────────────────────────────────
-    const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
-    const fcmToken = (_c = vendorSnap.data()) === null || _c === void 0 ? void 0 : _c.fcmToken;
-    if (!fcmToken) {
-        console.log(`No FCM token for vendor ${vendorId}`);
-        return;
-    }
-    const itemSummary = Array.isArray(items)
-        ? items.map((i) => `${i.name} x${i.qty}`).join(", ")
+    // The shop cart sends cartItems; older leads used items
+    const lineItems = Array.isArray(items) ? items : Array.isArray(cartItems) ? cartItems : null;
+    const itemSummary = lineItems
+        ? lineItems.map((i) => `${i.name} x${i.qty}`).join(", ")
         : "Gear rental";
-    await sendPush(fcmToken, "🛒 Pesanan Baru!", `${itemSummary} — RM ${totalAmount}`, {
-        url: "/store",
-        vendorId,
+    const sent = await (0, push_1.notifyVendor)(vendorId, {
         type: "new_order",
+        title: "🛒 Pesanan Baru!",
+        body: `${itemSummary} — RM ${totalAmount}`,
+        url: "/store?tab=orders",
+        refId: event.params.docId,
     });
-    console.log(`Notification sent to vendor ${vendorName || vendorId}`);
+    console.log(sent ? `Notification sent to vendor ${vendorName || vendorId}` : `No FCM token for vendor ${vendorId}`);
 });
 // Trigger on agreement signed
 exports.onAgreementSigned = (0, firestore_1.onDocumentCreated)("agreements/{docId}", async (event) => {
-    var _a, _b, _c;
+    var _a, _b;
     const data = (_a = event.data) === null || _a === void 0 ? void 0 : _a.data();
     if (!data)
         return;
@@ -141,20 +120,18 @@ exports.onAgreementSigned = (0, firestore_1.onDocumentCreated)("agreements/{docI
         console.error("Tally update error:", e);
     }
     // Send push notification
-    const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
-    const fcmToken = (_c = vendorSnap.data()) === null || _c === void 0 ? void 0 : _c.fcmToken;
-    if (!fcmToken)
-        return;
-    await sendPush(fcmToken, "✅ Perjanjian Ditandatangani!", `${customerName || "Pelanggan"} telah menandatangani perjanjian sewa`, {
-        url: "/store",
-        vendorId,
+    await (0, push_1.notifyVendor)(vendorId, {
         type: "agreement_signed",
+        title: "✅ Perjanjian Ditandatangani!",
+        body: `${customerName || "Pelanggan"} telah menandatangani perjanjian sewa`,
+        url: "/store?tab=orders",
+        refId: orderId || event.params.docId,
     });
     console.log(`Agreement notification sent to vendor ${vendorId}`);
 });
 // Trigger on review submitted
 exports.onReviewCreated = (0, firestore_1.onDocumentCreated)("reviews/{docId}", async (event) => {
-    var _a, _b;
+    var _a;
     const data = (_a = event.data) === null || _a === void 0 ? void 0 : _a.data();
     if (!data)
         return;
@@ -213,14 +190,12 @@ exports.onReviewCreated = (0, firestore_1.onDocumentCreated)("reviews/{docId}", 
     }
     // 3. Send notification to vendor
     try {
-        const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
-        const fcmToken = (_b = vendorSnap.data()) === null || _b === void 0 ? void 0 : _b.fcmToken;
-        if (!fcmToken)
-            return;
-        await sendPush(fcmToken, `⭐ Review Baru! ${rating}/5`, `${data.customerName || "Pelanggan"} telah memberi ulasan`, {
-            url: "/store",
-            vendorId,
+        await (0, push_1.notifyVendor)(vendorId, {
             type: "new_review",
+            title: `⭐ Review Baru! ${rating}/5`,
+            body: `${data.customerName || "Pelanggan"} telah memberi ulasan`,
+            url: "/store?tab=reviews",
+            refId: event.params.docId,
         });
     }
     catch (e) {
@@ -229,7 +204,7 @@ exports.onReviewCreated = (0, firestore_1.onDocumentCreated)("reviews/{docId}", 
 });
 // Trigger on new order — validate stock server-side to prevent overbooking
 exports.onOrderCreated = (0, firestore_1.onDocumentCreated)("orders/{orderId}", async (event) => {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d;
     const data = (_a = event.data) === null || _a === void 0 ? void 0 : _a.data();
     if (!data)
         return;
@@ -287,21 +262,24 @@ exports.onOrderCreated = (0, firestore_1.onDocumentCreated)("orders/{orderId}", 
             updateData.stockConflictDetails = conflicts;
             updateData.status = "conflict";
             // Notify vendor about conflict
-            const vendorSnap = await db.doc(`vendors/${vendorId}`).get();
-            const fcmToken = (_c = vendorSnap.data()) === null || _c === void 0 ? void 0 : _c.fcmToken;
-            if (fcmToken) {
-                await sendPush(fcmToken, "⚠️ Konflik Stok!", `${conflicts.length} item melebihi stok: ${conflicts[0]}`, {
-                    url: "/store?tab=orders",
-                    vendorId,
+            try {
+                await (0, push_1.notifyVendor)(vendorId, {
                     type: "stock_conflict",
+                    title: "⚠️ Konflik Stok!",
+                    body: `${conflicts.length} item melebihi stok: ${conflicts[0]}`,
+                    url: "/store?tab=orders",
+                    refId: event.params.orderId,
                 });
             }
-            console.log(`Order ${(_d = event.data) === null || _d === void 0 ? void 0 : _d.id} has stock conflicts: ${conflicts.join(", ")}`);
+            catch (e) {
+                console.error("Stock conflict notification error:", e);
+            }
+            console.log(`Order ${(_c = event.data) === null || _c === void 0 ? void 0 : _c.id} has stock conflicts: ${conflicts.join(", ")}`);
         }
         else {
             updateData.stockConflict = false;
         }
-        await db.doc(`orders/${(_e = event.data) === null || _e === void 0 ? void 0 : _e.id}`).update(updateData);
+        await db.doc(`orders/${(_d = event.data) === null || _d === void 0 ? void 0 : _d.id}`).update(updateData);
     }
     catch (e) {
         console.error("Stock validation error:", e);
