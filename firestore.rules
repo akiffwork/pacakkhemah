@@ -45,12 +45,24 @@ service cloud.firestore {
       return ['badges', 'rating', 'reviewCount', 'ratingBreakdown', 'categoryRatings',
               'order_count', 'total_orders', 'suspendedAt', 'suspendReason'];
     }
+    // Private details belong in vendors/{id}/privateInfo, not on the public
+    // vendor record. Old copies may be removed but not written.
+    function privateVendorKeys() { return ['email', 'taxProfile']; }
+    function addsPrivateVendorKeys() {
+      return ('email' in request.resource.data.diff(resource.data).affectedKeys() && 'email' in request.resource.data) ||
+             ('taxProfile' in request.resource.data.diff(resource.data).affectedKeys() && 'taxProfile' in request.resource.data);
+    }
     function touchesProtectedVendorFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'credits', 'status', 'owner_uid',
         'referral_total_credits', 'referral_total_referred',
         'referralRewarded', 'referralRewardedAt'
       ]) || request.resource.data.diff(resource.data).affectedKeys().hasAny(adminOnlyVendorKeys());
+    }
+
+    // Admin list of vendors' private details (vendors/{id}/privateInfo/*)
+    match /{path=**}/privateInfo/{docId} {
+      allow read: if isAdmin();
     }
 
     // --- 1. VENDORS COLLECTION ---
@@ -65,9 +77,15 @@ service cloud.firestore {
         !request.resource.data.keys().hasAny([
           'referral_total_credits', 'referral_total_referred', 'referralRewardedAt'
         ]) &&
-        !request.resource.data.keys().hasAny(adminOnlyVendorKeys()));
-      allow update: if isAdmin() || (isOwner() && !touchesProtectedVendorFields());
+        !request.resource.data.keys().hasAny(adminOnlyVendorKeys()) &&
+        !request.resource.data.keys().hasAny(privateVendorKeys()));
+      allow update: if isAdmin() || (isOwner() && !touchesProtectedVendorFields() && !addsPrivateVendorKeys());
       allow delete: if isAdmin();
+
+      // Login email and tax details: only the shop's owner and the admin.
+      match /privateInfo/{docId} {
+        allow read, write: if isAdmin() || isVendorOwner(vendorId);
+      }
 
       match /discounts/{discountId} {
         allow read: if true;

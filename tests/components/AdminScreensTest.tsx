@@ -51,6 +51,7 @@ const snapFor = (path: string) => {
 
 jest.mock('firebase/firestore', () => ({
   collection: jest.fn((_db, ...p: string[]) => ({ path: p.join('/') })),
+  collectionGroup: jest.fn((_db, id: string) => ({ path: `group:${id}` })),
   doc: jest.fn((a: { path?: string }, ...p: string[]) => ({ path: p.length ? p.join('/') : `${a.path}/new` })),
   query: jest.fn((c) => c), where: jest.fn(), orderBy: jest.fn(), limit: jest.fn(),
   onSnapshot: jest.fn((t: { path: string }, cb: (s: unknown) => void) => {

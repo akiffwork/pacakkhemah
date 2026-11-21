@@ -98,7 +98,6 @@ function RegisterContent() {
     const vendorData: Record<string, any> = {
       owner_uid: user.uid,
       name: prospect?.name || user.displayName || "New Vendor",
-      email: user.email,
       phone: whatsappPhone || user.phoneNumber || "",
       image: user.photoURL || "",
       status: "pending",
@@ -119,6 +118,8 @@ function RegisterContent() {
       vendorData.referralRewarded = false;
     }
     await setDoc(doc(db, "vendors", user.uid), vendorData);
+    // The login email is private (the vendor record is public).
+    if (user.email) await setDoc(doc(db, "vendors", user.uid, "privateInfo", "details"), { email: user.email }, { merge: true }).catch(() => {});
   }
 
   async function handleEmailReg() {
@@ -131,11 +132,11 @@ function RegisterContent() {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       await createVendorShell(cred.user, cleanPhone);
       await sendEmailVerification(cred.user);
-      fetch("/api/notify-telegram", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vendorName: prospect ? `${prospect.name} (from prospect outreach)` : (cred.user.displayName || "New Vendor"), email: cred.user.email, phone: cleanPhone, method: "Email", referralCode: refCode || null }),
-      }).catch(() => {});
+      cred.user.getIdToken().then(token => fetch("/api/notify-telegram", {
+        method: "POST", keepalive: true,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ vendorName: prospect ? `${prospect.name} (from prospect outreach)` : (cred.user.displayName || "New Vendor"), phone: cleanPhone, method: "Email", referralCode: refCode || null }),
+      })).catch(() => {});
       setDisplayEmail(email);
       setSuccess(true);
     } catch (e: any) { setError(e.message); }
@@ -153,11 +154,11 @@ function RegisterContent() {
       if (!docSnap.exists()) {
         const cleanPhone = phone.replace(/[^0-9]/g, "");
         await createVendorShell(user, cleanPhone);
-        fetch("/api/notify-telegram", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ vendorName: prospect ? `${prospect.name} (from prospect outreach)` : (user.displayName || "New Vendor"), email: user.email, phone: cleanPhone, method: "Google", referralCode: refCode || null }),
-        }).catch(() => {});
+        user.getIdToken().then(token => fetch("/api/notify-telegram", {
+          method: "POST", keepalive: true,
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ vendorName: prospect ? `${prospect.name} (from prospect outreach)` : (user.displayName || "New Vendor"), phone: cleanPhone, method: "Google", referralCode: refCode || null }),
+        })).catch(() => {});
         alert(tx("Account created! Please wait for admin approval.", "Akaun berjaya dicipta! Sila tunggu kelulusan admin."));
       }
       window.location.href = "/store";

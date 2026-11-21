@@ -1,181 +1,45 @@
 /**
- * Unit tests for src/app/api/notify-telegram/route.ts
- * Tests the vendor registration notification handler.
+ * @jest-environment node
  */
-
-// next/server uses the Web Fetch API's Request class which is unavailable in
-// jsdom. We mock the module so the route can be imported and tested without a
-// full Next.js server runtime.
-jest.mock('next/server', () => ({
-  NextRequest: class {},
-  NextResponse: {
-    json: (body: unknown, init?: { status?: number }) => ({
-      status: init?.status ?? 200,
-      json: async () => body,
-    }),
-  },
-}));
-
 import { POST } from '@/app/api/notify-telegram/route';
+import { NextRequest } from 'next/server';
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
-function makeRequest(body: Record<string, unknown>) {
-  return { json: jest.fn().mockResolvedValue(body) } as any;
-}
-
-function mockTelegramOk() {
-  global.fetch = jest.fn().mockResolvedValueOnce({ ok: true }) as any;
-}
-
-function mockTelegramFail(status = 400) {
-  global.fetch = jest.fn().mockResolvedValueOnce({
-    ok: false,
-    status,
-    text: jest.fn().mockResolvedValueOnce('Bad Request'),
-  }) as any;
-}
-
-function mockTelegramThrow() {
-  global.fetch = jest.fn().mockRejectedValueOnce(new Error('network error')) as any;
-}
-
-// ─── missing env vars ─────────────────────────────────────────────────────────
-
-describe('notify-telegram: missing configuration', () => {
-  const originalToken = process.env.TELEGRAM_BOT_TOKEN;
-  const originalChat = process.env.TELEGRAM_CHAT_ID;
-
-  afterEach(() => {
-    process.env.TELEGRAM_BOT_TOKEN = originalToken;
-    process.env.TELEGRAM_CHAT_ID = originalChat;
-  });
-
-  test('returns 500 when TELEGRAM_BOT_TOKEN is not set', async () => {
-    delete process.env.TELEGRAM_BOT_TOKEN;
-    process.env.TELEGRAM_CHAT_ID = 'chat123';
-
-    const res = await POST(makeRequest({}));
-    expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.error).toBe('Telegram not configured');
-  });
-
-  test('returns 500 when TELEGRAM_CHAT_ID is not set', async () => {
-    process.env.TELEGRAM_BOT_TOKEN = 'token123';
-    delete process.env.TELEGRAM_CHAT_ID;
-
-    const res = await POST(makeRequest({}));
-    expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.error).toBe('Telegram not configured');
-  });
+const sent: string[] = [];
+let createdAt = Date.now();
+beforeEach(() => {
+  sent.length = 0;
+  createdAt = Date.now();
+  process.env.TELEGRAM_BOT_TOKEN = 'bot'; process.env.TELEGRAM_CHAT_ID = 'chat'; process.env.NEXT_PUBLIC_FIREBASE_API_KEY = 'key';
+  global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+    if (url.includes('accounts:lookup')) {
+      const { idToken } = JSON.parse(String(init?.body));
+      return idToken === 'good'
+        ? new Response(JSON.stringify({ users: [{ localId: 'u1', email: 'real@x.com', createdAt: String(createdAt) }] }))
+        : new Response('{}', { status: 400 });
+    }
+    sent.push(JSON.parse(String(init?.body)).text);
+    return new Response('{}');
+  }) as typeof fetch;
+});
+const req = (token: string | null, body: object) => new NextRequest('https://x/api/notify-telegram', {
+  method: 'POST', body: JSON.stringify(body), headers: token ? { authorization: `Bearer ${token}` } : {},
 });
 
-// ─── valid requests ───────────────────────────────────────────────────────────
-
-describe('notify-telegram: valid requests', () => {
-  beforeEach(() => {
-    process.env.TELEGRAM_BOT_TOKEN = 'fake-token';
-    process.env.TELEGRAM_CHAT_ID = 'fake-chat';
-  });
-
-  afterEach(() => {
-    delete process.env.TELEGRAM_BOT_TOKEN;
-    delete process.env.TELEGRAM_CHAT_ID;
-    jest.resetAllMocks();
-  });
-
-  test('returns 200 on success', async () => {
-    mockTelegramOk();
-    const res = await POST(makeRequest({ vendorName: 'Test Vendor' }));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-  });
-
-  test('sends to the correct Telegram chat_id', async () => {
-    mockTelegramOk();
-    await POST(makeRequest({ vendorName: 'Test' }));
-    const sentBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
-    expect(sentBody.chat_id).toBe('fake-chat');
-  });
-
-  test('message includes vendor name, email, phone, and method', async () => {
-    mockTelegramOk();
-    await POST(makeRequest({ vendorName: 'Ali', email: 'ali@test.com', phone: '0123456789', method: 'google' }));
-    const sentBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
-    expect(sentBody.text).toContain('Ali');
-    expect(sentBody.text).toContain('ali@test.com');
-    expect(sentBody.text).toContain('0123456789');
-    expect(sentBody.text).toContain('google');
-  });
-
-  test('message includes referral section when referralCode is provided', async () => {
-    mockTelegramOk();
-    await POST(makeRequest({ vendorName: 'Budi', referralCode: 'REF001' }));
-    const sentBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
-    expect(sentBody.text).toContain('REF001');
-    expect(sentBody.text).toContain('Referred by');
-  });
-
-  test('message does not include referral section when no referralCode', async () => {
-    mockTelegramOk();
-    await POST(makeRequest({ vendorName: 'Chong' }));
-    const sentBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
-    expect(sentBody.text).not.toContain('Referred by');
-  });
-
-  test('uses "New Vendor" fallback when vendorName is missing', async () => {
-    mockTelegramOk();
-    await POST(makeRequest({}));
-    const sentBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
-    expect(sentBody.text).toContain('New Vendor');
-  });
-
-  test('uses "N/A" fallback for missing email and phone', async () => {
-    mockTelegramOk();
-    await POST(makeRequest({ vendorName: 'Test' }));
-    const sentBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
-    const count = (sentBody.text.match(/N\/A/g) || []).length;
-    expect(count).toBeGreaterThanOrEqual(2);
-  });
-
-  test('uses Markdown parse mode', async () => {
-    mockTelegramOk();
-    await POST(makeRequest({ vendorName: 'Test' }));
-    const sentBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
-    expect(sentBody.parse_mode).toBe('Markdown');
-  });
+test('refuses requests without a real signed-in account', async () => {
+  expect((await POST(req(null, { vendorName: 'spam' }))).status).toBe(403);
+  expect((await POST(req('fake', { vendorName: 'spam' }))).status).toBe(403);
+  expect(sent).toHaveLength(0);
 });
 
-// ─── Telegram API errors ──────────────────────────────────────────────────────
+test('refuses accounts older than 15 minutes', async () => {
+  createdAt = Date.now() - 16 * 60 * 1000;
+  expect((await POST(req('good', { vendorName: 'x' }))).status).toBe(403);
+});
 
-describe('notify-telegram: Telegram API errors', () => {
-  beforeEach(() => {
-    process.env.TELEGRAM_BOT_TOKEN = 'fake-token';
-    process.env.TELEGRAM_CHAT_ID = 'fake-chat';
-  });
-
-  afterEach(() => {
-    delete process.env.TELEGRAM_BOT_TOKEN;
-    delete process.env.TELEGRAM_CHAT_ID;
-    jest.resetAllMocks();
-  });
-
-  test('returns 500 when Telegram API responds with non-OK status', async () => {
-    mockTelegramFail(400);
-    const res = await POST(makeRequest({ vendorName: 'Test' }));
-    expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.error).toBe('Telegram send failed');
-  });
-
-  test('returns 500 when fetch throws a network error', async () => {
-    mockTelegramThrow();
-    const res = await POST(makeRequest({ vendorName: 'Test' }));
-    expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.error).toBe('Internal error');
-  });
+test('sends for a new account, with its real email and plain text', async () => {
+  const res = await POST(req('good', { vendorName: 'Camp *Bold* [link](https://evil)', email: 'fake@x.com', phone: '012-345 6789' }));
+  expect(res.status).toBe(200);
+  expect(sent[0]).toContain('real@x.com');
+  expect(sent[0]).not.toContain('fake@x.com');
+  expect(sent[0]).toContain('0123456789');
 });

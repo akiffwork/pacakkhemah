@@ -4,9 +4,10 @@
 // for new shops, admin access, and data tools.
 
 import { useEffect, useRef, useState } from "react";
-import { collection, deleteField, doc, getDoc, getDocs, limit, query, setDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { collection, collectionGroup, deleteField, doc, getDoc, getDocs, limit, query, setDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
-import { db, storage } from "@/lib/firebase";
+import { db, storage, functions } from "@/lib/firebase";
 import { DEFAULT_ACCOUNT_NAME, DEFAULT_ADMIN_WHATSAPP, DEFAULT_PACKAGES, DEFAULT_QR, type CreditPackage } from "@/lib/credits";
 import { DEFAULT_POLICIES, DEFAULT_SITE, type DefaultPolicies, type SiteSettings } from "@/lib/siteSettings";
 import { OWNER_EMAIL, loadAdminEmails, saveAdminEmails } from "@/lib/adminAccess";
@@ -49,6 +50,7 @@ function socialProblem(key: keyof Social, raw: string): string | null {
 }
 
 export default function AdminSettingsTab({ initialSection }: { initialSection?: string }) {
+  const [cleaning, setCleaning] = useState(false);
   const [section, setSection] = useState<Section>(SECTIONS.some(s => s.key === initialSection) ? initialSection as Section : "payments");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -116,12 +118,16 @@ export default function AdminSettingsTab({ initialSection }: { initialSection?: 
   }
 
   async function exportData() {
-    const [vendors, txs, settings] = await Promise.all([
+    const [vendors, txs, settings, priv] = await Promise.all([
       getDocs(collection(db, "vendors")), getDocs(collection(db, "transactions")), getDocs(collection(db, "settings")),
+      getDocs(collectionGroup(db, "privateInfo")),
     ]);
+    // Login email and tax details are kept privately, outside the vendor record.
+    const privateById: Record<string, Record<string, unknown>> = {};
+    priv.docs.forEach(d => { const id = d.ref.parent.parent?.id; if (id) privateById[id] = { ...privateById[id], ...d.data() }; });
     const data = {
       exportedAt: new Date().toISOString(),
-      vendors: vendors.docs.map(d => ({ id: d.id, ...d.data() })),
+      vendors: vendors.docs.map(d => ({ id: d.id, ...d.data(), ...(privateById[d.id] ? { privateInfo: privateById[d.id] } : {}) })),
       transactions: txs.docs.map(d => ({ id: d.id, ...d.data() })),
       settings: Object.fromEntries(settings.docs.map(d => [d.id, d.data()])),
     };
@@ -129,6 +135,18 @@ export default function AdminSettingsTab({ initialSection }: { initialSection?: 
     const a = document.createElement("a");
     a.href = url; a.download = `pacakkhemah-export-${new Date().toISOString().slice(0, 10)}.json`; a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function runCleanup() {
+    setCleaning(true);
+    try {
+      const res = await httpsCallable(functions, "adminPrivacyCleanup")();
+      const r = res.data as { vendors: number; moved: number; scrubbed: number };
+      show(`Done: ${r.moved} of ${r.vendors} shops moved, ${r.scrubbed} promo lists cleaned`);
+    } catch (e) {
+      console.error(e);
+      show("Clean-up failed. Is the server function deployed?", "error");
+    } finally { setCleaning(false); }
   }
 
   async function clearTransactions() {
@@ -299,6 +317,13 @@ export default function AdminSettingsTab({ initialSection }: { initialSection?: 
             <H2>Export</H2>
             <p className={hintCls}>Download all shops, transactions and settings as a JSON file.</p>
             <button type="button" className={`${smallBtn} self-start`} onClick={() => exportData().catch(() => show("Could not export", "error"))}><i className="fas fa-download mr-1.5" aria-hidden="true"></i>Download export</button>
+          </Card>
+          <Card>
+            <H2>Privacy clean-up</H2>
+            <p className={hintCls}>Moves each shop&apos;s login email and tax details off the public shop record into a private one, and removes customer names and phone numbers from promo-code usage lists. Run it once after updating. Safe to run again.</p>
+            <button type="button" className={`${smallBtn} self-start`} disabled={cleaning} onClick={runCleanup}>
+              <i className={`fas ${cleaning ? "fa-spinner fa-spin" : "fa-user-shield"} mr-1.5`} aria-hidden="true"></i>{cleaning ? "Cleaning up" : "Run privacy clean-up"}
+            </button>
           </Card>
           <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex flex-col gap-3">
             <H2>Danger zone</H2>
