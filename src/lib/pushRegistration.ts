@@ -21,7 +21,41 @@ export function pushPermission(): NotificationPermission | "unsupported" {
   return Notification.permission;
 }
 
+export type ForegroundAlert = { title: string; body: string; url?: string; type?: string };
+
 let foregroundBound = false;
+let foregroundListener: ((alert: ForegroundAlert) => void) | null = null;
+
+/**
+ * Alerts that arrive while the dashboard is open and visible come here instead
+ * of the phone's tray (mobile browsers don't allow `new Notification()` from a
+ * page). The dashboard shows them as an in-app toast. Returns an unsubscribe.
+ */
+export function onForegroundAlert(listener: (alert: ForegroundAlert) => void): () => void {
+  foregroundListener = listener;
+  return () => { if (foregroundListener === listener) foregroundListener = null; };
+}
+
+/**
+ * Close every Pacak Khemah alert in the phone's tray and clear the app-icon
+ * badge. Called when the dashboard opens or comes back to the front: once the
+ * vendor is looking at the app, the alerts have done their job.
+ */
+export async function clearNotifications(): Promise<void> {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    for (const reg of registrations) {
+      const open = await reg.getNotifications();
+      open.forEach((n) => n.close());
+      reg.active?.postMessage({ type: "CLEAR_NOTIFICATIONS" });
+    }
+    const nav = navigator as unknown as { clearAppBadge?: () => Promise<void> };
+    await nav.clearAppBadge?.();
+  } catch (e) {
+    console.warn("Clearing notifications failed:", e);
+  }
+}
 
 /** Ask for permission, register and save the token. Returns the token, or null if refused. */
 export async function enablePush(vendorId: string): Promise<string | null> {
@@ -40,11 +74,11 @@ export async function enablePush(vendorId: string): Promise<string | null> {
     onMessage(messaging, (payload) => {
       const data = payload.data || {};
       const title = data.title || payload.notification?.title;
-      if (!title || Notification.permission !== "granted") return;
-      new Notification(title, { body: data.body || payload.notification?.body || "", icon: "/pacak-khemah.png", tag: data.type || "foreground" });
+      if (!title) return;
+      foregroundListener?.({ title, body: data.body || payload.notification?.body || "", url: data.url, type: data.type });
     });
   }
-  if ("clearAppBadge" in navigator) (navigator as unknown as { clearAppBadge?: () => Promise<void> }).clearAppBadge?.();
+  await clearNotifications();
   return token;
 }
 
