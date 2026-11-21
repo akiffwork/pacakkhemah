@@ -9,6 +9,7 @@ import {
 import BottomNav from "@/components/BottomNav";
 import AdBanner from "@/components/AdBanner";
 import ProspectSection from "@/components/ProspectSection";
+import DownloadsSection from "@/components/DownloadsSection";
 import { resolveLocation, resolveAny, covers, ResolvedLocation } from "@/lib/malaysiaLocations";
 
 function titleCase(s: string): string {
@@ -826,6 +827,9 @@ export default function DirectoryPage() {
             </div>
           </section>
         )}
+
+        {/* Free downloads */}
+        <DownloadsSection />
       </main>
 
       {/* ═══ TESTIMONIALS ═══ */}

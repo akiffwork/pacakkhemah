@@ -6,8 +6,9 @@ import { useState } from "react";
 import { PageHeader, Segments, Toast, useToast } from "@/components/ui/kit";
 import ContentTab, { type ContentSection } from "./ContentTab";
 import CampsitesTab from "./CampsitesTab";
+import DownloadsTab from "./DownloadsTab";
 
-type Section = ContentSection | "campsites";
+type Section = ContentSection | "campsites" | "downloads";
 
 const SECTIONS: { key: Section; label: string; hint: string }[] = [
   { key: "announcement", label: "Announcement", hint: "A banner at the top of the homepage" },
@@ -18,6 +19,7 @@ const SECTIONS: { key: Section; label: string; hint: string }[] = [
   { key: "events", label: "Events", hint: "Camping events on the homepage. Past events are removed automatically." },
   { key: "articles", label: "Guide articles", hint: "Articles in the camping guide" },
   { key: "campsites", label: "Campsites", hint: "The campsite directory" },
+  { key: "downloads", label: "Downloads", hint: "Free files on the homepage that anyone can download" },
 ];
 
 export default function SiteTab({ initialSection }: { initialSection?: string }) {
@@ -31,10 +33,11 @@ export default function SiteTab({ initialSection }: { initialSection?: string })
       <Segments label="Site sections" value={section} onChange={setSection} items={SECTIONS.map(s => ({ key: s.key, label: s.label }))} />
       <p className="text-[13px] text-slate-600 -mt-1">{meta.hint}</p>
       {/* Kept mounted so unsaved edits survive switching sections */}
-      <div hidden={section === "campsites"}>
-        <ContentTab section={section === "campsites" ? "announcement" : section} notify={show} />
+      <div hidden={section === "campsites" || section === "downloads"}>
+        <ContentTab section={section === "campsites" || section === "downloads" ? "announcement" : section} notify={show} />
       </div>
       {section === "campsites" && <CampsitesTab notify={show} />}
+      {section === "downloads" && <DownloadsTab notify={show} />}
       <Toast toast={toast} />
     </div>
   );

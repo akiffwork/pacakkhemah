@@ -194,6 +194,19 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // --- 6b. FREE DOWNLOADS (Admin › Site › Downloads) ---
+    // Anyone reads what is shown; the admin also sees hidden drafts.
+    // Visitors may only add 1 to the download count of a shown item.
+    match /downloads/{docId} {
+      allow read: if isAdmin() || resource.data.published == true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        resource.data.published == true &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['downloadCount']) &&
+        request.resource.data.downloadCount == resource.data.get('downloadCount', 0) + 1
+      );
+    }
+
     // --- 7. AGREEMENTS ---
     function isStrMax(v, n) { return v is string && v.size() <= n; }
     function optStrMax(d, k, n) { return !(k in d) || d[k] == null || isStrMax(d[k], n); }
