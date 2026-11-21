@@ -83,6 +83,20 @@ service firebase.storage {
                    && request.resource.contentType.matches('image/.*');
     }
 
+    // 7c. FREE DOWNLOADS (admin only): the shared files and their covers
+    match /downloads/files/{fileName} {
+      allow read: if true;
+      allow create, update: if isAdmin()
+                   && request.resource.size < 25 * 1024 * 1024
+                   && request.resource.contentType.matches('application/pdf|application/zip|application/epub[+]zip|application/msword|application/vnd[.]ms-excel|application/vnd[.]ms-powerpoint|application/vnd[.]openxmlformats-officedocument[.].*|image/.*');
+      allow delete: if isAdmin();
+    }
+    match /downloads/covers/{fileName} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isImageUpload();
+      allow delete: if isAdmin();
+    }
+
     // 8. CREDIT TOP-UP RECEIPTS (private: the vendor and the admin)
     match /receipts/{vendorId}/{fileName} {
       allow read: if isAdmin() || isVendorOwner(vendorId);
