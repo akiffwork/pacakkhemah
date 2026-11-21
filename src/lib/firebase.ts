@@ -4,7 +4,7 @@ import { getAuth, browserLocalPersistence, setPersistence } from "firebase/auth"
 import { getStorage } from "firebase/storage";
 import { getMessaging, isSupported } from "firebase/messaging";
 import { getFunctions } from "firebase/functions";
-import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
+import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "firebase/app-check";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -18,13 +18,20 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
 // App Check: proves requests come from the real site, not a script, so
-// booking requests can't be spammed to use up a shop's credits. Off until
-// NEXT_PUBLIC_RECAPTCHA_SITE_KEY is set; enforce it in the Firebase console
-// (App Check) once its metrics show real traffic is verified.
-const appCheckKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
-if (typeof window !== "undefined" && appCheckKey && !(globalThis as { __pkAppCheck?: boolean }).__pkAppCheck) {
+// booking requests can't be spammed to use up a shop's credits. Off until a
+// site key is set in Vercel:
+//   NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY  (Fraud Defense / reCAPTCHA Enterprise, preferred)
+//   NEXT_PUBLIC_RECAPTCHA_SITE_KEY            (classic reCAPTCHA v3, being retired by Google)
+// Enforce it in the Firebase console (App Check) once its metrics show real
+// traffic is verified.
+const enterpriseKey = process.env.NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY;
+const classicKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
+if (typeof window !== "undefined" && (enterpriseKey || classicKey) && !(globalThis as { __pkAppCheck?: boolean }).__pkAppCheck) {
   try {
-    initializeAppCheck(app, { provider: new ReCaptchaV3Provider(appCheckKey), isTokenAutoRefreshEnabled: true });
+    initializeAppCheck(app, {
+      provider: enterpriseKey ? new ReCaptchaEnterpriseProvider(enterpriseKey) : new ReCaptchaV3Provider(classicKey!),
+      isTokenAutoRefreshEnabled: true,
+    });
     (globalThis as { __pkAppCheck?: boolean }).__pkAppCheck = true;
   } catch (e) {
     console.warn("App Check not started:", e);
