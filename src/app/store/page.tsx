@@ -27,6 +27,7 @@ import FirstOrderTour from "@/components/vendor/FirstOrderTour";
 import { summarize, getStage, daysUntil, type Order } from "@/lib/orderFlow";
 import { refreshPushIfEnabled, clearNotifications, onForegroundAlert } from "@/lib/pushRegistration";
 import { PrivacyProvider, PrivacyToggle, Private, usePrivacy } from "@/lib/privacy";
+import { startPresenceHeartbeat } from "@/lib/presence";
 
 type VendorData = {
   name: string;
@@ -214,6 +215,12 @@ function Dashboard({ vendorData, vendorId, isAdminOverride }: { user: User; vend
     if (isAdminOverride || !vendorId) return;
     refreshPushIfEnabled(vendorId, !!vendorData?.fcmToken);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId, isAdminOverride]);
+
+  // Tell the admin when the vendor was last here (Admin › Vendors). Not when the admin is viewing.
+  useEffect(() => {
+    if (isAdminOverride || !vendorId) return;
+    return startPresenceHeartbeat(vendorId);
   }, [vendorId, isAdminOverride]);
 
   // Opening the app (or switching back to it) clears its alerts from the phone's tray

@@ -8,6 +8,7 @@ import {
   arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, increment, query, updateDoc, where, writeBatch,
 } from "firebase/firestore";
 import { adjustCredits } from "@/lib/credits";
+import { describeLastActive } from "@/lib/presence";
 import {
   BottomSheet, Chip, ConfirmSheet, EmptyState, PageHeader, SearchInput, Segments, SwitchRow, Toast, hintCls, smallBtn, primarySmallBtn, useToast,
 } from "@/components/ui/kit";
@@ -49,6 +50,9 @@ export default function VendorsTab({ allVendors, initialView, initialSearch }: {
   const [open, setOpen] = useState<Pending>(null);
   const [busy, setBusy] = useState(false);
   const { toast, show } = useToast();
+  // Re-check every 30s so "Online" turns off by itself
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, []);
 
   useEffect(() => {
     getDoc(doc(db, "settings", "referral_config")).then(s => {
@@ -159,6 +163,7 @@ export default function VendorsTab({ allVendors, initialView, initialSearch }: {
                       <div className="min-w-0 flex-1">
                         <p className="text-[15px] font-bold text-slate-900 truncate">{v.name}</p>
                         <p className="text-[13px] text-slate-600 truncate">{[v.city, v.phone].filter(Boolean).join(" · ") || v.email || "No contact details"}</p>
+                        <LastActive at={v.lastActiveAt} now={now} />
                       </div>
                       <span className={`text-right shrink-0 ${credits <= 0 ? "text-red-800" : credits <= 5 ? "text-amber-800" : "text-emerald-800"}`}>
                         <span className="block text-lg font-bold leading-tight">{credits}</span><span className="text-xs">credits</span>
@@ -233,6 +238,16 @@ export default function VendorsTab({ allVendors, initialView, initialSearch }: {
       {open?.kind === "badges" && <BadgesSheet vendor={live(open.vendor)} onClose={() => setOpen(null)} notify={show} />}
       <Toast toast={toast} />
     </div>
+  );
+}
+
+function LastActive({ at, now }: { at?: number; now: number }) {
+  const { online, label } = describeLastActive(at, now);
+  return (
+    <p className={`text-xs truncate mt-0.5 flex items-center gap-1.5 ${online ? "text-emerald-800 font-semibold" : "text-slate-500"}`}>
+      {online && <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true"></span>}
+      {label}
+    </p>
   );
 }
 
