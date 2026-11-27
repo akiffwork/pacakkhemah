@@ -6,6 +6,8 @@ export type AdminVendor = {
   id: string;
   name: string;
   email?: string;
+  /** ms since epoch, from vendors/{id}/privateInfo/presence */
+  lastActiveAt?: number;
   phone?: string;
   status?: "pending" | "approved" | "suspended" | string;
   credits?: number;

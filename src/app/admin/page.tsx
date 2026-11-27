@@ -192,14 +192,24 @@ function AdminPageInner() {
         // Private details (login email) live in vendors/{id}/privateInfo.
         let vendorDocs: AdminVendor[] = [];
         let emails: Record<string, string> = {};
-        const merge = () => setAllVendors(vendorDocs.map(v => ({ ...v, email: emails[v.id] ?? v.email })));
+        let lastActive: Record<string, number> = {};
+        const merge = () => setAllVendors(vendorDocs.map(v => ({ ...v, email: emails[v.id] ?? v.email, lastActiveAt: lastActive[v.id] })));
         const stopA = onSnapshot(collection(db, "vendors"), snap => {
           vendorDocs = snap.docs.map(d => ({ id: d.id, ...d.data() } as AdminVendor));
           merge();
         });
         const stopB = onSnapshot(collectionGroup(db, "privateInfo"), snap => {
-          emails = {};
-          snap.docs.forEach(d => { const id = d.ref.parent.parent?.id; const e = d.data().email; if (id && e) emails[id] = e; });
+          emails = {}; lastActive = {};
+          snap.docs.forEach(d => {
+            const id = d.ref.parent.parent?.id; if (!id) return;
+            if (d.id === "presence") {
+              // A just-written serverTimestamp is null locally until confirmed; estimate it as now.
+              const t = d.get("lastActiveAt", { serverTimestamps: "estimate" });
+              if (t?.toMillis) lastActive[id] = t.toMillis();
+              return;
+            }
+            const e = d.data().email; if (e) emails[id] = e;
+          });
           merge();
         }, e => console.warn("Private details:", e));
         stopVendors = () => { stopA(); stopB(); };
